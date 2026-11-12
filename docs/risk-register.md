@@ -73,6 +73,8 @@ purpose), **Closed** (fixed).
 | RP-050 | A build's credential copy is a plain Secret on the node while its run lasts | Security (low) | Accepted | Spec 022 T015 |
 | RP-051 | Auto-build reads any HTTPS address a Component names, internal ones included | Security (low) | Accepted | Spec 022 T015 |
 | RP-052 | Build steps have no CPU or memory limits | Footprint, availability | Open | Spec 022 T015 |
+| RP-053 | Logs written while the log store is unreachable are dropped | Correctness, operability | Open | Spec 023 T001 |
+| RP-054 | The observability adapters answer unauthenticated queries; only NetworkPolicies close them | Security (medium) | Open | Spec 023 T001 |
 
 ---
 
@@ -1232,3 +1234,52 @@ purpose), **Closed** (fixed).
   the simulated T470, and stated in the package's cost.
 - **Revisit:** in a follow-up builds-hardening spec, or as soon as a build
   starves a workload.
+
+## RP-053 — Logs written while the log store is unreachable are dropped
+
+- **Kind:** correctness, operability. **Status:** Open, 2026-11-12.
+  **Found:** spec 023 T001.
+- **What:** Fluent Bit (the observability package's collector) retries a
+  failed flush a few times and then drops the batch ("cannot be
+  retried"). Lines written while the store can't be reached never arrive.
+  - The spike lost them twice:
+    1. at install, when the plane chart's own NetworkPolicy blocked the
+       `hostNetwork` collector;
+    2. after a Docker restart changed the node's IP and the pinned rule
+       stopped matching.
+  - The pods' own logs are untouched, so recent lines are still readable
+    on the Runtime tab while the pods live.
+- **Mitigation (plan 023):** the node rule is built from the live `Node`
+  addresses and checked on every resync, so an IP change is repaired
+  within one resync. The readiness checks cover Fluent Bit's delivery.
+- **Possible fix:** Fluent Bit's filesystem buffering with a larger retry
+  limit, so batches survive a store outage. It costs disk and must be
+  measured.
+- **Revisit:** in spec 023 T012 (measure buffering), or if stored logs are
+  ever used as an audit source.
+
+## RP-054 — The observability adapters answer unauthenticated queries
+
+- **Kind:** security, medium. **Status:** Open, 2026-11-12.
+  **Found:** spec 023 T001.
+- **What:** OpenChoreo's logs and metrics adapters, which Serendip queries
+  (plan 023 decision 4, amended), have no authentication. Anything that
+  can reach them reads every Component's logs, scoped by any IDs it
+  sends; an omitted ID widens the scope to the whole namespace.
+- **Mitigation:**
+  - **NetworkPolicies:** the plane chart's policy, plus Serendip's,
+    admit only pods in the observability namespace, and the nodes to
+    OpenObserve's ingest port. Checked live on kind: a workload pod and
+    a `hostNetwork` pod both time out.
+  - **Serendip's own scoping:** it reaches the adapters only through the
+    API server's Service proxy, with its own credentials. It always sends
+    all three IDs, and drops any returned line that isn't the target's.
+- **Residual:**
+  - **Enforcement depends on the CNI.** kindnet admitted the API server's
+    proxy traffic while blocking `hostNetwork` pods; K3s must be checked
+    (T013, and RP-018's open item).
+  - **Policies match by label,** so a relabel in a future chart re-opens
+    them. The installer's checks verify that each selector matches a pod.
+- **Revisit:** on every OpenChoreo or module upgrade (`VERSIONS.md`), and
+  if the Observer's authorization becomes usable with Serendip's
+  identity.

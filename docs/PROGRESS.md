@@ -16,8 +16,45 @@ Last updated: 2026-11-09
 
 ## Current phase
 
+**Spec 023 (observability package): spec written and reviewed; plan.md
+in progress** (2026-11-09, paused by the user).
+- `specs/023-observability/spec.md`: stored log search and CPU/memory
+  metrics only (traces, alerts and the traffic overlay deferred); the
+  spike measures **OpenSearch, OpenObserve and SigNoz** on the simulated
+  T470 (the user: it's a POC, research now); measured cost includes load
+  and disk; there must be no way to query logs or metrics around Serendip.
+- **Plan approved by the user (2026-11-11). T001 done (2026-11-12);
+  next is T002** (the bench's load generator and disk use), then T003
+  (measuring OpenSearch, OpenObserve and SigNoz on a simulated-T470
+  cluster, and ADR 0021).
+- **T001 changed the plan** (see plan.md "Spike findings"):
+  - Serendip queries OpenChoreo's logs and metrics **adapters**, not the
+    Observer, whose API needs a token even with security off;
+  - scopes are **UIDs**, and names silently widen the query;
+  - the path is the Service proxy;
+  - the node rule is built from live `Node` IPs;
+  - uninstall deletes the namespace and the Prometheus Operator CRDs
+    (+168 MiB on kube-apiserver, so T003 tries plain Prometheus);
+  - new RP-053 and RP-054.
+- **`serendip-t018` is clean again;** the spike removed everything.
+  Docker Desktop restarted overnight on 2026-11-12, and the kind node's
+  IP changed (now 172.22.0.5).
+- **Plan leanings so far (not decided):**
+  - `provider.Requirements` gains an optional disk part (growth per day,
+    retention, budget);
+  - a core `ObservabilityProvider` (search logs over Deployments, build
+    logs, metrics, storage use), with a lazy handle like builds';
+  - queries narrowed to the caller's permitted Deployments before they
+    reach the backend;
+  - no side door: deny-ingress NetworkPolicies on the stores and the
+    Observer (RP-018's pattern), with Serendip reaching them through the
+    Kubernetes API;
+  - CPU and memory from the kubelet; HTTP metrics "not available" unless
+    free;
+  - the next ADR is 0021 (backend choice).
+
 **Spec 022 (builds, the workflow-plane package): COMPLETE** (T001–T016,
-2026-10-24 → 2026-11-09). **Next: choose the next spec** (below).
+2026-10-24 → 2026-11-09).
 - **Records:**
   - `specs/022-builds/`: spec, plan (decisions, T001 spike findings, two
     T013 amendments), tasks (a "Done as" note per task), and
