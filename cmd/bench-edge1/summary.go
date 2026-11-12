@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/serendip-infra/serendip-infra/providers/application/openchoreo"
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
@@ -51,6 +52,20 @@ type podStats struct {
 	CPU        cpuStats         `json:"cpu"`
 	Memory     memoryStats      `json:"memory"`
 	Containers []containerStats `json:"containers"`
+	Volumes    []volumeStats    `json:"volume"`
+}
+
+// volumeStats is one of a pod's volumes. Only volumes backed by a
+// PersistentVolumeClaim carry pvcRef; those are what a package stores
+// data on (spec 023: disk growth per day).
+type volumeStats struct {
+	Name   string `json:"name"`
+	PVCRef *struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"pvcRef"`
+	UsedBytes     *uint64 `json:"usedBytes"`
+	CapacityBytes *uint64 `json:"capacityBytes"`
 }
 
 type containerStats struct {
@@ -80,6 +95,7 @@ const (
 	GroupIdentity       = "Identity (ThunderID)"
 	GroupWorkloads      = "Workloads"
 	GroupBuilds         = "Builds (workflow plane)"
+	GroupObservability  = "Observability"
 	groupOtherPrefix    = "Other: "
 	cellNamespacePrefix = "dp-"
 )
@@ -98,6 +114,10 @@ var namespaceGroups = map[string]string{
 	buildplane.PlaneNamespace:        GroupBuilds,
 	buildplane.BuildsNamespace:       GroupBuilds,
 	buildplane.RunNamespace:          GroupBuilds,
+	// The observability package (spec 023). Its provider doesn't export
+	// the namespace yet; T005 replaces these with its constants.
+	"openchoreo-observability-plane": GroupObservability,
+	"signoz":                         GroupObservability, // T003's config C only
 }
 
 // groupFor attributes a namespace to a group. Unknown namespaces are
@@ -151,13 +171,25 @@ type PodUsage struct {
 	WorkingSetBytes uint64 `json:"workingSetBytes"`
 }
 
+// VolumeUsage is one PersistentVolumeClaim's use in one sample.
+type VolumeUsage struct {
+	UsedBytes     uint64 `json:"usedBytes"`
+	CapacityBytes uint64 `json:"capacityBytes"`
+}
+
 // Sample is one point-in-time reading of the cluster.
 type Sample struct {
-	Groups              map[string]GroupUsage `json:"groups"`
-	NodeNanoCores       uint64                `json:"nodeNanoCores"`
-	NodeWorkingSetBytes uint64                `json:"nodeWorkingSetBytes"`
-	NodeFsUsedBytes     uint64                `json:"nodeFsUsedBytes"`
-	ImageFsUsedBytes    uint64                `json:"imageFsUsedBytes"`
+	Groups map[string]GroupUsage `json:"groups"`
+	// Volumes is each mounted PVC's use, by namespace/name. A PVC mounted
+	// by several pods is counted once.
+	Volumes map[string]VolumeUsage `json:"volumes,omitempty"`
+	// At is when the reading was taken; zero in results from before
+	// spec 023.
+	At                  time.Time `json:"at,omitempty"`
+	NodeNanoCores       uint64    `json:"nodeNanoCores"`
+	NodeWorkingSetBytes uint64    `json:"nodeWorkingSetBytes"`
+	NodeFsUsedBytes     uint64    `json:"nodeFsUsedBytes"`
+	ImageFsUsedBytes    uint64    `json:"imageFsUsedBytes"`
 }
 
 func sampleFrom(s Summary) Sample {
@@ -170,6 +202,15 @@ func sampleFrom(s Summary) Sample {
 		u.WorkingSetBytes += mem
 		u.Pods = append(u.Pods, PodUsage{Name: p.PodRef.Namespace + "/" + p.PodRef.Name, NanoCores: cpu, WorkingSetBytes: mem})
 		out.Groups[g] = u
+		for _, v := range p.Volumes {
+			if v.PVCRef == nil || v.UsedBytes == nil {
+				continue
+			}
+			if out.Volumes == nil {
+				out.Volumes = map[string]VolumeUsage{}
+			}
+			out.Volumes[v.PVCRef.Namespace+"/"+v.PVCRef.Name] = VolumeUsage{UsedBytes: *v.UsedBytes, CapacityBytes: deref(v.CapacityBytes)}
+		}
 	}
 	for g, u := range out.Groups {
 		sort.Slice(u.Pods, func(i, j int) bool { return u.Pods[i].Name < u.Pods[j].Name })
@@ -229,6 +270,45 @@ type Aggregate struct {
 	NodeOverheadMillicore Stat                      `json:"nodeOverheadMillicores"`
 	NodeFsUsedMiB         float64                   `json:"nodeFsUsedMiB"`
 	ImageFsUsedMiB        float64                   `json:"imageFsUsedMiB"`
+	Volumes               []VolumeAggregate         `json:"volumes,omitempty"`
+}
+
+// VolumeAggregate is one PVC across samples: its use in the first and
+// last sample that saw it, and how many sample intervals lay between, so
+// growth per day can be computed against the run's interval.
+type VolumeAggregate struct {
+	Name         string  `json:"name"`
+	Group        string  `json:"group"`
+	FirstUsedMiB float64 `json:"firstUsedMiB"`
+	LastUsedMiB  float64 `json:"lastUsedMiB"`
+	CapacityMiB  float64 `json:"capacityMiB"`
+	// Intervals is the number of sample intervals from the first sample
+	// that saw the volume to the last.
+	Intervals int `json:"intervals"`
+	// SpanSeconds is the real time between those two samples, when both
+	// carry a time. It counts the disk probe's own seconds, which
+	// Intervals × interval doesn't.
+	SpanSeconds float64 `json:"spanSeconds,omitempty"`
+}
+
+// Span is the time the volume's growth was measured over: the real span
+// if known, else Intervals × interval.
+func (v VolumeAggregate) Span(interval time.Duration) time.Duration {
+	if v.SpanSeconds > 0 {
+		return time.Duration(v.SpanSeconds * float64(time.Second))
+	}
+	return time.Duration(v.Intervals) * interval
+}
+
+// GrowthMiBPerDay extrapolates the volume's growth over the run to a
+// day, given the sample interval. It's zero when the volume was seen in
+// only one sample.
+func (v VolumeAggregate) GrowthMiBPerDay(interval time.Duration) float64 {
+	span := v.Span(interval)
+	if span <= 0 {
+		return 0
+	}
+	return (v.LastUsedMiB - v.FirstUsedMiB) * float64(24*time.Hour) / float64(span)
 }
 
 // PodAggregate is one pod's usage across samples.
@@ -306,6 +386,43 @@ func aggregate(samples []Sample) Aggregate {
 		out.NodeFsUsedMiB = mib(samples[n-1].NodeFsUsedBytes)
 		out.ImageFsUsedMiB = mib(samples[n-1].ImageFsUsedBytes)
 	}
+	out.Volumes = aggregateVolumes(samples)
+	return out
+}
+
+// aggregateVolumes reduces each PVC's samples to its first and last use,
+// sorted by name.
+func aggregateVolumes(samples []Sample) []VolumeAggregate {
+	type seen struct {
+		first, last     int
+		firstU, lastU   VolumeUsage
+		firstAt, lastAt time.Time
+	}
+	vols := map[string]*seen{}
+	for i, s := range samples {
+		for name, u := range s.Volumes {
+			v := vols[name]
+			if v == nil {
+				vols[name] = &seen{first: i, last: i, firstU: u, lastU: u, firstAt: s.At, lastAt: s.At}
+				continue
+			}
+			v.last, v.lastU, v.lastAt = i, u, s.At
+		}
+	}
+	var out []VolumeAggregate
+	for name, v := range vols {
+		ns, _, _ := strings.Cut(name, "/")
+		va := VolumeAggregate{
+			Name: name, Group: groupFor(ns),
+			FirstUsedMiB: mib(v.firstU.UsedBytes), LastUsedMiB: mib(v.lastU.UsedBytes),
+			CapacityMiB: mib(v.lastU.CapacityBytes), Intervals: v.last - v.first,
+		}
+		if !v.firstAt.IsZero() && !v.lastAt.IsZero() {
+			va.SpanSeconds = v.lastAt.Sub(v.firstAt).Seconds()
+		}
+		out = append(out, va)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 

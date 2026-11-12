@@ -76,6 +76,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&o.pkg.fullHelm, "package-full-helm", true, "run the package's full Helm command once, for comparison with the fingerprint path")
 	fs.DurationVar(&o.pkg.installTimeout, "package-install-timeout", 20*time.Minute, "how long the package may take to become Ready")
 	fs.DurationVar(&o.pkg.buildTimeout, "package-build-timeout", 20*time.Minute, "how long one build may take")
+	fs.BoolVar(&diskProbe, "disk-probe", true, "measure host-path volumes (local-path) with a short-lived du pod at the start and end of each phase; the kubelet reports no usage for them")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
@@ -280,9 +281,15 @@ func measure(ctx context.Context, o options, cl *cluster, nodeName string, d *da
 	return nil
 }
 
+// diskProbe turns the host-path volume probe on (spec 023 T002), from
+// -disk-probe.
+var diskProbe = true
+
 // samplePhase takes n readings, interval apart, of the cluster and of
 // serendipd's host process. serendipd exiting mid-phase is an error, not a
-// silently empty process series (which would read as zero usage).
+// silently empty process series (which would read as zero usage). A
+// failed disk probe is only logged: disk is auxiliary, and the phase's
+// memory and CPU samples stand without it.
 func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n int, interval time.Duration) ([]Sample, []procSample, error) {
 	var samples []Sample
 	var procs []procSample
@@ -301,7 +308,18 @@ func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n
 		if err != nil {
 			return samples, procs, err
 		}
-		samples = append(samples, sampleFrom(s))
+		smp := sampleFrom(s)
+		if diskProbe && (i == 0 || i == n-1) {
+			u, err := cl.hostPathUsage(ctx, nodeName)
+			if err != nil {
+				log.Printf("  disk probe failed, sample %d has no host-path volumes: %v", i+1, err)
+			}
+			addHostPathUsage(&smp, u)
+		}
+		// When the reading was taken, after any probe: growth per day uses
+		// the real span, not the sample count (the probe takes seconds).
+		smp.At = time.Now().UTC()
+		samples = append(samples, smp)
 		p, err := readProcess(d.pid())
 		if err != nil {
 			return samples, procs, fmt.Errorf("read serendipd process: %w", err)
@@ -373,6 +391,7 @@ func runCompare(args []string) error {
 		}
 	}
 	fmt.Print(renderComparison(compareRuns(rs[0], rs[1])))
+	fmt.Print(renderVolumeGrowth(compareVolumes(rs[0], rs[1])))
 	return nil
 }
 

@@ -1,0 +1,169 @@
+# Spec 023 load generator (plan decision 9): five light "Components",
+# each a pinned busybox writing 10 lines a second of about 120 bytes.
+#
+# They carry the OpenChoreo labels the logs and metrics adapters scope by
+# (openchoreo.dev/namespace and the *-uid labels, with fixed made-up
+# UIDs), so a search can name one logger exactly. They live in their own
+# namespace, outside OpenChoreo, and nothing in OpenChoreo watches them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: serendip-obs-load
+  labels:
+    app.kubernetes.io/part-of: serendip-bench
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: obs-load-logger
+  namespace: serendip-obs-load
+data:
+  # 10 lines, then sleep a second: about 10 lines/s. No date call per
+  # line (the container runtime timestamps each line), so the logger's
+  # own CPU stays near zero. Each line is about 120 bytes.
+  logger.sh: |
+    n=0
+    pad="lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor"
+    while true; do
+      i=0
+      while [ $i -lt 10 ]; do
+        n=$((n+1)); i=$((i+1))
+        echo "level=info obs-load comp=$LOGGER seq=$n msg=\"$pad\""
+      done
+      sleep 1
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-load-1, namespace: serendip-obs-load}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-load-1}}
+  template:
+    metadata:
+      labels:
+        app: obs-load-1
+        openchoreo.dev/namespace: serendip-obs-load
+        openchoreo.dev/project-uid: 00000000-0000-4000-8000-0000000000a0
+        openchoreo.dev/environment-uid: 00000000-0000-4000-8000-0000000000e0
+        openchoreo.dev/component-uid: 00000000-0000-4000-8000-000000000001
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+      - name: main
+        image: busybox:1.36.1
+        command: ["sh", "/load/logger.sh"]
+        env: [{name: LOGGER, value: "1"}]
+        resources:
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 16Mi}
+        volumeMounts: [{name: load, mountPath: /load}]
+      volumes: [{name: load, configMap: {name: obs-load-logger}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-load-2, namespace: serendip-obs-load}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-load-2}}
+  template:
+    metadata:
+      labels:
+        app: obs-load-2
+        openchoreo.dev/namespace: serendip-obs-load
+        openchoreo.dev/project-uid: 00000000-0000-4000-8000-0000000000a0
+        openchoreo.dev/environment-uid: 00000000-0000-4000-8000-0000000000e0
+        openchoreo.dev/component-uid: 00000000-0000-4000-8000-000000000002
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+      - name: main
+        image: busybox:1.36.1
+        command: ["sh", "/load/logger.sh"]
+        env: [{name: LOGGER, value: "2"}]
+        resources:
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 16Mi}
+        volumeMounts: [{name: load, mountPath: /load}]
+      volumes: [{name: load, configMap: {name: obs-load-logger}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-load-3, namespace: serendip-obs-load}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-load-3}}
+  template:
+    metadata:
+      labels:
+        app: obs-load-3
+        openchoreo.dev/namespace: serendip-obs-load
+        openchoreo.dev/project-uid: 00000000-0000-4000-8000-0000000000a0
+        openchoreo.dev/environment-uid: 00000000-0000-4000-8000-0000000000e0
+        openchoreo.dev/component-uid: 00000000-0000-4000-8000-000000000003
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+      - name: main
+        image: busybox:1.36.1
+        command: ["sh", "/load/logger.sh"]
+        env: [{name: LOGGER, value: "3"}]
+        resources:
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 16Mi}
+        volumeMounts: [{name: load, mountPath: /load}]
+      volumes: [{name: load, configMap: {name: obs-load-logger}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-load-4, namespace: serendip-obs-load}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-load-4}}
+  template:
+    metadata:
+      labels:
+        app: obs-load-4
+        openchoreo.dev/namespace: serendip-obs-load
+        openchoreo.dev/project-uid: 00000000-0000-4000-8000-0000000000a0
+        openchoreo.dev/environment-uid: 00000000-0000-4000-8000-0000000000e0
+        openchoreo.dev/component-uid: 00000000-0000-4000-8000-000000000004
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+      - name: main
+        image: busybox:1.36.1
+        command: ["sh", "/load/logger.sh"]
+        env: [{name: LOGGER, value: "4"}]
+        resources:
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 16Mi}
+        volumeMounts: [{name: load, mountPath: /load}]
+      volumes: [{name: load, configMap: {name: obs-load-logger}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-load-5, namespace: serendip-obs-load}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-load-5}}
+  template:
+    metadata:
+      labels:
+        app: obs-load-5
+        openchoreo.dev/namespace: serendip-obs-load
+        openchoreo.dev/project-uid: 00000000-0000-4000-8000-0000000000a0
+        openchoreo.dev/environment-uid: 00000000-0000-4000-8000-0000000000e0
+        openchoreo.dev/component-uid: 00000000-0000-4000-8000-000000000005
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+      - name: main
+        image: busybox:1.36.1
+        command: ["sh", "/load/logger.sh"]
+        env: [{name: LOGGER, value: "5"}]
+        resources:
+          requests: {cpu: 5m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 16Mi}
+        volumeMounts: [{name: load, mountPath: /load}]
+      volumes: [{name: load, configMap: {name: obs-load-logger}}]

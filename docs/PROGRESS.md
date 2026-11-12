@@ -23,10 +23,14 @@ in progress** (2026-11-09, paused by the user).
   spike measures **OpenSearch, OpenObserve and SigNoz** on the simulated
   T470 (the user: it's a POC, research now); measured cost includes load
   and disk; there must be no way to query logs or metrics around Serendip.
-- **Plan approved by the user (2026-11-11). T001 done (2026-11-12);
-  next is T002** (the bench's load generator and disk use), then T003
-  (measuring OpenSearch, OpenObserve and SigNoz on a simulated-T470
-  cluster, and ADR 0021).
+- **Plan approved by the user (2026-11-11). T001 and T002 are done
+  (2026-11-12); next is T003:** measure OpenSearch, OpenObserve and
+  SigNoz on a simulated-T470 cluster, with
+  `profiles/edge-1/bench/observability-load/load.sh` and
+  `bench-edge1`'s new disk columns, then write ADR 0021.
+- **T002 found that the kubelet doesn't measure local-path volumes.**
+  The bench uses a `du` probe pod instead, and the package's own disk
+  use will come from the stores (plan "Finding from T002").
 - **T001 changed the plan** (see plan.md "Spike findings"):
   - Serendip queries OpenChoreo's logs and metrics **adapters**, not the
     Observer, whose API needs a token even with security off;

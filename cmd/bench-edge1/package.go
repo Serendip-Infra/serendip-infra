@@ -42,8 +42,11 @@ type PackageRun struct {
 	// Idle is the cluster with the package installed and nothing built
 	// yet, and SerendipdIdle serendipd over the same window, resyncing the
 	// package on the fingerprint path.
-	Idle          Aggregate    `json:"idle"`
-	IdleSamples   []Sample     `json:"idleSamples"`
+	Idle        Aggregate `json:"idle"`
+	IdleSamples []Sample  `json:"idleSamples"`
+	// IdleInterval is the time between idle samples, so the volumes'
+	// growth can be put per day.
+	IdleInterval  float64      `json:"idleIntervalSeconds,omitempty"`
 	SerendipdIdle ProcessStats `json:"serendipdIdle"`
 	// ResyncMillicores is serendipd's idle CPU with the package minus
 	// without it, in the same run: the fingerprint path's cost.
@@ -145,6 +148,7 @@ func measurePackage(ctx context.Context, o options, cl *cluster, nodeName string
 	log.Printf("package: idle, %d samples every %s", po.idleSamples, po.idleInterval)
 	samples, procs, err := samplePhase(ctx, cl, nodeName, d, po.idleSamples, po.idleInterval)
 	p.IdleSamples, p.Idle, p.SerendipdIdle = samples, aggregate(samples), processStatsOf(procs)
+	p.IdleInterval = po.idleInterval.Seconds()
 	if err != nil {
 		return fmt.Errorf("package idle sampling: %w", err)
 	}
@@ -447,7 +451,7 @@ func writePackageSummary(b *strings.Builder, r Result) {
 	p := r.Package
 	fmt.Fprintf(b, "\n## Package: %s\n\n", p.Provider)
 	fmt.Fprintf(b, "Install (create → Ready, with image pulls): %s\n\n", fmtDur(p.Install))
-	writeGroupTable(b, fmt.Sprintf("Installed, idle (%d samples)", len(p.IdleSamples)), p.Idle)
+	writeGroupTable(b, fmt.Sprintf("Installed, idle (%d samples)", len(p.IdleSamples)), p.Idle, seconds(p.IdleInterval))
 	fmt.Fprintf(b, "\nserendipd with the package idle: %.1f MiB RSS, %.2f mcores mean (without the package, same run: %.1f MiB, %.2f mcores). Resync on the fingerprint path: **%+.2f mcores**.\n",
 		p.SerendipdIdle.RSSMiB.Mean, p.SerendipdIdle.CPUMillicores.Mean, r.Serendipd.RSSMiB.Mean, r.Serendipd.CPUMillicores.Mean, p.ResyncMillicores)
 	for _, bd := range p.Builds {

@@ -61,7 +61,25 @@ delete each before the next. Run the keep-awake beside long runs.
 - **Verify:** each item has observed evidence in `plan.md`; `kubectl get
   ns,crd,clusterobservabilityplane` shows only the recorded leftovers.
 
-## T002 [P] — Bench: the load generator and disk use
+## T002 [P] — Bench: the load generator and disk use ✅ 2026-11-12
+
+> **Done as:**
+> - **The load:** `observability-load/` (`loggers.yaml`, `driver.sh`,
+>   `load.sh`). On `serendip-t018`: 100 lines per logger per 10 s, 117
+>   bytes a line. The driver runs and builds its query window correctly;
+>   with no backend installed, its queries failed as expected.
+> - **Disk in `bench-edge1`:** the kubelet's volume stats, plus a `du`
+>   probe pod for host-path (local-path) volumes, which the kubelet
+>   doesn't report (plan "Finding from T002"). Each volume's first and
+>   last use and growth per day, over the real span. `compare` gives
+>   growth between runs.
+> - **Tests:** unit tests, and `TestLiveVolumes` (opt-in through
+>   `BENCH_KUBECONFIG`). It measured all four local-path PVCs on
+>   `serendip-t018` and left no probe pod.
+> - **Review:** the `go-reviewer`'s findings were fixed, except
+>   multi-node probe placement (the harness measures one node) and
+>   fake-client tests of the probe's pod lifecycle (the live test
+>   covers it).
 
 - **Do:**
   - **The load manifest and script** (plan decision 9): five pinned

@@ -286,7 +286,7 @@ func renderSummary(r Result) string {
 	}
 	fmt.Fprintf(&b, "- Settle %.0fs, then %d samples every %.0fs\n\n", r.SettleSeconds, len(r.PlatformSamples), r.SampleInterval)
 
-	writeGroupTable(&b, "Platform at idle (no workloads)", r.Platform)
+	writeGroupTable(&b, "Platform at idle (no workloads)", r.Platform, seconds(r.SampleInterval))
 	fmt.Fprintf(&b, "\n### serendipd (host process)\n\n| | Mean | Max |\n|---|---|---|\n| RSS (MiB) | %.1f | %.1f |\n| CPU (millicores) | %.1f | %.1f |\n\n",
 		r.Serendipd.RSSMiB.Mean, r.Serendipd.RSSMiB.Max, r.Serendipd.CPUMillicores.Mean, r.Serendipd.CPUMillicores.Max)
 
@@ -299,7 +299,7 @@ func renderSummary(r Result) string {
 	}
 
 	if len(r.WorkloadSamples) > 0 || len(r.Workload.Groups) > 0 {
-		writeGroupTable(&b, fmt.Sprintf("With %d light Components deployed", r.Components), r.Workload)
+		writeGroupTable(&b, fmt.Sprintf("With %d light Components deployed", r.Components), r.Workload, seconds(r.SampleInterval))
 	}
 
 	if p := r.Polling; p != nil {
@@ -341,7 +341,9 @@ func renderSummary(r Result) string {
 	return b.String()
 }
 
-func writeGroupTable(b *strings.Builder, title string, a Aggregate) {
+func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
+
+func writeGroupTable(b *strings.Builder, title string, a Aggregate, interval time.Duration) {
 	fmt.Fprintf(b, "### %s\n\n| Group | Memory mean (MiB) | Memory max | CPU mean (mcores) | CPU max |\n|---|---|---|---|---|\n", title)
 	for _, g := range sortedGroups(a.Groups) {
 		s := a.Groups[g]
@@ -358,6 +360,25 @@ func writeGroupTable(b *strings.Builder, title string, a Aggregate) {
 			}
 			fmt.Fprintf(b, "| %s | %s | %.1f | %.1f |\n", p.Name, p.Group, p.MemoryMiB.Mean, p.CPUMillicores.Mean)
 		}
+	}
+	writeVolumeTable(b, a.Volumes, interval)
+}
+
+// writeVolumeTable states each PVC's use and its growth over the phase,
+// put per day (spec 023: a package's disk growth).
+func writeVolumeTable(b *strings.Builder, vols []VolumeAggregate, interval time.Duration) {
+	if len(vols) == 0 {
+		return
+	}
+	b.WriteString("\nVolumes (PersistentVolumeClaims):\n\n| Volume | Group | Used first (MiB) | Used last (MiB) | Capacity (MiB) | Growth over the phase | Per day (extrapolated) |\n|---|---|---|---|---|---|---|\n")
+	for _, v := range vols {
+		span := v.Span(interval)
+		perDay := "—"
+		if span > 0 {
+			perDay = fmt.Sprintf("%.1f MiB", v.GrowthMiBPerDay(interval))
+		}
+		fmt.Fprintf(b, "| %s | %s | %.1f | %.1f | %.0f | %+.1f MiB in %s | %s |\n",
+			v.Name, v.Group, v.FirstUsedMiB, v.LastUsedMiB, v.CapacityMiB, v.LastUsedMiB-v.FirstUsedMiB, span.Round(time.Second), perDay)
 	}
 }
 
@@ -378,5 +399,70 @@ func renderComparison(cs []GroupComparison) string {
 	}
 	fmt.Fprintf(&b, "\nTolerance: memory ±%.0f%% for groups ≥ %d MiB, else ±%d MiB; CPU ±%d millicores. \"new\" groups exist only in run B and are not part of the verdict. Overall: **%s**\n",
 		memRelTolerance*100, memRelThresholdMiB, memAbsToleranceMiB, cpuAbsToleranceMilli, passFail(allOK))
+	return b.String()
+}
+
+// VolumeGrowth is one PVC's growth between two runs (spec 023 T002),
+// read from each run's last phase.
+type VolumeGrowth struct {
+	Name    string  `json:"name"`
+	UsedA   float64 `json:"usedMiBA"`
+	UsedB   float64 `json:"usedMiBB"`
+	Hours   float64 `json:"hours"`
+	PerDay  float64 `json:"perDayMiB"`
+	OnlyInB bool    `json:"onlyInB,omitempty"`
+}
+
+// lastPhase is a run's latest measured phase: the package's idle phase
+// if there was one, else the workload, else the platform.
+func lastPhase(r Result) Aggregate {
+	switch {
+	case r.Package != nil && len(r.Package.IdleSamples) > 0:
+		return r.Package.Idle
+	case len(r.WorkloadSamples) > 0:
+		return r.Workload
+	}
+	return r.Platform
+}
+
+// compareVolumes states each PVC's growth from run A to run B, over the
+// time between the runs' starts. Volumes only in A are left out: they
+// were removed, not shrunk.
+func compareVolumes(a, b Result) []VolumeGrowth {
+	inA := map[string]VolumeAggregate{}
+	for _, v := range lastPhase(a).Volumes {
+		inA[v.Name] = v
+	}
+	hours := b.StartedAt.Sub(a.StartedAt).Hours()
+	var out []VolumeGrowth
+	for _, vb := range lastPhase(b).Volumes {
+		va, ok := inA[vb.Name]
+		g := VolumeGrowth{Name: vb.Name, UsedA: va.LastUsedMiB, UsedB: vb.LastUsedMiB, Hours: hours, OnlyInB: !ok}
+		if ok && hours > 0 {
+			g.PerDay = (vb.LastUsedMiB - va.LastUsedMiB) * 24 / hours
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+func renderVolumeGrowth(gs []VolumeGrowth) string {
+	if len(gs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\nVolumes, run A → run B:\n\n| Volume | Used A (MiB) | Used B (MiB) | Between starts | Per day |\n|---|---|---|---|---|\n")
+	for _, g := range gs {
+		switch {
+		case g.OnlyInB:
+			fmt.Fprintf(&b, "| %s | — | %.1f | %.1f h | new |\n", g.Name, g.UsedB, g.Hours)
+			continue
+		case g.Hours <= 0:
+			// Same start, or B started first: no growth can be stated.
+			fmt.Fprintf(&b, "| %s | %.1f | %.1f | %.1f h | — |\n", g.Name, g.UsedA, g.UsedB, g.Hours)
+			continue
+		}
+		fmt.Fprintf(&b, "| %s | %.1f | %.1f | %.1f h | %+.1f MiB |\n", g.Name, g.UsedA, g.UsedB, g.Hours, g.PerDay)
+	}
 	return b.String()
 }

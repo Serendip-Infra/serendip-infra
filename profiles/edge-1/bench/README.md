@@ -30,6 +30,16 @@ read through the API server. Nothing extra is installed in the cluster,
 and the same code works on kind and on K3s. `serendipd` is measured as a
 host process (`/proc` on Linux, PowerShell on Windows).
 
+**Disk** (spec 023): each PersistentVolumeClaim's use, first and last
+in a phase, with its growth put per day.
+- **Volume stats:** the kubelet's, where it reports them.
+- **host-path volumes** (local-path, edge-1's default): the kubelet
+  reports nothing for these. So a short-lived `busybox` pod in `default`
+  mounts their parent directories read-only and runs `du`, at the first
+  and last sample of each phase only, and is deleted straight after.
+  `-disk-probe=false` turns it off.
+- **`compare`** also states each volume's growth from run A to run B.
+
 **Groups** come from the namespaces Serendip's providers deploy into.
 Anything unrecognised is listed by name, never hidden.
 
@@ -71,6 +81,31 @@ profiles/edge-1/bench/kind-t470-setup.sh down bench-t470
 Any `--sim-*` flag marks the run as a simulation. Its summary opens with
 "SIMULATION — does not satisfy the reference-hardware gate", and no
 footprint may be reported as verified on its strength (constitution rule 6).
+
+## Observability load (spec 023)
+
+`observability-load/load.sh` puts a steady log and query load on an
+installed observability backend (spec 023 plan decision 9):
+- **five loggers** in `serendip-obs-load`, each 10 lines a second of
+  about 120 bytes, labelled like OpenChoreo Components with fixed
+  made-up UIDs;
+- **a driver pod** in the backend's namespace, so its NetworkPolicies
+  need no change. It runs a log search every 10 s (one logger by UID in
+  turn) and a 1-hour metrics query every 30 s, and prints one line per
+  query.
+
+```sh
+export KUBECTL="kubectl --context kind-t470"
+./observability-load/load.sh start          # driver in openchoreo-observability-plane
+./observability-load/load.sh rate           # about 100 lines per logger per 10 s
+./observability-load/load.sh latency        # queries, failures, mean and max seconds
+./observability-load/load.sh stop
+```
+
+The defaults query OpenChoreo's logs and metrics adapters. For another
+backend, set `LOGS_URL`, `LOGS_BODY`, `METRICS_URL`, `METRICS_BODY` and
+`AUTH_HEADER` before `start`, and pass its namespace (see `driver.sh` for
+the placeholders).
 
 ## Reading results honestly
 

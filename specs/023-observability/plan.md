@@ -465,6 +465,26 @@ measurement.
     `workflows.argoproj.io/workflow=<run>`. T013 checks it with builds
     installed.
 
+## Finding from T002 (2026-11-12): the kubelet doesn't measure local-path volumes
+
+- The kubelet Summary API reports no usage for hostPath-backed
+  PersistentVolumes, which is what local-path provisions.
+  - On `serendip-t018` none of the four local-path PVCs (OpenBao's and
+    ThunderID's) had a `pvcRef` entry.
+  - It does for CSI volumes such as Longhorn's.
+- **The bench** measures them with a short-lived `du` probe pod at each
+  phase's start and end (`cmd/bench-edge1/disk.go`).
+- **Decision 8 amended:** the package's *current disk use* can't come
+  from the kubelet's volume stats on edge-1. `Usage` asks the stores
+  instead:
+  - OpenObserve's stream stats (`/api/{org}/streams`, `storage_size`,
+    seen in T001);
+  - Prometheus' own `prometheus_tsdb_storage_blocks_bytes` plus its WAL
+    size.
+
+  T006 settles the exact calls. A `du` from Serendip would mean exec
+  into a pod or a privileged probe, which the product shouldn't need.
+
 ## Interfaces and types (sketch; settled in T002)
 
 - **`core/provider`:** `Requirements.Disk *DiskRequirements{GrowthMiBPerDay,
