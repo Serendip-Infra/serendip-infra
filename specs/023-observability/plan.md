@@ -746,6 +746,23 @@ Results: `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`.
    module's newer releases set (RP-062). Spec 024 must validate alert
    destinations itself.
 
+## Findings from T013 (2026-11-14, `serendip-t018`)
+
+All in `verification.md`; the five fixed there (F1–F5):
+1. **Build logs:** a finished build's step pods can go before its run
+   does (by hand, eviction, a node). The handler now falls back to the
+   store whenever a finished build's live read is empty, not only once
+   the run has expired.
+2. **Stored build logs** carry no container, so Argo's executor
+   exit-stats lines (from its `init` and `wait` containers) are dropped by
+   their shape.
+3. **Removal** takes about 45 s. The capability now reads `Removing`
+   while it runs, instead of staying Ready.
+4. **Fluent Bit's `:2020`** is the one path a workload pod reaches. It's
+   counters only; RP-064.
+5. **Outside this spec:** policy decisions on Approvals had no time (spec
+   019); the console's log times were UTC beside local-time charts.
+
 ## Interfaces and types (sketch; settled in T002)
 
 - **`core/provider`:** `Requirements.Disk *DiskRequirements{GrowthMiBPerDay,

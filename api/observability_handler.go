@@ -120,6 +120,8 @@ func observabilityReadiness(providers *provider.Registry, packages reconcile.Cat
 			state = "it isn't installed; install it by creating a ProviderInstance naming it (GET /v1/packages)"
 		case reconcile.ReasonInstalling:
 			state = "it's installing; retry shortly"
+		case reconcile.ReasonRemoving:
+			state = "it's being removed"
 		default:
 			state = "it's installed but not ready (" + rd.Reason + ")"
 		}

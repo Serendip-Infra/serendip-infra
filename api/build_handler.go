@@ -339,7 +339,23 @@ func (h *BuildHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		followLogs(w, r, h.streams, h.idle, h.max, open, h.readFailed(b))
 		return
 	}
-	readRecentLogs(w, r, h.recent, open, h.readFailed(b))
+	lines, truncated, ok := recentLogs(w, r, h.recent, open, h.readFailed(b))
+	if !ok {
+		return
+	}
+	// A finished run whose step pods are gone (deleted by hand, evicted,
+	// or lost with a node) reads as no lines while the run itself is
+	// still there; its stored lines are the answer then (spec 023 T013).
+	if len(lines) == 0 && b.Status.Phase.Done() && h.storedUsable() {
+		h.storedLogs(w, r, b, opts)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "truncated": truncated})
+}
+
+// storedUsable says the observability package can answer stored logs now.
+func (h *BuildHandler) storedUsable() bool {
+	return h.stored != nil && (h.storedReady == nil || h.storedReady() == nil)
 }
 
 // secretValueRead is what naming a credential Secret on a Component needs:
@@ -420,7 +436,7 @@ const (
 // NDJSON, then {"end": "ended"} (a finished build has nothing to follow).
 // Without the package ready, it's 410 as before.
 func (h *BuildHandler) storedLogs(w http.ResponseWriter, r *http.Request, b resource.Build, opts reconcile.LogOptions) {
-	if h.stored == nil || (h.storedReady != nil && h.storedReady() != nil) {
+	if !h.storedUsable() {
 		writeExpired(w, r, b)
 		return
 	}

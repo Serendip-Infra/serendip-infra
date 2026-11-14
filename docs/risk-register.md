@@ -84,6 +84,7 @@ purpose), **Closed** (fixed).
 | RP-061 | The package's reported disk use lags, and leaves out the logs store's newest data and metadata | Honesty of a reported number | Accepted | Spec 023 T006 |
 | RP-062 | OpenObserve's SSRF guard is off, so its in-cluster alert webhook can be created | Security | Accepted | Spec 023 T012 |
 | RP-063 | The observability package's disk growth is a 2-hour slope under a synthetic load, extrapolated to a day | Honesty of a reported number | Accepted | Spec 023 T012 |
+| RP-064 | Fluent Bit's monitoring port (:2020, host network) answers any pod on the node: counters, no log content | Security (information) | Accepted | Spec 023 T013 |
 
 ---
 
@@ -1483,3 +1484,28 @@ purpose), **Closed** (fixed).
   the measured current use beside the stated figure.
 - **Revisit:** in the full test pass after v1, with a run past the
   retention window on reference hardware.
+
+## RP-064 — Fluent Bit's monitoring port answers any pod on the node
+
+- **Kind:** security (information exposure). **Status:** Accepted,
+  2026-11-14. **Found:** spec 023 T001 (noted in plan.md), checked on
+  `serendip-t018` in T013 (criterion 9).
+- **What:** the logs module's Fluent Bit runs with `hostNetwork`, so the
+  plane's NetworkPolicies don't apply to it, and its HTTP server listens
+  on `0.0.0.0:2020`. From a workload pod in another Project,
+  `fluent-bit.openchoreo-observability-plane:2020` answered
+  `/api/v1/metrics` (records and bytes per input, filter and output),
+  `/api/v2/metrics` (the same as Prometheus text, with the node's host
+  name), `/api/v1/uptime` and the version. No log lines, labels or
+  pod names. Every other part of the plane (OpenObserve, Prometheus,
+  the Observer, both adapters, kube-state-metrics) timed out, by
+  Service and by pod IP.
+- **Why accepted:** it isn't cheap to close. The DaemonSet's own liveness
+  and readiness probes use that port, and on the host network the
+  kubelet probes the node's address, so turning `HTTP_Server` off or
+  listening on `127.0.0.1` would break them. What leaks is how much the
+  node logs, which a workload can roughly see from its own node anyway.
+- **Mitigation:** none beyond the content being counters only.
+- **Revisit:** if the chart lets the probes be exec-based or the server
+  bind to a node-local address; or on a multi-tenant edge profile where
+  a tenant's log volume is itself sensitive.

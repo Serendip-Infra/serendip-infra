@@ -115,6 +115,13 @@ func recordApproval(ctx context.Context, tx *sql.Tx, in store.ApprovalIntent, ta
 		if a.Status.RequestedAt.IsZero() {
 			a.Status.RequestedAt = now
 		}
+		// A decision made with the request (by policy) is made at its
+		// time; callers leave it out (spec 023 T013: it read as year 1).
+		if d := a.Status.Decision; d != nil && d.At.IsZero() {
+			dc := *d
+			dc.At = a.Status.RequestedAt
+			a.Status.Decision = &dc
+		}
 		if a.Status.TargetName == "" {
 			a.Status.TargetName = target.Name
 		}

@@ -122,6 +122,7 @@ describe("package availability", () => {
     expect(availability(r(false, "Unavailable"))).toBe("unavailable");
     expect(availability(r(false, "NotInstalled"))).toBe("notInstalled");
     expect(availability(r(false, "Installing"))).toBe("installing");
+    expect(availability(r(false, "Removing"))).toBe("removing");
     expect(availability(r(false, "InstallFailed"))).toBe("notReady");
     expect(availability(r(true, "Ready"))).toBe("ready");
   });

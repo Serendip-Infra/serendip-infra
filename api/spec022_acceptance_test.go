@@ -53,6 +53,9 @@ type run022 struct {
 	phase   resource.BuildPhase
 	message string
 	cred    map[string]any
+	// podsGone: the run is there but its step pods aren't, so a read
+	// finds no lines (spec 023 T013).
+	podsGone bool
 }
 
 func newBuilder022() *builder022 {
@@ -130,6 +133,14 @@ func (f *builder022) RemoveBuild(_ context.Context, b resource.Build) error {
 func (f *builder022) BuildLogs(ctx context.Context, b resource.Build, opts reconcile.LogOptions) (reconcile.LogStream, error) {
 	if opts.Follow {
 		return &followStream{ctx: ctx, lines: f.lines}, nil
+	}
+	if r := f.run(b.Metadata.ID); r != nil {
+		f.mu.Lock()
+		gone := r.podsGone
+		f.mu.Unlock()
+		if gone {
+			return &sliceStream{}, nil
+		}
 	}
 	lines := []reconcile.LogLine{{Time: time.Now(), Instance: "build", Line: "STEP 1/2: FROM alpine"}}
 	if r := f.run(b.Metadata.ID); r != nil && r.phase == resource.BuildFailed {

@@ -27,6 +27,9 @@ const (
 	ReasonInstalling    = "Installing"
 	ReasonInstalled     = "Ready"
 	ReasonInstallFailed = "InstallFailed"
+	// ReasonRemoving: the package's ProviderInstance is deleted and its
+	// uninstall is running (spec 023 T013).
+	ReasonRemoving = "Removing"
 	// ReasonUnavailable: the package isn't available in this build yet.
 	ReasonUnavailable = "Unavailable"
 	// ReasonDuplicate: another ProviderInstance already provides the
@@ -374,6 +377,9 @@ func (r *ProviderInstanceReconciler) UninstallCleanup() CleanupFunc {
 		case busy:
 			return fmt.Errorf("%w: removing %s waits for its install to finish", ErrPackageBusy, p.Provider)
 		case !done:
+			// Not ready from the moment it's removed, so nothing queries a
+			// package being torn down (spec 023 T013).
+			report(p.Capability, false, ReasonRemoving, "the "+p.Provider+" package is being removed")
 			return fmt.Errorf("%w: removing %s", ErrPackageBusy, p.Provider)
 		case job.err != nil:
 			return job.err

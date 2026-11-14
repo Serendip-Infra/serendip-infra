@@ -420,6 +420,8 @@ func TestBuildLogs_ByRunWithoutArgoLines(t *testing.T) {
 		{run: run, at: t0, line: "Step 3/3 : done"},
 		{run: run, at: t0.Add(-time.Second), line: `time="x" level=info msg="sub-process exited" argo=true error="<nil>"`},
 		{run: run, at: t0.Add(-2 * time.Second), line: "Step 1/3 : FROM alpine"},
+		{run: run, at: t0.Add(-3 * time.Second), line: `time="2026-11-14T14:49:07.011Z" level=info msg="Alloc=8445 TotalAlloc=15886 Sys=22614 NumGC=6 Goroutines=4"`},
+		{run: run, at: t0.Add(-4 * time.Second), line: `msg="Alloc=1 is a line a build printed"`},
 		{run: "build-other", at: t0, line: "someone else's"},
 	}
 	var b resource.Build
@@ -436,7 +438,7 @@ func TestBuildLogs_ByRunWithoutArgoLines(t *testing.T) {
 			t.Errorf("component = %q", l.Component)
 		}
 	}
-	if !slices.Equal(lines, []string{"Step 3/3 : done", "Step 1/3 : FROM alpine"}) {
+	if !slices.Equal(lines, []string{"Step 3/3 : done", "Step 1/3 : FROM alpine", `msg="Alloc=1 is a line a build printed"`}) {
 		t.Errorf("lines = %q", lines)
 	}
 	s, _ := f.logRequests[0]["searchScope"].(map[string]any)

@@ -33,7 +33,7 @@ export function LogView({ lines, label, following }: { lines: LogLine[]; label: 
       {lines.map((l, i) => (
         <div key={i} className="log-line">
           <time dateTime={l.time} title={l.time} className="log-meta">
-            {l.time ? l.time.slice(11, 23) : ""}
+            {logTime(l.time)}
           </time>
           <span className="log-meta">{l.instance}</span>
           <span className="log-text">{l.line}</span>
@@ -41,4 +41,17 @@ export function LogView({ lines, label, following }: { lines: LogLine[]; label: 
       ))}
     </div>
   );
+}
+
+/**
+ * logTime is a line's time of day in the viewer's time zone, to the
+ * millisecond, as the charts beside it use local time (spec 023 T013:
+ * UTC here beside a local-time chart read 5½ hours apart). The full UTC
+ * timestamp is the element's title.
+ */
+export function logTime(t: string | undefined): string {
+  if (!t) return "";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return t;
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
 }

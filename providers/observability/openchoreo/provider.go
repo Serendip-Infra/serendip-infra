@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -63,6 +64,13 @@ const httpUnavailable = "requests, errors and latency: needs request metrics, no
 // argoLineRE matches the lines Argo's emissary writes into a step's main
 // container (spec 022 T001 item 4), which the build provider hides too.
 var argoLineRE = regexp.MustCompile(`(^|\s)level=\w+\s.*(^|\s)argo=true(\s|$)`)
+
+// argoExitStatsRE matches the memory line Argo's executor prints as its
+// init and wait containers exit. A run's stored lines carry no container
+// (T006), so it's matched by its shape; the build provider reads only
+// the main container and never shows it (T013: 4 such lines in a 37-line
+// build).
+var argoExitStatsRE = regexp.MustCompile(`^time="[^"]*" level=info msg="Alloc=\d+ TotalAlloc=\d+ Sys=\d+ NumGC=\d+ Goroutines=\d+"$`)
 
 // line is a stored line, cut to MaxLogLineBytes as soon as it's read.
 type line struct {
@@ -169,7 +177,8 @@ func (p *Provider) SearchLogs(ctx context.Context, targets []reconcile.LogTarget
 
 // BuildLogs reads a Build's stored lines by its run (decision 10). A
 // build run's lines carry only their time and text, so Instance is
-// empty, and Argo's own lines are dropped.
+// empty, and Argo's own lines (its emissary's and its executor's exit
+// stats) are dropped.
 func (p *Provider) BuildLogs(ctx context.Context, b resource.Build, q reconcile.LogQuery) (reconcile.LogPage, error) {
 	if b.Metadata.ID == "" {
 		return reconcile.LogPage{}, errors.New("openchoreo observability: a Build without an ID")
@@ -185,7 +194,7 @@ func (p *Provider) BuildLogs(ctx context.Context, b resource.Build, q reconcile.
 		text:  q.Text,
 		keep: func(e logEntry, l *line) bool {
 			l.Component = comp
-			return !argoLineRE.MatchString(e.Log)
+			return !argoLineRE.MatchString(e.Log) && !argoExitStatsRE.MatchString(strings.TrimSpace(e.Log))
 		},
 	}
 	return p.search(ctx, []*logSource{s}, q)

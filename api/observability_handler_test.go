@@ -268,6 +268,7 @@ func TestObservabilityProviderNotReadyMidRequest(t *testing.T) {
 			{"not installed", reconcile.ReasonNotInstalled, "isn't installed"},
 			{"no reason at all", "", "isn't installed"},
 			{"installing", reconcile.ReasonInstalling, "installing"},
+			{"removing", reconcile.ReasonRemoving, "being removed"},
 			{"installed but unhealthy", "Degraded", "not ready (Degraded)"},
 		} {
 			for _, r := range w.obsRoutes() {

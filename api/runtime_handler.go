@@ -241,17 +241,26 @@ func (h *RuntimeHandler) Logs(w http.ResponseWriter, r *http.Request) {
 // stream open gives, counted against limit. Deployment and build logs
 // share it, and their caps; failed answers a failed read.
 func readRecentLogs(w http.ResponseWriter, r *http.Request, limit *streamLimiter, open func(context.Context) (reconcile.LogStream, error), failed func(http.ResponseWriter, *http.Request, error)) {
+	lines, truncated, ok := recentLogs(w, r, limit, open, failed)
+	if ok {
+		writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "truncated": truncated})
+	}
+}
+
+// recentLogs is readRecentLogs without the answer: it returns the lines,
+// or answers the error itself and returns ok false.
+func recentLogs(w http.ResponseWriter, r *http.Request, limit *streamLimiter, open func(context.Context) (reconcile.LogStream, error), failed func(http.ResponseWriter, *http.Request, error)) ([]reconcile.LogLine, bool, bool) {
 	reqID := audit.RequestIDFrom(r.Context())
 	caller, ok := callerFrom(r.Context())
 	if !ok {
 		WriteProblem(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token", reqID)
-		return
+		return nil, false, false
 	}
 	if !limit.acquire(caller.ID) {
 		w.Header().Set("Retry-After", "5")
 		WriteProblem(w, http.StatusTooManyRequests, "too many requests",
 			"too many log reads at once: at most "+strconv.Itoa(limit.perCaller)+" per caller and "+strconv.Itoa(limit.total)+" in all; retry shortly", reqID)
-		return
+		return nil, false, false
 	}
 	defer limit.release(caller.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), recentTimeout)
@@ -259,15 +268,15 @@ func readRecentLogs(w http.ResponseWriter, r *http.Request, limit *streamLimiter
 	stream, err := open(ctx)
 	if err != nil {
 		failed(w, r, err)
-		return
+		return nil, false, false
 	}
 	defer stream.Close()
 	lines, truncated, err := recentLines(stream)
 	if err != nil {
 		failed(w, r, err)
-		return
+		return nil, false, false
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "truncated": truncated})
+	return lines, truncated, true
 }
 
 // recentLines reads a stream of recent lines (within maxRecentBytes),

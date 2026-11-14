@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/graph"
 	"github.com/serendip-infra/serendip-infra/core/provider"
@@ -290,6 +291,60 @@ func TestUninstallCleanup(t *testing.T) {
 		if log["build"] != reconcile.ReasonNotInstalled {
 			t.Errorf("last spec %q: readiness %v", last, log)
 		}
+	}
+}
+
+// gatedUninstall's Uninstall waits for release, like a real one that
+// takes a while.
+type gatedUninstall struct {
+	release chan struct{}
+}
+
+func (g *gatedUninstall) Install(context.Context, resource.ProviderInstance) (reconcile.PackageState, error) {
+	return reconcile.PackageState{Ready: true}, nil
+}
+
+func (g *gatedUninstall) Uninstall(ctx context.Context, _ string) error {
+	select {
+	case <-g.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// While a removed package's uninstall runs, its capability reads
+// Removing, not still Ready, so nothing queries it as it's torn down
+// (spec 023 T013); then NotInstalled.
+func TestUninstallCleanup_RemovingWhileItRuns(t *testing.T) {
+	pkg := &gatedUninstall{release: make(chan struct{})}
+	cat := reconcile.Catalogue{"test-builder": {Provider: "test-builder", Capability: "build", Installer: pkg, Requirements: measured}}
+	log := readinessLog{"build": "ready Ready"}
+	s := newAppStores(t)
+	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](s.db, resource.KindProviderInstance)
+	clean := reconcile.NewProviderInstanceReconciler(insts, cat, log.report).UninstallCleanup()
+	spec, _ := json.Marshal(resource.ProviderInstanceSpec{CapabilityID: "build", ProviderID: "test-builder"})
+	ref := resource.ApprovalRef{ID: "pi-1", LastSpec: spec}
+	if err := clean(context.Background(), ref); !errors.Is(err, reconcile.ErrPackageBusy) {
+		t.Fatalf("clean-up while uninstalling = %v, want ErrPackageBusy", err)
+	}
+	if log["build"] != reconcile.ReasonRemoving {
+		t.Errorf("readiness while uninstalling = %q, want %s", log["build"], reconcile.ReasonRemoving)
+	}
+	close(pkg.release)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := clean(context.Background(), ref)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, reconcile.ErrPackageBusy) || time.Now().After(deadline) {
+			t.Fatalf("clean-up after the uninstall = %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if log["build"] != reconcile.ReasonNotInstalled {
+		t.Errorf("readiness after = %q, want %s", log["build"], reconcile.ReasonNotInstalled)
 	}
 }
 

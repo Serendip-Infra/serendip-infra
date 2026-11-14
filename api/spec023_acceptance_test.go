@@ -528,6 +528,42 @@ func TestSpec023Criterion7_BuildLogs(t *testing.T) {
 	}
 }
 
+// TestSpec023Criterion7_BuildPodsGone: a finished run that's still there
+// but whose step pods are gone (deleted by hand, evicted) answers its
+// stored lines, not an empty list (T013, found on serendip-t018). A
+// running build's empty read stays empty: its pods may not exist yet.
+func TestSpec023Criterion7_BuildPodsGone(t *testing.T) {
+	w := newWorld023(t)
+	w.obsReady()
+	w.packageReady()
+	comp := w.createSource(t, "tok-devops", map[string]any{"repository": "https://example.com/shop/api"})
+	b := w.succeed(t, w.trigger(t, comp.Metadata.ID, "").Metadata.ID)
+	w.obs.mu.Lock()
+	w.obs.builds[b.Metadata.ID] = []reconcile.StoredLogLine{{Time: time.Now(), Line: "pushed localhost:5000/shop/api"}}
+	w.obs.mu.Unlock()
+	r := w.builder.run(b.Metadata.ID)
+	w.builder.mu.Lock()
+	r.podsGone = true
+	w.builder.mu.Unlock()
+
+	var got struct {
+		Lines  []reconcile.LogLine `json:"lines"`
+		Stored bool                `json:"stored"`
+	}
+	json.Unmarshal(w.call(t, "tok-logreader", http.MethodGet, "/v1/builds/"+b.Metadata.ID+"/logs", nil, http.StatusOK), &got)
+	if !got.Stored || len(got.Lines) != 1 || got.Lines[0].Line != "pushed localhost:5000/shop/api" {
+		t.Errorf("a finished run without its pods: %+v", got)
+	}
+
+	// Without the package ready, the empty read is the answer, as before.
+	w.registry.SetReadiness("observability", provider.Readiness{Ready: false, Reason: reconcile.ReasonNotInstalled})
+	got.Stored, got.Lines = false, nil
+	json.Unmarshal(w.call(t, "tok-logreader", http.MethodGet, "/v1/builds/"+b.Metadata.ID+"/logs", nil, http.StatusOK), &got)
+	if got.Stored || len(got.Lines) != 0 {
+		t.Errorf("without the package: %+v", got)
+	}
+}
+
 // TestSpec023Criterion8_Authorization: every new route has a rule; a
 // Reader sees metrics but not logs; a Log Reader scoped to one Project
 // can't read another's logs; and an Application's search asks the

@@ -43,6 +43,8 @@ export function AvailabilityGate({
       ? `The ${packageName} package is ready, but this console doesn't show ${what} yet.`
       : state === "installing"
         ? `The ${packageName} package is installing. This section works once it's ready.`
+        : state === "removing"
+          ? `The ${packageName} package is being removed.`
         : state === "notReady"
           ? `The ${packageName} package is installed but not ready${readiness?.message ? `: ${readiness.message}` : "."}`
           : state === "notInstalled"

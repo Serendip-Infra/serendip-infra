@@ -22,7 +22,7 @@ export function healthKind(health: string): StatusKind {
 }
 
 /** Whether an optional capability (a package) can be used, and how to say it. */
-export type Availability = "ready" | "installing" | "notReady" | "notInstalled" | "unavailable";
+export type Availability = "ready" | "installing" | "removing" | "notReady" | "notInstalled" | "unavailable";
 
 /**
  * An optional capability's state from GET /v1/readiness (spec 020
@@ -34,6 +34,8 @@ export function availability(r: CapabilityReadiness | undefined): Availability {
   switch (r.reason) {
     case "Installing":
       return "installing";
+    case "Removing":
+      return "removing";
     case "NotInstalled":
       return "notInstalled";
     case "Unavailable":
@@ -46,6 +48,7 @@ export function availability(r: CapabilityReadiness | undefined): Availability {
 export const availabilityWords: Record<Availability, { kind: StatusKind; word: string }> = {
   ready: { kind: "ok", word: "Ready" },
   installing: { kind: "progress", word: "Installing" },
+  removing: { kind: "progress", word: "Removing" },
   notReady: { kind: "error", word: "Not ready" },
   notInstalled: { kind: "unknown", word: "Not installed" },
   unavailable: { kind: "unknown", word: "Not available yet" },

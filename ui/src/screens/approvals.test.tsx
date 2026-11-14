@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { formatRequest } from "../components/ApiEquivalent";
+import type { Approval } from "../api/types";
+import { decidedAt } from "./Approvals";
 
 // Spec 019 T010: deleting through approvals, the Secrets page and the
 // Approvals page.
@@ -209,5 +211,17 @@ describe("approvals", () => {
     const approve = await screen.findByRole("button", { name: "Approve" });
     await waitFor(() => expect(screen.getAllByText("You asked for this, so someone else decides it.").length).toBeGreaterThan(0));
     expect((approve as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("decidedAt", () => {
+  const base = { status: { requestedAt: "2026-11-14T14:59:14Z" } } as unknown as Approval;
+  const with_ = (at: string | undefined) => ({ ...base, status: { ...base.status, decision: { byPolicy: true, at } } }) as unknown as Approval;
+  it("is the decision's time when it has one", () => {
+    expect(decidedAt(with_("2026-11-14T15:00:00Z"))).toBe("2026-11-14T15:00:00Z");
+  });
+  it("is the request's time for a policy decision stored without one (year 1)", () => {
+    expect(decidedAt(with_("0001-01-01T00:00:00Z"))).toBe("2026-11-14T14:59:14Z");
+    expect(decidedAt(with_(undefined))).toBe("2026-11-14T14:59:14Z");
   });
 });

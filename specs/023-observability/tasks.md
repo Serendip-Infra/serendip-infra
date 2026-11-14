@@ -525,7 +525,7 @@ delete each before the next. Run the keep-awake beside long runs.
 >   is stopped however a run ends. One is recorded rather than
 >   fixed: the daily growth is a 2-hour slope (RP-063).
 
-## T013 — Real-cluster verification on serendip-t018
+## T013 — Real-cluster verification on serendip-t018 ✅ 2026-11-14
 
 - **Do:** `verification.md`, covering criteria 1, 3–11 and 13, through
   the console, CLI and MCP:
@@ -539,6 +539,22 @@ delete each before the next. Run the keep-awake beside long runs.
 - **Files:** `specs/023-observability/verification.md`, and fixes found.
 - **Verify:** every criterion has evidence in `verification.md`; `go
   test ./...` and the UI tests pass after fixes.
+
+> **Done as:** `verification.md`, with evidence for criteria 1, 3–11 and
+> 13 through the console, CLI and MCP on `serendip-t018`. It found five
+> problems, all fixed:
+> - **F1:** the console's log times were UTC beside local-time charts.
+> - **F2:** a finished build whose pods were gone, but whose run
+>   remained, answered no lines instead of its stored lines.
+> - **F3:** Argo's executor exit-stats lines were in stored build logs.
+> - **F4:** policy-decided Approvals stored their decision time as year 1.
+> - **F5:** readiness stayed Ready while the package was being removed
+>   (now `Removing`).
+> One remaining path is recorded, not closed: Fluent Bit's `:2020`
+> serves counters to any pod (RP-064).
+> - **Verify:** `go test ./...`, `go vet`, gofmt and the import check pass;
+>   UI typecheck, 154 tests and build pass. `contract-guardian` passed;
+>   its one finding (the 503's wording while removing) is fixed.
 
 ## T014 — Reviews and fixes
 

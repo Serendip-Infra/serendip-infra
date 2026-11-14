@@ -273,8 +273,8 @@ export function ApprovalDetail({ id }: { id: string }) {
                 ["Decided by", d.byPolicy ? "Policy: the requester's roles allow it" : who(d.by)],
                 [
                   "When",
-                  <time dateTime={d.at} title={d.at}>
-                    {formatAge(d.at, now)}
+                  <time dateTime={decidedAt(a)} title={decidedAt(a)}>
+                    {formatAge(decidedAt(a), now)}
                   </time>,
                 ],
                 ...(d.comment ? [["Comment", d.comment] as [string, React.ReactNode]] : []),
@@ -351,4 +351,15 @@ function Decide({ approval, verb, onDone, onCancel }: { approval: Approval; verb
       <ApiEquivalent request={body ? { method: "POST", path, body } : { method: "POST", path }} />
     </div>
   );
+}
+
+/**
+ * decidedAt is when a's decision was made. A policy's decision is made
+ * with the request, and approvals recorded before spec 023 T013 stored
+ * it with no time (year 1), so the request's time stands in.
+ */
+export function decidedAt(a: Approval): string {
+  const at = a.status.decision?.at;
+  if (!at || new Date(at).getUTCFullYear() < 2000) return a.status.requestedAt;
+  return at;
 }
