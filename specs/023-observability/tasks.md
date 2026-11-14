@@ -521,7 +521,8 @@ delete each before the next. Run the keep-awake beside long runs.
 >   findings are fixed: the load's stop has a time limit, an interrupted
 >   phase marks the summary incomplete, the load flags and script are
 >   checked before the install, the kubeconfig goes in `KUBECONFIG`, and
->   a shrinking store counts as no growth. One is recorded rather than
+>   a shrinking store counts as no growth, and a test checks the load
+>   is stopped however a run ends. One is recorded rather than
 >   fixed: the daily growth is a 2-hour slope (RP-063).
 
 ## T013 — Real-cluster verification on serendip-t018

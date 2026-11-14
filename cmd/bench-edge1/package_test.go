@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPackageCost(t *testing.T) {
@@ -164,5 +167,67 @@ func TestRenderSummaryIncludesThePackage(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary is missing %q", want)
 		}
+	}
+}
+
+// The load is stopped however the run ends: start failing, either phase
+// failing, a cancelled run, and a clean run. Stop gets a live context
+// even when the run's was cancelled.
+func TestRunLoadAlwaysStopsTheLoad(t *testing.T) {
+	boom := errors.New("boom")
+	po := packageOptions{loadSamples: 2, diskSamples: 3, diskInterval: time.Millisecond, idleInterval: time.Millisecond}
+	for _, tc := range []struct {
+		name      string
+		startErr  error
+		failPhase int // 1: the load phase, 2: the disk phase
+		cancel    bool
+		wantErr   bool
+		wantVerbs []string
+	}{
+		{name: "clean", wantVerbs: []string{"start", "latency", "stop"}},
+		{name: "start fails", startErr: boom, wantErr: true, wantVerbs: []string{"start", "stop"}},
+		{name: "load phase fails", failPhase: 1, wantErr: true, wantVerbs: []string{"start", "stop"}},
+		{name: "disk phase fails", failPhase: 2, wantErr: true, wantVerbs: []string{"start", "stop"}},
+		{name: "cancelled", cancel: true, wantErr: true, wantVerbs: []string{"start", "stop"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var verbs []string
+			var stopCtxErr error
+			load := func(ctx context.Context, verb string) (string, error) {
+				verbs = append(verbs, verb)
+				switch verb {
+				case "start":
+					return "", tc.startErr
+				case "stop":
+					stopCtxErr = ctx.Err()
+				}
+				return "", nil
+			}
+			phases := 0
+			sample := func(ctx context.Context, n int, _ time.Duration) ([]Sample, []procSample, error) {
+				phases++
+				if tc.cancel {
+					cancel()
+					return nil, nil, ctx.Err()
+				}
+				if phases == tc.failPhase {
+					return nil, nil, boom
+				}
+				return make([]Sample, n), nil, nil
+			}
+			var p PackageRun
+			err := runLoad(ctx, po, load, sample, "stop by hand", &p)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("runLoad = %v, want error %v", err, tc.wantErr)
+			}
+			if !slices.Equal(verbs, tc.wantVerbs) {
+				t.Errorf("verbs = %v, want %v", verbs, tc.wantVerbs)
+			}
+			if stopCtxErr != nil {
+				t.Errorf("stop ran on a dead context: %v", stopCtxErr)
+			}
+		})
 	}
 }

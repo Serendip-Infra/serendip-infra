@@ -35,8 +35,8 @@ then T014 (reviews) and T015 (docs and close).**
   - **Harness:** observability load and disk phases, new
     `--package-load-*`/`--package-disk-*` flags, `--package` refuses an
     unknown provider, an interrupted phase marks the summary incomplete.
-    go-reviewer's findings fixed; not done: a test injecting the load
-    runner to lock in stop-in-defer (medium effort).
+    go-reviewer's findings fixed, including a test that the load is
+    stopped however a run ends (`TestRunLoadAlwaysStopsTheLoad`).
 - **T011 (the console):** `ui/src/screens/Observability.tsx` plus a
   shared `ui/src/components/MetricChart.tsx`.
   - **Component screen:** the Observability tab shows CPU and memory

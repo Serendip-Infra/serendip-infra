@@ -288,6 +288,12 @@ const (
 	observabilityCapability = "observability"
 )
 
+// loadFunc runs one of the load script's verbs (start, stop, latency).
+type loadFunc func(ctx context.Context, verb string) (string, error)
+
+// sampleFunc samples the cluster and serendipd n times, interval apart.
+type sampleFunc func(ctx context.Context, n int, interval time.Duration) ([]Sample, []procSample, error)
+
 // measureLoad starts decision 9's load, samples a load phase and then a
 // longer disk phase under the same load, and stops the load.
 func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d *daemon, p *PackageRun) error {
@@ -303,15 +309,27 @@ func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d
 		}
 		return string(out), nil
 	}
+	sample := func(ctx context.Context, n int, interval time.Duration) ([]Sample, []procSample, error) {
+		return samplePhase(ctx, cl, nodeName, d, n, interval)
+	}
+	stopHint := fmt.Sprintf("KUBECONFIG=%s bash %s stop", o.kubeconfigAbs, po.loadScript)
+	return runLoad(ctx, po, load, sample, stopHint, p)
+}
+
+// runLoad is measureLoad's sequence, with the script and the sampler
+// passed in so a test can check the load is always stopped. stopHint is
+// the command that stops the load by hand, logged if stop fails.
+func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampleFunc, stopHint string, p *PackageRun) error {
 	log.Printf("package: starting the load (%s)", po.loadScript)
-	// Stopped whatever happens, on a context a cancelled run doesn't end,
-	// so the loggers don't keep writing, but with a limit, so a wedged
-	// cluster can't hold the harness open.
+	// Stopped whatever happens, even if start failed partway, on a
+	// context a cancelled run doesn't end, so the loggers don't keep
+	// writing, but with a limit, so a wedged cluster can't hold the
+	// harness open.
 	defer func() {
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 		defer cancel()
 		if _, err := load(sctx, "stop"); err != nil {
-			log.Printf("package: %v; the load may still be running: KUBECONFIG=%s bash %s stop", err, o.kubeconfigAbs, po.loadScript)
+			log.Printf("package: %v; the load may still be running: %s", err, stopHint)
 		}
 	}()
 	if _, err := load(ctx, "start"); err != nil {
@@ -320,7 +338,7 @@ func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d
 	phase := func(name string, n int, interval time.Duration) (*LoadRun, error) {
 		log.Printf("package: %s, %d samples every %s", name, n, interval)
 		start := time.Now()
-		samples, procs, err := samplePhase(ctx, cl, nodeName, d, n, interval)
+		samples, procs, err := sample(ctx, n, interval)
 		return &LoadRun{
 			Seconds: time.Since(start).Seconds(), IntervalSeconds: interval.Seconds(),
 			Samples: samples, Cluster: aggregate(samples), Serendipd: processStatsOf(procs),
