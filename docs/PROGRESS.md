@@ -12,9 +12,91 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-10-23
+Last updated: 2026-11-09
 
 ## Current phase
+
+**Spec 022 (builds, the workflow-plane package): COMPLETE** (T001–T016,
+2026-10-24 → 2026-11-09). **Next: choose the next spec** (below).
+- **Records:**
+  - `specs/022-builds/`: spec, plan (decisions, T001 spike findings, two
+    T013 amendments), tasks (a "Done as" note per task), and
+    `verification.md` for `serendip-t018`;
+  - **ADR 0020** (`docs/decisions/0020-builds-from-source.md`);
+  - `docs/architecture/application-platform.md` ("Builds (spec 022)"),
+    `resource-model.md` (Build, Component `source`), `provider-model.md`
+    ("Measured requirements, required to install"), `authorization.md`
+    (Builds; the credential check);
+  - the risk register (RP-033 closed, RP-034's cost part closed, RP-037
+    mitigated, RP-038–RP-052 new; the index gained RP-030–RP-037's rows),
+    `build-vs-adopt.md`, `docs/cli-and-mcp.md` ("Packages and builds");
+  - footprint: `profiles/edge-1/bench/results/2026-11-06-spec022-simulated-t470/`.
+- **What it built:**
+  - **The optional `build` package** (`openchoreo-workflow-plane`,
+    `providers/build/openchoreo`): the workflow-plane chart 1.3.1 with
+    minimal Argo CRDs, `ClusterWorkflowPlane/default`, a `registry:2`
+    (`hostNetwork`, pulled as `localhost:5000`), and Serendip's own
+    `serendip-dockerfile` workflow (podman). A fingerprint in
+    `status.applied` makes an unchanged resync ~5 GETs.
+  - **Measured cost, required to install** (`core/provider.Requirements`):
+    idle 453 MiB / 19 mcores, peak 1129 MiB / 1787 mcores at the node
+    level. An unmeasured package can't be installed.
+  - **Installs and removals run as background package jobs**
+    (`core/reconcile/packagejob.go`, RP-045).
+  - **Store uniqueness** (`unique_key`, migration 0009), closing RP-033.
+  - **The `Build` kind,** owned by its Component; a Component has one of
+    `image` or `source`, runs its newest successful build, builds first
+    on its own, and can auto-build by polling the head over smart HTTP
+    (`providers/internal/gitremote`) every 5 minutes.
+  - **API, CLI, MCP and console:** `/v1/components/{id}/builds`,
+    `/v1/builds/{id}[/cancel|/events|/logs]`, `builds_*` tools, a Builds
+    tab, the source form, and cost on the Packages page.
+  - **Removal** through an Approval leaves the cluster clean except the
+    empty namespaces and the Argo CRDs (RP-039), checked live.
+- **Deferred to a builds-hardening follow-up:** digest deploys and
+  registry auth (RP-041), a build NetworkPolicy (RP-049), step limits
+  (RP-052), and `hostUsers: false` / no service-account token (RP-038).
+  Also not done (plan.md): buildpacks, webhooks, external registries,
+  registry GC, multi-node pulls, pruning old Builds.
+- **Next spec candidates** (the user decides; propose, don't start):
+  - **Spec 023, the observability package** (the other optional package;
+    it must declare measured `Requirements` before it can be installed);
+  - **builds hardening** (the list above);
+  - the older candidates in "Next up" below.
+- **Left running / on disk:**
+  - **`serendip-t018`** is up. After T014's re-run it holds no build
+    workloads, only the empty build namespaces and the Argo CRDs.
+  - **A scratch `serendipd` from T014's re-run was still on `:8088`**
+    at T016 (PID 23744; stopping it needed the user's permission). Stop
+    it with `taskkill /PID 23744 /F` if it's still there.
+  - **OpenBao on `serendip-t018` was re-initialised;** its credentials
+    are in `C:\Users\malit\.serendip-t018\openbao-init.json` (pass
+    `SERENDIP_OPENBAO_CREDENTIALS_PATH`).
+  - **GitHub repositories for T014:**
+    `serendipinfra/serendip-t014-public` and `-private` (the token is in
+    `C:\Users\malit\.serendip-t018\t014-private-token.txt`).
+  - **`bench-t470` is deleted.**
+  - **Network:** port 22 to GitHub is blocked here; pushes go over SSH on
+    443 (the GitHub pacing memory).
+- **Committed** on local `main`, **not pushed:** every spec 022 commit,
+  from `docs(spec): spec 022 plan and T001 spike` to the T016 close-out.
+  By the pacing rule, spec 022 goes up as a branch (`spec-022`) when its
+  turn comes.
+- **GitHub (2026-11-09):** branches `spec-010` … `spec-021` are pushed to
+  the fork. PR #25 (spec 002) is open on `Serendip-Infra/serendip-infra`.
+  The PRs are cross-fork, so they can't stack: open them one or two at a
+  time in order, with `--no-maintainer-edit`, and merge with "Create a
+  merge commit". The spec 003 PR body is written; the user opens the PRs.
+- **Key decisions** (plan.md, ADR 0020): our own workflow, not the
+  samples; `registry:2` through `localhost`; no ESO, a per-run Secret
+  copy; no install without measured `Requirements`; a `Build` kind;
+  polling, not webhooks; a resync fingerprint; a `unique_key` column.
+  **One change from the spec:** turning auto-build on or off is
+  `components/write`. **One decision in T015:** a source Component keeps
+  an earlier source's build running until its current source builds
+  (RP-048).
+
+Previous phase:
 
 **Spec 020 (OpenChoreo's portal features in Serendip's console):
 COMPLETE** (T001–T017, 2026-10-23).

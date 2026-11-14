@@ -24,15 +24,27 @@ func (h *PackageHandler) Register(mux Mux) {
 	mux.HandleFunc("GET /v1/packages", h.List)
 }
 
+// packageView is a package as GET /v1/packages lists it, with its
+// measured cost (requirements, null while it's not measured) and what
+// removing it loses (spec 022 plan decisions 4 and 12).
 type packageView struct {
 	reconcile.Package
+	// Available is whether this build has the package's installer.
 	Available bool `json:"available"`
+	// Installable is whether it can be installed now; NotInstallable says
+	// why not, such as its cost not being measured yet.
+	Installable    bool   `json:"installable"`
+	NotInstallable string `json:"notInstallable,omitempty"`
 }
 
 func (h *PackageHandler) List(w http.ResponseWriter, r *http.Request) {
 	out := []packageView{}
 	for _, p := range h.catalogue {
-		out = append(out, packageView{Package: p, Available: p.Installer != nil})
+		v := packageView{Package: p, Available: p.Installer != nil, Installable: true}
+		if err := p.Installable(); err != nil {
+			v.Installable, v.NotInstallable = false, err.Error()
+		}
+		out = append(out, v)
 	}
 	slices.SortFunc(out, func(a, b packageView) int { return strings.Compare(a.Provider, b.Provider) })
 	writeJSON(w, http.StatusOK, map[string]any{"packages": out})
@@ -51,7 +63,8 @@ func platformWide(m resource.Metadata) error {
 // packageValidator checks a ProviderInstance names a package this server
 // offers, and that its capability has no other instance: one package per
 // optional capability. Two simultaneous installs could both pass the
-// check (RP-033); installing is an Owner's rare, deliberate act.
+// check; the store's unique key then refuses the second with 409
+// (RP-033). The check stays for its clearer message.
 func packageValidator(c reconcile.Catalogue, s store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus]) func(ctx context.Context, id string, spec resource.ProviderInstanceSpec) error {
 	return func(ctx context.Context, id string, spec resource.ProviderInstanceSpec) error {
 		if err := c.Validate(spec); err != nil {
@@ -74,7 +87,7 @@ func packageValidator(c reconcile.Catalogue, s store.Store[resource.ProviderInst
 		}
 		for _, other := range all {
 			if other.Metadata.ID != id && other.Spec.CapabilityID == spec.CapabilityID {
-				return fmt.Errorf("%w: capabilityId: %s already has a package (ProviderInstance %s); remove it first", resource.ErrValidation, spec.CapabilityID, other.Metadata.ID)
+				return fmt.Errorf("%w: capabilityId: %s already has a package (ProviderInstance %s); remove it first", store.ErrDuplicate, spec.CapabilityID, other.Metadata.ID)
 			}
 		}
 		return nil

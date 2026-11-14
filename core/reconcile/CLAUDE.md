@@ -8,6 +8,11 @@
   resources, not thousands). Do not add worker pools/concurrent
   reconciliation speculatively — that's a later-scale concern (Phase 4
   small-3+), revisit only once it's a measured problem.
+  - The one measured exception: `packagejob.go` runs a package's
+    install/removal in a background goroutine (at most one per package),
+    because Helm outlives the 10 s reconcile (spec 022 T013, RP-045).
+    Dispatch itself stays sequential; the goroutine only runs the
+    installer.
 - Reuse `core/graph.ResourceRef` (Kind, ID) as the kind-agnostic resource
   identifier — do not invent a second one.
 - No vendor product names in identifiers/comments-as-behavior (constitution
@@ -22,6 +27,10 @@
   (`InterfaceName`/`ActorName` in audit.go) set by the Engine on the
   context passed into `Reconcile` — individual `Reconciler`
   implementations should not set these themselves.
+  - The one deliberate exception: builds Serendip starts itself (a
+    source Component's first build, and auto-build) are created as
+    `system:auto-build` (`AutoBuildActor`), through `audit.WithActor` on
+    that one Create (spec 022 T007).
 - No `core/` package imports `providers/` (constitution rule 2) — this
   package is no exception, even though nothing in `providers/` exists yet
   to import.

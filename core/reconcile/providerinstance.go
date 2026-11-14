@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/graph"
+	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store"
 )
@@ -34,16 +35,20 @@ const (
 )
 
 // PackageState is what an install observed. Message is shown to people,
-// so it's the installer's own wording, never raw error text.
+// so it's the installer's own wording, never raw error text. Applied
+// fingerprints what a full install applied (specs/022-builds plan
+// decision 8); it's kept in the instance's status.applied.
 type PackageState struct {
 	Ready   bool
 	Message string
+	Applied string
 }
 
 // PackageInstaller installs and removes one package. Install is
 // idempotent: it brings the package towards installed and reports how
-// far it is. Uninstall removes what instanceID installed, and is
-// idempotent too.
+// far it is. It may skip a full install when inst.Status.Applied matches
+// what it would apply, and its quick checks pass. Uninstall removes what
+// instanceID installed, and is idempotent too.
 type PackageInstaller interface {
 	Install(ctx context.Context, inst resource.ProviderInstance) (PackageState, error)
 	Uninstall(ctx context.Context, instanceID string) error
@@ -57,6 +62,28 @@ type Package struct {
 	Description string `json:"description"`
 	// Installer is nil while the package isn't available in this build.
 	Installer PackageInstaller `json:"-"`
+	// Requirements is the package's measured cost, nil until it's
+	// measured. A package can't be installed without it (plan 022
+	// decision 4): its cost is stated before anyone installs it.
+	Requirements *provider.Requirements `json:"requirements"`
+	// Removal says plainly what removing the package loses, shown before
+	// the request to remove it.
+	Removal string `json:"removal,omitempty"`
+}
+
+// Installable reports why the package can't be installed in this build,
+// or nil if it can.
+func (p Package) Installable() error {
+	switch {
+	case p.Installer == nil:
+		return fmt.Errorf("package %s isn't available in this build yet", p.Provider)
+	case p.Requirements == nil:
+		return fmt.Errorf("package %s can't be installed until its resource cost is measured", p.Provider)
+	}
+	if err := p.Requirements.Validate(); err != nil {
+		return fmt.Errorf("package %s can't be installed: %v", p.Provider, err)
+	}
+	return nil
 }
 
 // Catalogue is the packages this build knows, by provider name.
@@ -77,7 +104,9 @@ func (c Catalogue) sorted() []Package {
 }
 
 // Validate checks a ProviderInstance names a package of this catalogue
-// for its capability. Packages are platform-wide, so no Environment.
+// for its capability, and that the package is installable: it has an
+// installer and its measured Requirements. Packages are platform-wide,
+// so no Environment.
 func (c Catalogue) Validate(spec resource.ProviderInstanceSpec) error {
 	p, ok := c[spec.ProviderID]
 	switch {
@@ -87,8 +116,9 @@ func (c Catalogue) Validate(spec resource.ProviderInstanceSpec) error {
 		return fmt.Errorf("%w: capabilityId: package %s provides %s", resource.ErrValidation, p.Provider, p.Capability)
 	case spec.EnvironmentID != "":
 		return fmt.Errorf("%w: environmentId: packages are installed platform-wide", resource.ErrValidation)
-	case p.Installer == nil:
-		return fmt.Errorf("%w: providerId: package %s isn't available in this build yet", resource.ErrValidation, p.Provider)
+	}
+	if err := p.Installable(); err != nil {
+		return fmt.Errorf("%w: providerId: %v", resource.ErrValidation, err)
 	}
 	return nil
 }
@@ -118,11 +148,17 @@ type ProviderInstanceReconciler struct {
 	store     store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus]
 	catalogue Catalogue
 	report    ReadinessFunc
+	// jobs runs installs and removals in the background (packagejob.go),
+	// shared with UninstallCleanup.
+	jobs *packageJobs
 }
 
 func NewProviderInstanceReconciler(s store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus], c Catalogue, report ReadinessFunc) *ProviderInstanceReconciler {
-	return &ProviderInstanceReconciler{store: s, catalogue: c, report: report}
+	return &ProviderInstanceReconciler{store: s, catalogue: c, report: report, jobs: newPackageJobs()}
 }
+
+// installingMessage is shown while an install runs in the background.
+const installingMessage = "installing; this can take several minutes"
 
 // ReportStart reports each optional capability at start-up, before any
 // instance is reconciled: "starting" where an instance exists (so an
@@ -144,6 +180,8 @@ func (r *ProviderInstanceReconciler) ReportStart(ctx context.Context) error {
 			r.report(p.Capability, false, ReasonInstalling, "starting")
 		case p.Installer == nil:
 			r.report(p.Capability, false, ReasonUnavailable, "not available in this build yet")
+		case p.Installable() != nil:
+			r.report(p.Capability, false, ReasonUnavailable, "not installable until its resource cost is measured")
 		default:
 			r.report(p.Capability, false, ReasonNotInstalled, "install the "+p.Provider+" package to use it")
 		}
@@ -206,7 +244,25 @@ func (r *ProviderInstanceReconciler) Reconcile(ctx context.Context, ref graph.Re
 			fmt.Sprintf("ProviderInstance %s already provides %s; remove this one", first.Metadata.ID, capability))
 	}
 	p := r.catalogue[inst.Spec.ProviderID]
-	state, err := p.Installer.Install(ctx, inst)
+	job, done, busy := r.jobs.run(ctx, p.Provider, opInstall, inst.Metadata.ID, inst.Spec,
+		func(ctx context.Context) (PackageState, error) { return p.Installer.Install(ctx, inst) })
+	if !done {
+		// Still running, or a removal is. An installed package keeps
+		// reading Ready while a slow resync check finishes.
+		if !busy && readyReason(inst) == ReasonInstalled {
+			return RequeueAfter{Delay: installPoll}
+		}
+		msg := installingMessage
+		if busy {
+			msg = "waiting for the package's removal to finish"
+		}
+		r.report(capability, false, ReasonInstalling, msg)
+		if err := r.setReady(ctx, inst, resource.ConditionFalse, ReasonInstalling, msg); err != nil {
+			return err
+		}
+		return RequeueAfter{Delay: installPoll}
+	}
+	state, err := job.state, job.err
 	if errors.Is(err, ErrProviderNotReady) {
 		r.report(capability, false, ReasonInstalling, "waiting for the platform")
 		if err := r.setReady(ctx, inst, resource.ConditionFalse, ReasonProviderNotReady, "waiting for the platform"); err != nil {
@@ -222,26 +278,51 @@ func (r *ProviderInstanceReconciler) Reconcile(ctx context.Context, ref graph.Re
 		}
 		return err // retried with back-off
 	}
+	// What a full install applied is kept even while the package
+	// settles, so the next poll checks it rather than applying it again.
+	applied := inst.Status.Applied
+	if state.Applied != "" {
+		applied = state.Applied
+	}
 	if !state.Ready {
 		r.report(capability, false, ReasonInstalling, state.Message)
-		if err := r.setReady(ctx, inst, resource.ConditionFalse, ReasonInstalling, state.Message); err != nil {
+		if err := r.setStatus(ctx, inst, applied, resource.ConditionFalse, ReasonInstalling, state.Message); err != nil {
 			return err
 		}
 		return RequeueAfter{Delay: installPoll}
 	}
 	r.report(capability, true, ReasonInstalled, state.Message)
-	return r.setReady(ctx, inst, resource.ConditionTrue, ReasonInstalled, state.Message)
+	return r.setStatus(ctx, inst, applied, resource.ConditionTrue, ReasonInstalled, state.Message)
 }
 
-// setReady writes the Ready condition only when it changes. An install
-// can take a while; if the instance was edited meanwhile, the write
-// conflicts, and the edit's own reconcile writes the condition instead.
-func (r *ProviderInstanceReconciler) setReady(ctx context.Context, inst resource.ProviderInstance, status resource.ConditionStatus, reason, message string) error {
+// readyReason is the reason of inst's Ready condition, or "".
+func readyReason(inst resource.ProviderInstance) string {
 	for _, c := range inst.Status.Conditions {
-		if c.Type == "Ready" && c.Status == status && c.Reason == reason && c.Message == message {
-			return nil
+		if c.Type == "Ready" {
+			return c.Reason
 		}
 	}
+	return ""
+}
+
+// setReady writes the Ready condition, keeping what was applied.
+func (r *ProviderInstanceReconciler) setReady(ctx context.Context, inst resource.ProviderInstance, status resource.ConditionStatus, reason, message string) error {
+	return r.setStatus(ctx, inst, inst.Status.Applied, status, reason, message)
+}
+
+// setStatus writes the Ready condition and what the last full install
+// applied, only when either changes. An install can take a while; if the
+// instance was edited meanwhile, the write conflicts, and the edit's own
+// reconcile writes the condition instead.
+func (r *ProviderInstanceReconciler) setStatus(ctx context.Context, inst resource.ProviderInstance, applied string, status resource.ConditionStatus, reason, message string) error {
+	if inst.Status.Applied == applied {
+		for _, c := range inst.Status.Conditions {
+			if c.Type == "Ready" && c.Status == status && c.Reason == reason && c.Message == message {
+				return nil
+			}
+		}
+	}
+	inst.Status.Applied = applied
 	ready := resource.Condition{Type: "Ready", Status: status, Reason: reason, Message: message, LastTransitionTime: time.Now()}
 	inst.Status.Conditions = upsertCondition(inst.Status.Conditions, keepTransitionTime(inst.Status.Conditions, ready))
 	_, err := r.store.Update(ctx, inst)
@@ -252,34 +333,47 @@ func (r *ProviderInstanceReconciler) setReady(ctx context.Context, inst resource
 }
 
 // UninstallCleanup removes a removed ProviderInstance's package once its
-// Approval is executed, and reports the capability not installed, unless
-// another instance now provides it (re-created straight away, or a
-// duplicate), whose own reconcile reports it. A damaged LastSpec can't
-// strand it: Uninstall is per instance and idempotent, so every package
-// is asked to remove what this instance might have installed.
-func UninstallCleanup(s store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus], c Catalogue, report ReadinessFunc) CleanupFunc {
+// Approval is executed, and reports the capability not installed. When
+// another instance still provides the capability (re-created straight
+// away, or this one was a duplicate), the package stays: a package is
+// platform-wide, so uninstalling it would take it from the instance that
+// remains, whose own reconcile reports it. A damaged LastSpec can't
+// strand it: Uninstall is idempotent, so every package nothing else
+// provides is asked to remove what this instance might have installed.
+// The removal runs in the background like an install, and the clean-up
+// answers ErrPackageBusy, to be retried, until it has finished.
+func (r *ProviderInstanceReconciler) UninstallCleanup() CleanupFunc {
+	s, c, report := r.store, r.catalogue, r.report
+	uninstall := func(ctx context.Context, p Package, id string) error {
+		other, err := oldestFor(ctx, s, p.Capability, id)
+		if err != nil {
+			return err
+		}
+		if other.Metadata.ID != "" {
+			return nil
+		}
+		job, done, busy := r.jobs.run(ctx, p.Provider, opUninstall, id, resource.ProviderInstanceSpec{},
+			func(ctx context.Context) (PackageState, error) { return PackageState{}, p.Installer.Uninstall(ctx, id) })
+		switch {
+		case busy:
+			return fmt.Errorf("%w: removing %s waits for its install to finish", ErrPackageBusy, p.Provider)
+		case !done:
+			return fmt.Errorf("%w: removing %s", ErrPackageBusy, p.Provider)
+		case job.err != nil:
+			return job.err
+		}
+		report(p.Capability, false, ReasonNotInstalled, "install the "+p.Provider+" package to use it")
+		return nil
+	}
 	return func(ctx context.Context, ref resource.ApprovalRef) error {
 		var spec resource.ProviderInstanceSpec
 		if len(ref.LastSpec) == 0 || json.Unmarshal(ref.LastSpec, &spec) != nil {
+			// Which capability it provided is unknown.
 			for _, p := range c.sorted() {
 				if p.Installer != nil {
-					if err := p.Installer.Uninstall(ctx, ref.ID); err != nil {
+					if err := uninstall(ctx, p, ref.ID); err != nil {
 						return err
 					}
-				}
-			}
-			// Which capability it provided is unknown, so each one nothing
-			// provides any more is reported not installed.
-			for _, p := range c.sorted() {
-				if p.Installer == nil {
-					continue
-				}
-				other, err := oldestFor(ctx, s, p.Capability, ref.ID)
-				if err != nil {
-					return err
-				}
-				if other.Metadata.ID == "" {
-					report(p.Capability, false, ReasonNotInstalled, "install the "+p.Provider+" package to use it")
 				}
 			}
 			return nil
@@ -288,16 +382,6 @@ func UninstallCleanup(s store.Store[resource.ProviderInstanceSpec, resource.Prov
 		if !ok || p.Installer == nil {
 			return nil // nothing this build installed
 		}
-		if err := p.Installer.Uninstall(ctx, ref.ID); err != nil {
-			return err
-		}
-		other, err := oldestFor(ctx, s, p.Capability, ref.ID)
-		if err != nil {
-			return err
-		}
-		if other.Metadata.ID == "" {
-			report(p.Capability, false, ReasonNotInstalled, "install the "+p.Provider+" package to use it")
-		}
-		return nil
+		return uninstall(ctx, p, ref.ID)
 	}
 }

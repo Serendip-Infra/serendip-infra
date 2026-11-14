@@ -13,3 +13,14 @@ func SetRequeueBase(e *Engine, d time.Duration) {
 func SetRequeueStep(e *Engine, d time.Duration) {
 	e.requeueStep = d
 }
+
+// SetBuildClock sets the build reconciler's clock.
+func SetBuildClock(r *BuildReconciler, now func() time.Time) { r.now = now }
+
+// SetComponentClock sets the Component reconciler's clock, which paces
+// auto-build's polls.
+func SetComponentClock(r *ComponentReconciler, now func() time.Time) { r.now = now }
+
+// SetPackageJobWait sets how long a reconcile waits for a package's
+// install or removal before coming back later.
+func SetPackageJobWait(r *ProviderInstanceReconciler, d time.Duration) { r.jobs.wait = d }

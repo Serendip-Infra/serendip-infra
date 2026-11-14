@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/serendip-infra/serendip-infra/core/graph"
+	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store"
@@ -47,8 +48,57 @@ func newPackages(t *testing.T) (*testPackage, reconcile.Catalogue) {
 	t.Helper()
 	pkg := &testPackage{}
 	return pkg, reconcile.Catalogue{
-		"test-builder": {Provider: "test-builder", Capability: "build", Installer: pkg},
+		"test-builder": {Provider: "test-builder", Capability: "build", Installer: pkg, Requirements: measured},
 		"later":        {Provider: "later", Capability: "observability"},
+	}
+}
+
+// measured is a stated cost, which a package needs to be installable.
+var measured = &provider.Requirements{IdleMemoryMiB: 50, PeakMemoryMiB: 300, PeakCPUMillicores: 1500,
+	MeasuredOn: "test", Results: "testdata"}
+
+// A package is installable only with an installer and its measured cost
+// (plan 022 decision 4): Validate refuses the rest, and ReportStart says
+// why.
+func TestCatalogueValidate_RequiresMeasuredCost(t *testing.T) {
+	pkg := &testPackage{}
+	spec := func(p string) resource.ProviderInstanceSpec {
+		return resource.ProviderInstanceSpec{CapabilityID: "build", ProviderID: p}
+	}
+	cat := reconcile.Catalogue{
+		"measured":   {Provider: "measured", Capability: "build", Installer: pkg, Requirements: measured},
+		"unmeasured": {Provider: "unmeasured", Capability: "build", Installer: pkg},
+		"half":       {Provider: "half", Capability: "build", Installer: pkg, Requirements: &provider.Requirements{PeakMemoryMiB: 100}},
+		"absent":     {Provider: "absent", Capability: "build", Requirements: measured},
+	}
+	for _, tc := range []struct {
+		provider string
+		valid    bool
+		says     string
+	}{
+		{"measured", true, ""},
+		{"unmeasured", false, "until its resource cost is measured"},
+		{"half", false, "where they were measured"},
+		{"absent", false, "isn't available in this build"},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			err := cat.Validate(spec(tc.provider))
+			if (err == nil) != tc.valid || (err != nil && (!errors.Is(err, resource.ErrValidation) || !strings.Contains(err.Error(), tc.says))) {
+				t.Errorf("Validate() = %v, want valid %v saying %q", err, tc.valid, tc.says)
+			}
+		})
+	}
+
+	ctx := context.Background()
+	s := newAppStores(t)
+	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](s.db, resource.KindProviderInstance)
+	log := readinessLog{}
+	only := reconcile.Catalogue{"unmeasured": cat["unmeasured"]}
+	if err := reconcile.NewProviderInstanceReconciler(insts, only, log.report).ReportStart(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if log["build"] != reconcile.ReasonUnavailable {
+		t.Errorf("an unmeasured package at start = %q, want %s", log["build"], reconcile.ReasonUnavailable)
 	}
 }
 
@@ -128,8 +178,9 @@ func TestProviderInstanceReconciler_InstallsToReady(t *testing.T) {
 		t.Errorf("duplicate: %+v, installs %d, readiness %v", c, pkg.installs, log)
 	}
 
-	// Its removal leaves the capability as the first instance has it.
-	clean := reconcile.UninstallCleanup(insts, catalogue, log.report)
+	// Its removal leaves the capability as the first instance has it, and
+	// doesn't uninstall the package the first instance still provides.
+	clean := reconcile.NewProviderInstanceReconciler(insts, catalogue, log.report).UninstallCleanup()
 	spec, _ := json.Marshal(dup.Spec)
 	approved := store.WithApproval(ctx, store.ApprovalIntent{Approval: resource.Approval{
 		Spec:   resource.ApprovalSpec{Action: resource.ApprovalAction{Verb: resource.ApprovalVerbDelete, Target: resource.Scope{Kind: resource.KindProviderInstance, ID: dup.Metadata.ID}}},
@@ -138,8 +189,12 @@ func TestProviderInstanceReconciler_InstallsToReady(t *testing.T) {
 	if err := insts.Delete(approved, dup.Metadata.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := clean(ctx, resource.ApprovalRef{ID: dup.Metadata.ID, LastSpec: spec}); err != nil || log["build"] != "ready "+reconcile.ReasonInstalled {
-		t.Errorf("removing the duplicate: %v, readiness %v", err, log)
+	if err := clean(ctx, resource.ApprovalRef{ID: dup.Metadata.ID, LastSpec: spec}); err != nil || log["build"] != "ready "+reconcile.ReasonInstalled || len(pkg.uninstalled) != 0 {
+		t.Errorf("removing the duplicate: %v, readiness %v, uninstalled %v", err, log, pkg.uninstalled)
+	}
+	// So does a damaged last spec.
+	if err := clean(ctx, resource.ApprovalRef{ID: dup.Metadata.ID, LastSpec: []byte("{oops")}); err != nil || len(pkg.uninstalled) != 0 {
+		t.Errorf("damaged last spec of a duplicate: %v, uninstalled %v", err, pkg.uninstalled)
 	}
 }
 
@@ -210,7 +265,7 @@ func TestUninstallCleanup(t *testing.T) {
 	log := readinessLog{"build": "ready Ready"}
 	s := newAppStores(t)
 	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](s.db, resource.KindProviderInstance)
-	clean := reconcile.UninstallCleanup(insts, catalogue, log.report)
+	clean := reconcile.NewProviderInstanceReconciler(insts, catalogue, log.report).UninstallCleanup()
 	spec, _ := json.Marshal(resource.ProviderInstanceSpec{CapabilityID: "build", ProviderID: "test-builder"})
 	if err := clean(context.Background(), resource.ApprovalRef{ID: "pi-1", LastSpec: spec}); err != nil {
 		t.Fatal(err)
@@ -235,5 +290,67 @@ func TestUninstallCleanup(t *testing.T) {
 		if log["build"] != reconcile.ReasonNotInstalled {
 			t.Errorf("last spec %q: readiness %v", last, log)
 		}
+	}
+}
+
+// fingerprintPackage installs like the real ones (plan 022 decision 8): a
+// full install when the instance's status.applied differs from what it
+// would apply, otherwise only quick checks.
+type fingerprintPackage struct {
+	desired      string
+	full, checks int
+}
+
+func (p *fingerprintPackage) Install(_ context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
+	if inst.Status.Applied == p.desired {
+		p.checks++
+	} else {
+		p.full++
+	}
+	return reconcile.PackageState{Ready: true, Message: "installed", Applied: p.desired}, nil
+}
+
+func (p *fingerprintPackage) Uninstall(context.Context, string) error { return nil }
+
+// A cheap resync: with the fingerprint unchanged, resyncs of a Ready
+// package make no full install and no store write; a changed one makes
+// exactly one full install, recorded.
+func TestProviderInstanceReconciler_CheapResync(t *testing.T) {
+	ctx := context.Background()
+	s := newAppStores(t)
+	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](s.db, resource.KindProviderInstance)
+	pkg := &fingerprintPackage{desired: "chart=1.3.1;values=abc"}
+	cat := reconcile.Catalogue{"test-builder": {Provider: "test-builder", Capability: "build", Installer: pkg, Requirements: measured}}
+	r := reconcile.NewProviderInstanceReconciler(insts, cat, readinessLog{}.report)
+	inst, err := insts.Create(ctx, resource.ProviderInstance{Metadata: resource.Metadata{Name: "builds"},
+		Spec: resource.ProviderInstanceSpec{CapabilityID: "build", ProviderID: "test-builder"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := graph.ResourceRef{Kind: resource.KindProviderInstance, ID: inst.Metadata.ID}
+
+	checkRequeue(t, r.Reconcile(ctx, ref), false)
+	got, _ := insts.Get(ctx, inst.Metadata.ID)
+	if pkg.full != 1 || got.Status.Applied != pkg.desired {
+		t.Fatalf("first install: %d full installs, applied %q", pkg.full, got.Status.Applied)
+	}
+	version := got.Metadata.ResourceVersion
+
+	for range 10 {
+		checkRequeue(t, r.Reconcile(ctx, ref), false)
+	}
+	got, _ = insts.Get(ctx, inst.Metadata.ID)
+	if pkg.full != 1 || pkg.checks != 10 || got.Metadata.ResourceVersion != version {
+		t.Errorf("10 resyncs: %d full installs, %d checks, version %d -> %d; want 1, 10 and no write",
+			pkg.full, pkg.checks, version, got.Metadata.ResourceVersion)
+	}
+
+	pkg.desired = "chart=1.3.2;values=abc"
+	checkRequeue(t, r.Reconcile(ctx, ref), false)
+	checkRequeue(t, r.Reconcile(ctx, ref), false)
+	got, _ = insts.Get(ctx, inst.Metadata.ID)
+	if pkg.full != 2 || got.Status.Applied != pkg.desired || got.Metadata.ResourceVersion != version+1 {
+		t.Errorf("changed fingerprint: %d full installs, applied %q, version %d; want 2, the new one, %d",
+			pkg.full, got.Status.Applied, got.Metadata.ResourceVersion, version+1)
 	}
 }

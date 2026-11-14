@@ -102,8 +102,30 @@ the process list shows it:
   - **The server ends a stream** after 5 minutes without new lines, or
     10 minutes in all; run the command again to keep following.
   - **Limits:** at most 3 streams at once per person, and 20 per server.
-- **MCP tools answer once,** so `deployments_logs` reads recent lines and
-  has no `follow`.
+- **Build logs** work the same way: `serendip builds logs <id>`, with
+  `--tailLines`, `--sinceSeconds` and `--follow`, which ends when the build
+  does. They share the same limits, and need the same permission. A
+  build's logs and events are kept for an hour after it ends; after that
+  they answer 410 ("logs expired"), and the build keeps its outcome.
+- **MCP tools answer once,** so `deployments_logs` and `builds_logs` read
+  recent lines and have no `follow`.
+
+## Packages and builds
+
+- **`serendip packages list`** shows each optional package's measured
+  cost, idle and in use (for builds, while a build runs), with where it
+  was measured. A package without a measurement reads "not measured",
+  never a number, and isn't installable yet. It also says what removing
+  each package loses. `--json`, and the `packages_list` tool, give the
+  raw record: `requirements` is `null` when not measured.
+- **Builds** belong to a source Component:
+  `serendip builds list <component-id>` and
+  `serendip builds trigger <component-id> [--commit <sha>]`. The rest take
+  the build's ID: `get`, `cancel`, `events` and `logs [--follow]`.
+- **Builds need the builds package.** Without it ready, triggering a
+  build or naming a `source` on a Component answers 422, naming the
+  package; a build's logs and events answer 503. Listing and reading
+  builds work either way.
 
 ## AI assistants: `serendip mcp` (local)
 
@@ -202,6 +224,12 @@ tools.
 | `serendip approvals list` | `approvals_list` | `GET /v1/approvals` | Approvals the caller may read, newest first, a page at a time |
 | `serendip approvals reject <id>` | — | `POST /v1/approvals/{id}/reject` | Reject a request |
 | `serendip approvals request` | `approvals_request` | `POST /v1/approvals` | Ask for a delete that needs a person's approval. A person decides it; the requester never can |
+| `serendip builds cancel <id>` | `builds_cancel` | `POST /v1/builds/{id}/cancel` | Stop a build that hasn't finished. What's running is unchanged |
+| `serendip builds events <id>` | `builds_events` | `GET /v1/builds/{id}/events` | Platform events about a build's run, newest first. Kept for an hour after the build ends |
+| `serendip builds get <id>` | `builds_get` | `GET /v1/builds/{id}` | One build: its phase, steps, commit, image and times |
+| `serendip builds list <id>` | `builds_list` | `GET /v1/components/{id}/builds` | A source Component's builds, newest first, each with its phase, the commit built, its image and its times |
+| `serendip builds logs <id>` | `builds_logs` | `GET /v1/builds/{id}/logs` | A build's log lines, oldest first, kept for an hour after it ends. Build output can hold secrets, so logs need their own permission |
+| `serendip builds trigger <id>` | `builds_trigger` | `POST /v1/components/{id}/builds` | Build a source Component's image. It waits its turn behind a running build, and a successful build becomes the Component's new release. Needs the builds package |
 | `serendip capabilities create` | — | `POST /v1/capabilities` | Create a Capability |
 | `serendip capabilities delete <id>` | — | `DELETE /v1/capabilities/{id}` | Delete a Capability. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip capabilities get <id>` | — | `GET /v1/capabilities/{id}` | Get one Capability |
@@ -253,7 +281,7 @@ tools.
 | `serendip organizations get <id>` | — | `GET /v1/organizations/{id}` | Get one Organization |
 | `serendip organizations list` | — | `GET /v1/organizations` | List organizations the caller may read |
 | `serendip organizations update <id>` | — | `PUT /v1/organizations/{id}` | Replace a Organization's spec (send the version read, for a conflict check) |
-| `serendip packages list` | `packages_list` | `GET /v1/packages` | The optional packages this server offers (builds, observability) and whether each is available. Install one by creating a ProviderInstance naming it |
+| `serendip packages list` | `packages_list` | `GET /v1/packages` | The optional packages this server offers (builds, observability): whether each is available and installable, its measured cost idle and in use (requirements; null means not measured), and what removing it loses. Install one by creating a ProviderInstance naming it |
 | `serendip platform` | `platform_get` | `GET /v1/platform` | The application platform, read-only: where workloads run, and the component types and traits installed with what each allows |
 | `serendip projects create` | — | `POST /v1/projects` | Create a Project |
 | `serendip projects delete <id>` | — | `DELETE /v1/projects/{id}` | Delete a Project. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
