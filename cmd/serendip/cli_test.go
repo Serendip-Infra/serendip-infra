@@ -26,6 +26,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/identity"
 	"github.com/serendip-infra/serendip-infra/core/policy"
+	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
@@ -107,6 +108,13 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
+	return newWorldWith(t, nil)
+}
+
+// newWorldWith is newWorld with the server given providers (its
+// capabilities' readiness) and opts, for the routes a capability serves.
+func newWorldWith(t *testing.T, providers *provider.Registry, opts ...api.ServerOption) *world {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "cli.db"))
 	if err != nil {
@@ -142,10 +150,10 @@ func newWorld(t *testing.T) *world {
 	assistant := owner
 	assistant.Via = "serendip-mcp"
 	authn := tokenAuthn{"at-1": owner, "at-2": owner, "tok-ai": assistant}
-	srv := api.NewServer(db, event.NewInProcessBus(), map[string]string{"key-ops": "ops"}, authn, &reconcile.SecretReconciler{}, nil, nil,
-		api.WithResourceMetadata(api.ResourceMetadata{
+	srv := api.NewServer(db, event.NewInProcessBus(), map[string]string{"key-ops": "ops"}, authn, &reconcile.SecretReconciler{}, providers, nil,
+		append([]api.ServerOption{api.WithResourceMetadata(api.ResourceMetadata{
 			Issuer: func() string { return w.issuer.srv.URL }, CLIClient: "serendip", AssistantClient: "serendip-mcp",
-		}))
+		})}, opts...)...)
 	w.api = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		w.requests = append(w.requests, r.Method+" "+r.URL.Path+" "+r.Header.Get("X-Serendip-Client"))

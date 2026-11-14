@@ -400,7 +400,27 @@ delete each before the next. Run the keep-awake beside long runs.
   `providers/observability/`.
 - **Verify:** `go test ./...` passes; `go vet ./...` is clean.
 
-## T010 [P][A] — CLI and MCP
+## T010 [P][A] — CLI and MCP ✅ 2026-11-14
+
+> **Done as:** the commands, the tools, `Operation.MCPQuery` and the
+> docs section came with T008. T010 added the tests, in
+> `cmd/serendip/observability_test.go`, on a world with the capability
+> ready (`newWorldWith`, a provider registry and server options) and a
+> fake provider at the real one's resolution:
+> - **The CLI:** the three commands' requests (dry run), the usage
+>   errors (no `--environment`, `--limit` over 500, a non-boolean
+>   `--summary`), and real calls: a search finds its line, an
+>   Application's search reports `omitted: 0`, and an hour's metrics are
+>   60 points with a summary.
+> - **MCP:** the three tools are listed, and `deployments_metrics`
+>   doesn't offer `summary`. A 24-hour call gets at most 60 points a
+>   series, with the summary over all 288 points (min and max true).
+>   An assistant passing `summary: false` is refused (unknown
+>   parameter).
+> - **The test can fail:** with `MCPQuery` removed, the MCP test fails
+>   on 288 points.
+> - **Verify:** `go test ./cmd/serendip/... ./api/...` and `go vet`
+>   pass.
 
 - **Do:**
   - generated commands (`serendip logs search`, `serendip metrics`);
