@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/serendip-infra/serendip-infra/providers/internal/helm"
 	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
 )
 
@@ -40,7 +41,7 @@ const (
 // plane chart creates only in its own namespace -- a real gap found
 // during T006 real-cluster verification, not assumed from plan.md.
 type Deployer struct {
-	run    helmRunner
+	run    helm.Runner
 	client *kubernetes.Client
 }
 
@@ -48,11 +49,11 @@ type Deployer struct {
 // $PATH -- a required host prerequisite (this package's own doc
 // comment), reported clearly at construction rather than discovered
 // deep inside Ensure's first install call.
-func NewDeployer(client *kubernetes.Client) (*Deployer, error) {
-	if err := checkHelmAvailable(); err != nil {
-		return nil, err
+func NewDeployer(client *kubernetes.Client, kubeconfigPath string) (*Deployer, error) {
+	if err := helm.CheckAvailable(); err != nil {
+		return nil, fmt.Errorf("openchoreo: %w", err)
 	}
-	return &Deployer{run: defaultHelmRunner, client: client}, nil
+	return &Deployer{run: helm.WithKubeconfig(helm.Run, kubeconfigPath), client: client}, nil
 }
 
 // Ensure installs, in order, cert-manager (a real prerequisite
