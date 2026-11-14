@@ -123,6 +123,10 @@ func (f *fakeAPI) handler(t *testing.T) http.HandlerFunc {
 			items := []kubernetes.Object{}
 			listed := slices.Contains(lists, path)
 			for p, obj := range f.objects {
+				if path == "/api/v1/pods" && isNamespacedPod(p) {
+					items = append(items, obj) // every namespace's pods
+					continue
+				}
 				if rest, ok := strings.CutPrefix(p, path+"/"); ok && !strings.Contains(rest, "/") {
 					items = append(items, obj)
 					listed = true
@@ -166,6 +170,12 @@ func (f *fakeAPI) handler(t *testing.T) http.HandlerFunc {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// isNamespacedPod reports whether p is /api/v1/namespaces/<ns>/pods/<name>.
+func isNamespacedPod(p string) bool {
+	parts := strings.Split(strings.TrimPrefix(p, "/api/v1/namespaces/"), "/")
+	return strings.HasPrefix(p, "/api/v1/namespaces/") && len(parts) == 3 && parts[1] == "pods"
 }
 
 func newTestKubeClient(t *testing.T, handler http.HandlerFunc) *kubernetes.Client {
@@ -250,7 +260,7 @@ const (
 	chartPolicy   = networkPoliciesPath + "/" + chartPolicyName
 	planeCRPath   = observabilityPlanesPath + "/" + PlaneName
 	namespacePath = "/api/v1/namespaces/" + PlaneNamespace
-	appPodPath    = "/api/v1/pods/app-1"
+	appPodPath    = "/api/v1/namespaces/apps/pods/app-1"
 	metricsPath   = "/api/v1/namespaces/openchoreo-observability-plane/services/metrics-adapter:9099/proxy/api/v1/metrics/query"
 )
 
@@ -283,7 +293,7 @@ func (e *testEnv) setNodeIP(ip string) {
 
 func componentPod(name string, started time.Time) kubernetes.Object {
 	return kubernetes.Object{Kind: "Pod",
-		Metadata: kubernetes.ObjectMeta{Name: name, Labels: map[string]string{
+		Metadata: kubernetes.ObjectMeta{Name: name, Namespace: "apps", Labels: map[string]string{
 			labelNamespace: "default", labelProject: "p-uid", labelComponent: "c-uid", labelEnvironment: "e-uid",
 		}},
 		Status: json.RawMessage(`{"startTime":"` + started.Format(time.RFC3339) +

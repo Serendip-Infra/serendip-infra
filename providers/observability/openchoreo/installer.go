@@ -99,6 +99,8 @@ type Installer struct {
 	// repaired in a row since the checks last passed.
 	lastInstall time.Time
 	repairs     int
+	// probe is the pod the metrics check last used (probePod).
+	probe *probePod
 }
 
 var _ reconcile.PackageInstaller = (*Installer)(nil)
@@ -503,7 +505,9 @@ func (i *Installer) checkPolicies(ctx context.Context) (*problem, error) {
 // scoped by (spike finding 5: scopes are IDs, and a missing one widens the
 // query).
 type probePod struct {
-	name                                       string
+	// podNamespace and name address the pod; the rest is its scope, where
+	// namespace is OpenChoreo's (a label), not the pod's.
+	podNamespace, name                         string
 	namespace, project, component, environment string
 }
 
@@ -523,12 +527,10 @@ const (
 // yet. With no Component running long enough, there's nothing to check
 // against yet, which isn't a fault.
 func (i *Installer) checkMetrics(ctx context.Context) (*problem, string, error) {
-	q := url.Values{"labelSelector": {labelComponent}, "fieldSelector": {"status.phase=Running"}}
-	pods, err := i.client.List(ctx, "/api/v1/pods?"+q.Encode())
+	pod, ok, err := i.probePod(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("openchoreo observability: list Component pods: %w", err)
+		return nil, "", err
 	}
-	pod, ok := oldestProbe(pods, i.now().Add(-probeAge))
 	if !ok {
 		return nil, readyUncheckedMessage, nil
 	}
@@ -569,22 +571,65 @@ func oldestProbe(pods []kubernetes.Object, cutoff time.Time) (probePod, bool) {
 	var best probePod
 	var bestStart time.Time
 	for _, p := range pods {
-		l := p.Metadata.Labels
-		pp := probePod{p.Metadata.Name, l[labelNamespace], l[labelProject], l[labelComponent], l[labelEnvironment]}
-		if pp.namespace == "" || pp.project == "" || pp.component == "" || pp.environment == "" || !podReady(p) {
-			continue
-		}
-		var st struct {
-			StartTime time.Time `json:"startTime"`
-		}
-		if json.Unmarshal(p.Status, &st) != nil || st.StartTime.IsZero() || st.StartTime.After(cutoff) {
-			continue
-		}
-		if bestStart.IsZero() || st.StartTime.Before(bestStart) {
-			best, bestStart = pp, st.StartTime
+		pp, start, ok := eligibleProbe(p, cutoff)
+		if ok && (bestStart.IsZero() || start.Before(bestStart)) {
+			best, bestStart = pp, start
 		}
 	}
 	return best, !bestStart.IsZero()
+}
+
+// eligibleProbe reads p as a probe: ready, started before cutoff, and
+// carrying every scope label.
+func eligibleProbe(p kubernetes.Object, cutoff time.Time) (probePod, time.Time, bool) {
+	l := p.Metadata.Labels
+	pp := probePod{p.Metadata.Namespace, p.Metadata.Name, l[labelNamespace], l[labelProject], l[labelComponent], l[labelEnvironment]}
+	if pp.podNamespace == "" || pp.namespace == "" || pp.project == "" || pp.component == "" || pp.environment == "" || !podReady(p) {
+		return probePod{}, time.Time{}, false
+	}
+	var st struct {
+		StartTime time.Time `json:"startTime"`
+	}
+	if json.Unmarshal(p.Status, &st) != nil || st.StartTime.IsZero() || st.StartTime.After(cutoff) {
+		return probePod{}, time.Time{}, false
+	}
+	return pp, st.StartTime, true
+}
+
+// probePod finds the pod the metrics query is checked against. The one
+// used last time is read back by name, one small GET, and the cluster's
+// Component pods are listed only when it's gone or no longer eligible, so
+// a resync costs the same however many Components run.
+func (i *Installer) probePod(ctx context.Context) (probePod, bool, error) {
+	cutoff := i.now().Add(-probeAge)
+	i.mu.Lock()
+	last := i.probe
+	i.mu.Unlock()
+	if last != nil {
+		obj, err := i.client.Get(ctx, "/api/v1/namespaces/"+last.podNamespace+"/pods/"+last.name)
+		if err != nil && !errors.Is(err, kubernetes.ErrNotFound) {
+			return probePod{}, false, fmt.Errorf("openchoreo observability: get pod %s/%s: %w", last.podNamespace, last.name, err)
+		}
+		if err == nil {
+			if pp, _, ok := eligibleProbe(obj, cutoff); ok {
+				return pp, true, nil
+			}
+		}
+	}
+	q := url.Values{"labelSelector": {labelComponent}, "fieldSelector": {"status.phase=Running"}}
+	pods, err := i.client.List(ctx, "/api/v1/pods?"+q.Encode())
+	if err != nil {
+		return probePod{}, false, fmt.Errorf("openchoreo observability: list Component pods: %w", err)
+	}
+	pp, ok := oldestProbe(pods, cutoff)
+	i.mu.Lock()
+	if ok {
+		i.probe = &pp
+	} else {
+		i.probe = nil
+	}
+	i.mu.Unlock()
+	return pp, ok, nil
 }
 
 // hasPoints reports whether a series is a list holding at least one point

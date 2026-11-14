@@ -581,8 +581,11 @@ the decisions above:
    - **Empty series** are reported and not repaired, because re-running
      Helm can't fix a mismatch (RP-056).
    - **An error answer** settles, then re-runs only the metrics module.
-   - **Cost:** the pod list is cluster-wide, filtered by label and phase.
-     On edge-1 that's a handful of pods.
+   - **Cost:** the chosen pod is remembered and read back by name, one
+     small GET. The cluster-wide list (filtered by label and phase) runs
+     only on the first check after a start, or when that pod is gone or
+     no longer eligible. So a resync costs the same however many
+     Components run.
 4. **The agent's connection isn't checked.** Unlike the workflow plane,
    `ObservabilityPlane`'s status shape wasn't recorded in T001. Nothing
    Serendip queries goes through the agent, so the object only has to

@@ -207,6 +207,42 @@ func TestUninstall_ResumesAfterAHelmFailure(t *testing.T) {
 	}
 }
 
+// The probe pod is read back by name; the cluster's Component pods are
+// listed only when it's gone, and then another is picked.
+func TestInstall_ProbePodIsReadBackNotRelisted(t *testing.T) {
+	e := newTestEnv(t)
+	e.installed(t) // the first check listed and picked app-1
+	for range 5 {
+		if state, err := e.inst.Install(context.Background(), instance(Fingerprint())); err != nil || !state.Ready {
+			t.Fatalf("Install() = %+v, %v", state, err)
+		}
+	}
+	if n := e.api.count("GET /api/v1/pods"); n != 0 {
+		t.Errorf("cluster-wide pod lists = %d, want 0 while app-1 runs", n)
+	}
+	if n := e.api.count("GET " + appPodPath); n != 5 {
+		t.Errorf("GETs of app-1 = %d, want one per resync", n)
+	}
+
+	e.api.del(appPodPath)
+	other := componentPod("app-2", e.now.Add(-time.Hour))
+	other.Metadata.Labels[labelComponent] = "c2-uid"
+	e.api.put("/api/v1/namespaces/apps/pods/app-2", other)
+	e.api.reset()
+	if state, err := e.inst.Install(context.Background(), instance(Fingerprint())); err != nil || !state.Ready {
+		t.Fatalf("Install() = %+v, %v", state, err)
+	}
+	if n := e.api.count("GET /api/v1/pods"); n != 1 {
+		t.Errorf("cluster-wide pod lists = %d, want 1 once app-1 is gone", n)
+	}
+	if scope, _ := e.api.metricsBody["searchScope"].(map[string]any); scope["componentUid"] != "c2-uid" {
+		t.Errorf("query scope = %v, want app-2's", scope)
+	}
+	if n := e.api.count("GET"); n != 7 {
+		t.Errorf("GETs = %d, want 7 on the resync that re-picks (6 plus the missed pod)", n)
+	}
+}
+
 func TestHasPoints(t *testing.T) {
 	for _, tt := range []struct {
 		in   string
