@@ -72,7 +72,7 @@ CLI · MCP · unified API.
 | Gateway / ingress | kgateway | Gateway API implementation |
 | Certificates | cert-manager | |
 | Telemetry collection | OpenTelemetry | Common pipe regardless of backend |
-| Observability backend | *unresolved* | OpenObserve vs. SigNoz vs. OpenSearch — pending on-hardware (T470) benchmark. See Open questions |
+| Observability backend | OpenObserve (logs), plain Prometheus (metrics) | Through OpenChoreo's adapters; chosen by measurement (ADR 0021) |
 | Primary/distributed storage | local-path → Longhorn | ADR 0002 |
 | Database (user workloads) | CloudNativePG (PostgreSQL) | Distinct from the control plane's own SQLite store (ADR 0003) |
 | VM/compute (later) | Harvester (KubeVirt) | Not v1 — see `deployment-profiles.md` |
@@ -92,10 +92,9 @@ API gateway, or a VM hypervisor. It integrates those.
 
 ## Open questions
 
-- **Observability backend default** (OpenObserve vs. SigNoz vs. OpenSearch)
-  is explicitly unresolved in the source design discussion — the stated plan
-  is to benchmark all three on reference (T470) hardware before locking a
-  default, not to guess now.
+- ~~Observability backend default~~ — resolved: all three were measured
+  on a simulated T470 (spec 023 T003). OpenObserve for logs and plain
+  Prometheus for metrics was the lightest by a wide margin (ADR 0021).
 - ~~OpenChoreo and Thunder defaults lacked dedicated ADRs~~ — resolved:
   see ADR 0005 (OpenChoreo) and ADR 0006 (Thunder). Both carry explicit
   risk/fallback conditions rather than being unconditional.

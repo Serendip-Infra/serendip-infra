@@ -94,7 +94,24 @@ delete each before the next. Run the keep-awake beside long runs.
   per-namespace PVC use; the load manifest applies and its pods log at
   about 10 lines a second (`kubectl logs --since=10s | wc -l`).
 
-## T003 — Measure the three backends, and ADR 0021
+## T003 — Measure the three backends, and ADR 0021 ✅ 2026-11-14
+
+> **Done as:** configs A, B and C, and B-plain (plain Prometheus), on
+> `bench-t470`. Results are in
+> `profiles/edge-1/bench/results/2026-11-12-spec023-backends/`.
+> ADR 0021 chooses OpenObserve for logs and plain Prometheus for metrics,
+> with the module's adapter; decision 3's fallback applies. SigNoz
+> didn't win, so no user decision was needed.
+>
+> - **Different from the task:** a 10-minute load phase, then load
+>   continued through a disk phase of 2 h (B) or 1 h (A, C), instead of
+>   30 minutes of load and 2 hours of disk for each (plan "Findings from
+>   T003" 7).
+> - **New accepted risks:** RP-055 and RP-056.
+> - **Bench additions:** `backends.sh`, `measure.sh`,
+>   `signoz-query.env`, `prometheus-plain-values.yaml`, and
+>   `registry-cache.sh` (local image caches; not verified on a new
+>   cluster yet).
 
 - **Do,** on a simulated-T470 kind cluster with the edge-1 platform, one
   backend at a time:
@@ -133,9 +150,17 @@ delete each before the next. Run the keep-awake beside long runs.
 ## T005 — The installer
 
 - **Do:** `providers/observability/openchoreo`:
-  - Install, in decision 1's order: the values per the chosen backend,
-    generated admin credentials kept in the cluster only, the CR and CA
-    trust, and the policies;
+  - Install, in decision 1's order as amended by T003 (ADR 0021):
+    - the plane chart;
+    - the node rule, then logs-openobserve with `ZO_TELEMETRY=false` and
+      3-day retention;
+    - plain Prometheus, then the metrics module with
+      `kube-prometheus-stack.enabled=false`;
+    - generated admin credentials (a symbol, a digit and both cases),
+      kept in the cluster only;
+    - the CR and CA trust, and the policies;
+  - a readiness check that runs a real `resource` query for a known pod
+    and fails on empty series (RP-056);
   - the fingerprint and resync checks (decision 12), including that each
     policy's selector matches a pod;
   - Uninstall (decision 13), every step idempotent;

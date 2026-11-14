@@ -75,6 +75,8 @@ purpose), **Closed** (fixed).
 | RP-052 | Build steps have no CPU or memory limits | Footprint, availability | Open | Spec 022 T015 |
 | RP-053 | Logs written while the log store is unreachable are dropped | Correctness, operability | Open | Spec 023 T001 |
 | RP-054 | The observability adapters answer unauthenticated queries; only NetworkPolicies close them | Security (medium) | Open | Spec 023 T001 |
+| RP-055 | OpenObserve's log search slows as stored logs grow (0.24 s to 0.53 s mean, 3.1 s worst, in 2.5 h) | Performance | Accepted | Spec 023 T003 |
+| RP-056 | Serendip's plain Prometheus must keep matching what the metrics module's adapter queries | Operability, correctness | Accepted | Spec 023 T003 |
 
 ---
 
@@ -1283,3 +1285,41 @@ purpose), **Closed** (fixed).
 - **Revisit:** on every OpenChoreo or module upgrade (`VERSIONS.md`), and
   if the Observer's authorization becomes usable with Serendip's
   identity.
+
+## RP-055 — OpenObserve's log search slows as stored logs grow
+
+- **Kind:** performance. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T003.
+- **What:** on the simulated T470, OpenObserve's mean search time went
+  from 0.24 s in the first 10 minutes under load to 0.53 s over 2.5 hours
+  (worst 3.1 s), with about 100 MiB stored. OpenSearch averaged 0.13 s and
+  SigNoz 0.05 s on the same load (ADR 0021).
+- **Why accepted:** it is the lightest store by far, and half a second is
+  fine for a log tab. Retention is 3 days, which bounds the data searched.
+- **Mitigation:** searches are always scoped to one Component and a time
+  window (plan 023 decision 6), and the default window is short.
+- **Revisit:** if T013's run on the reference laptop shows searches over
+  2 s, or if retention grows. Options then: a narrower default window, or
+  OpenObserve's own tuning (a larger `ZO_MEMORY_CACHE_MAX_SIZE`).
+
+## RP-056 — Serendip's plain Prometheus must keep matching the metrics adapter
+
+- **Kind:** operability, correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T003.
+- **What:** ADR 0021 replaces the metrics module's kube-prometheus-stack
+  with plain Prometheus, configured by Serendip to look like it to the
+  module's adapter:
+  - the Service name and port the adapter's address fixes;
+  - the scrape job names;
+  - kube-state-metrics' metric and label allowlists.
+  An upgrade that changes the adapter's queries or its address breaks
+  metrics with no install error: queries return empty series.
+- **Why accepted:** it saves about 450 MiB at idle and leaves nothing in
+  kube-apiserver after removal (the module's 10 CRDs held about 390 MiB
+  there until a restart).
+- **Mitigation:**
+  - `VERSIONS.md` lists what to re-check on every module upgrade.
+  - The installer's readiness check runs a real `resource` query for a
+    known pod and fails if its series are empty (T005).
+- **Revisit:** on every metrics module upgrade, or if a later alerts spec
+  needs the operator anyway.

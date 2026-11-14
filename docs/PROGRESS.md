@@ -12,50 +12,73 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-09
+Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): spec written and reviewed; plan.md
-in progress** (2026-11-09, paused by the user).
-- `specs/023-observability/spec.md`: stored log search and CPU/memory
-  metrics only (traces, alerts and the traffic overlay deferred); the
-  spike measures **OpenSearch, OpenObserve and SigNoz** on the simulated
-  T470 (the user: it's a POC, research now); measured cost includes load
-  and disk; there must be no way to query logs or metrics around Serendip.
-- **Plan approved by the user (2026-11-11). T001 and T002 are done
-  (2026-11-12); next is T003:** measure OpenSearch, OpenObserve and
-  SigNoz on a simulated-T470 cluster, with
-  `profiles/edge-1/bench/observability-load/load.sh` and
-  `bench-edge1`'s new disk columns, then write ADR 0021.
-- **T002 found that the kubelet doesn't measure local-path volumes.**
-  The bench uses a `du` probe pod instead, and the package's own disk
-  use will come from the stores (plan "Finding from T002").
-- **T001 changed the plan** (see plan.md "Spike findings"):
-  - Serendip queries OpenChoreo's logs and metrics **adapters**, not the
-    Observer, whose API needs a token even with security off;
-  - scopes are **UIDs**, and names silently widen the query;
-  - the path is the Service proxy;
-  - the node rule is built from live `Node` IPs;
-  - uninstall deletes the namespace and the Prometheus Operator CRDs
-    (+168 MiB on kube-apiserver, so T003 tries plain Prometheus);
-  - new RP-053 and RP-054.
-- **`serendip-t018` is clean again;** the spike removed everything.
-  Docker Desktop restarted overnight on 2026-11-12, and the kind node's
-  IP changed (now 172.22.0.5).
-- **Plan leanings so far (not decided):**
-  - `provider.Requirements` gains an optional disk part (growth per day,
-    retention, budget);
-  - a core `ObservabilityProvider` (search logs over Deployments, build
-    logs, metrics, storage use), with a lazy handle like builds';
-  - queries narrowed to the caller's permitted Deployments before they
-    reach the backend;
-  - no side door: deny-ingress NetworkPolicies on the stores and the
-    Observer (RP-018's pattern), with Serendip reaching them through the
-    Kubernetes API;
-  - CPU and memory from the kubelet; HTTP metrics "not available" unless
-    free;
-  - the next ADR is 0021 (backend choice).
+**Spec 023 (observability package): T001–T003 done (2026-11-14); next
+is T004 (core types).**
+- **ADR 0021** (`docs/decisions/0021-observability-backend.md`) chose
+  **OpenObserve for logs** and **plain Prometheus for metrics**, both
+  read through OpenChoreo's adapters. It was measured on the simulated
+  T470 (`bench-t470`) against OpenSearch and SigNoz. On top of the
+  platform, at idle and under load:
+
+  | Config | Idle | Under load |
+  |---|---|---|
+  | B: OpenObserve, metrics module as shipped | +832 MiB | +1,028 MiB |
+  | A: OpenSearch | +1,609 MiB | +1,659 MiB |
+  | C: SigNoz | +1,801 MiB | +2,068 MiB |
+
+  With plain Prometheus, B should be about 350–400 MiB at idle; T013
+  confirms it.
+  - **Results:**
+    `profiles/edge-1/bench/results/2026-11-12-spec023-backends/`.
+  - **Plan amended:** decisions 1–3 and 13, and a new section,
+    "Findings from T003":
+    - the node rule goes in before the logs module's install;
+    - passwords need a symbol;
+    - removing the metrics module's CRDs leaves kube-apiserver about
+      390 MiB higher.
+  - **The metrics module is installed for its adapter only**
+    (`kube-prometheus-stack.enabled=false`). Prometheus comes from
+    `prometheus-community/prometheus` 29.47.2, with
+    `profiles/edge-1/bench/observability-load/prometheus-plain-values.yaml`
+    (RP-056: it must keep matching the adapter).
+  - **New accepted risks:** RP-055 (OpenObserve's search slows as data
+    grows) and RP-056.
+  - **Docs updated:** `capability-model.md`, `overview.md`,
+    `build-vs-adopt.md` and `VERSIONS.md`.
+- **Telemetry off:**
+  - OpenObserve sends a heartbeat home by default; the installer sets
+    `ZO_TELEMETRY=false` (T005).
+  - SigNoz, not adopted, reports usage by default as well.
+- **Bench additions:**
+  - `observability-load/backends.sh`, `measure.sh`,
+    `signoz-query.env` and `prometheus-plain-values.yaml`.
+  - `load.sh` now passes the driver's env inside `--overrides`.
+  - `registry-cache.sh`: local pull-through image caches, wired into
+    new kind clusters by `kind-t470-setup.sh`. **Not yet verified** on
+    a fresh cluster.
+- **Clusters:**
+  - **`bench-t470`** (kind, simulated T470) still exists, with the
+    edge-1 platform and no observability installs. Delete it, or keep it
+    to verify the caches.
+  - **`serendip-t018` is stopped.** Start it with `docker start
+    serendip-t018-control-plane`; its node IP may change (the node rule
+    handles that).
+- **Next:** T004 (core types: `provider.Requirements.Disk`,
+  `ObservabilityProvider`, `PackageUsage`, `ActionObservabilityRead`,
+  the cursor).
+  - After it: T005, the installer, in ADR 0021's order, with a readiness
+    check that runs a real metrics query.
+- **Plan leanings carried forward:**
+  - `provider.Requirements` gains an optional disk part;
+  - a core `ObservabilityProvider` with a lazy handle like builds';
+  - queries are narrowed to the caller's permitted Deployments, and
+    always carry all three UIDs;
+  - no side door: NetworkPolicies, with Serendip using the API server's
+    Service proxy (RP-054).
 
 **Spec 022 (builds, the workflow-plane package): COMPLETE** (T001–T016,
 2026-10-24 → 2026-11-09).

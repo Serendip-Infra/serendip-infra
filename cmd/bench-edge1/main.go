@@ -23,6 +23,20 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "sample" {
+		if err := runSample(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bench-edge1 sample:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "delta" {
+		if err := runDelta(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bench-edge1 delta:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "compare" {
 		if err := runCompare(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "bench-edge1 compare:", err)
@@ -299,10 +313,12 @@ func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n
 				return samples, procs, err
 			}
 		}
-		select {
-		case <-d.done:
-			return samples, procs, fmt.Errorf("serendipd exited during sampling (%v)", d.exitErr)
-		default:
+		if d != nil {
+			select {
+			case <-d.done:
+				return samples, procs, fmt.Errorf("serendipd exited during sampling (%v)", d.exitErr)
+			default:
+			}
 		}
 		s, err := cl.summary(ctx, nodeName)
 		if err != nil {
@@ -320,11 +336,14 @@ func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n
 		// the real span, not the sample count (the probe takes seconds).
 		smp.At = time.Now().UTC()
 		samples = append(samples, smp)
-		p, err := readProcess(d.pid())
-		if err != nil {
-			return samples, procs, fmt.Errorf("read serendipd process: %w", err)
+		// No daemon (bench-edge1 sample): the cluster only.
+		if d != nil {
+			p, err := readProcess(d.pid())
+			if err != nil {
+				return samples, procs, fmt.Errorf("read serendipd process: %w", err)
+			}
+			procs = append(procs, p)
 		}
-		procs = append(procs, p)
 		log.Printf("  sample %d/%d: node %.0f MiB, %.0f mcores", i+1, n, mib(samples[i].NodeWorkingSetBytes), millicores(samples[i].NodeNanoCores))
 	}
 	return samples, procs, nil

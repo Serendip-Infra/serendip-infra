@@ -10,3 +10,10 @@ nodes:
     hostPort: 30080
     listenAddress: "127.0.0.1"
     protocol: TCP
+# Lets registry-cache.sh point this node at local pull-through caches
+# (hosts.toml files under /etc/containerd/certs.d). Without them,
+# containerd pulls from the real registries as usual.
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"

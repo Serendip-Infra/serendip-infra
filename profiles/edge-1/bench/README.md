@@ -78,6 +78,14 @@ go run ./cmd/bench-edge1 --serendipd ./serendipd --kubeconfig /tmp/bench-t470.ku
 profiles/edge-1/bench/kind-t470-setup.sh down bench-t470
 ```
 
+**Image caches (optional, saves time and data):** `registry-cache.sh up`
+starts one local pull-through cache per upstream registry, with layers in
+Docker volumes that outlive clusters. `kind-t470-setup.sh up` wires new
+clusters to them when they're running; `registry-cache.sh wire <cluster>`
+wires an existing one. A cache that's down or can't serve an image falls
+back to the real registry. `registry-cache.sh status` shows the disk each
+cache uses, and `down --purge` frees it.
+
 Any `--sim-*` flag marks the run as a simulation. Its summary opens with
 "SIMULATION — does not satisfy the reference-hardware gate", and no
 footprint may be reported as verified on its strength (constitution rule 6).

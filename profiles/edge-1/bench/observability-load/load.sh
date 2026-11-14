@@ -27,13 +27,20 @@ driver_image=curlimages/curl:8.11.1
 start() {
 	$k apply -f "$here/loggers.yaml"
 	$k -n "$driver_ns" create configmap obs-load-driver --from-file=driver.sh="$here/driver.sh" --dry-run=client -o yaml | $k apply -f -
-	local envs=()
+	# The env goes inside --overrides: its containers list replaces the
+	# one kubectl run generates, so --env flags would be dropped (T003:
+	# config C's driver ran with no LOGS_URL).
+	local env="" v val
 	for v in LOGS_URL LOGS_BODY METRICS_URL METRICS_BODY AUTH_HEADER SEARCH_EVERY METRICS_EVERY; do
-		if [ -n "${!v:-}" ]; then envs+=("--env=$v=${!v}"); fi
+		val=${!v:-}
+		[ -n "$val" ] || continue
+		val=${val//\\/\\\\}
+		val=${val//\"/\\\"}
+		env="$env{\"name\":\"$v\",\"value\":\"$val\"},"
 	done
 	$k -n "$driver_ns" delete pod obs-load-driver --ignore-not-found --wait=true
-	$k -n "$driver_ns" run obs-load-driver --image="$driver_image" --restart=Never "${envs[@]}" \
-		--overrides='{"spec":{"terminationGracePeriodSeconds":1,"containers":[{"name":"obs-load-driver","image":"'"$driver_image"'","command":["sh","/load/driver.sh"],"volumeMounts":[{"name":"load","mountPath":"/load"}]}],"volumes":[{"name":"load","configMap":{"name":"obs-load-driver"}}]}}'
+	$k -n "$driver_ns" run obs-load-driver --image="$driver_image" --restart=Never \
+		--overrides='{"spec":{"terminationGracePeriodSeconds":1,"containers":[{"name":"obs-load-driver","image":"'"$driver_image"'","command":["sh","/load/driver.sh"],"env":['"${env%,}"'],"volumeMounts":[{"name":"load","mountPath":"/load"}]}],"volumes":[{"name":"load","configMap":{"name":"obs-load-driver"}}]}}'
 	$k -n "$ns" rollout status deploy --timeout=180s
 	$k -n "$driver_ns" wait --for=condition=Ready pod/obs-load-driver --timeout=120s
 }
