@@ -12,13 +12,31 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-14
+Last updated: 2026-11-14 (after spec 023 T012)
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T011 done (2026-11-14); next
-is T012 (the package's footprint and Requirements, on the simulated
-T470).**
+**Spec 023 (observability package): T001–T012 done (2026-11-14); next
+is T013 (real-cluster verification on `serendip-t018`, `verification.md`),
+then T014 (reviews) and T015 (docs and close).**
+- **T012 (`3024f1c`, closes #87):** `providers/observability/openchoreo/requirements.go`
+  from `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`
+  (README there): idle 608 MiB / 21 mcores, peak 967 MiB / 372 mcores,
+  disk 496 MiB a day, 3 days kept, budget 8192 MiB (`capacityMiB`). The
+  catalogue points at it, so the package is installable;
+  `GET /v1/packages` checked live. Resync +0.87 mcores. No regression
+  without the package (vs spec 022).
+  - **Found and fixed:** a fresh install never finished, because
+    OpenObserve's SSRF guard refused the logs chart's in-cluster webhook
+    (`serendip-t018` hid it). Now `ZO_SSRF_ALLOW_LOOPBACK=true`
+    (**RP-062**). **Spec 024 must validate alert destinations itself**
+    (put it in its tasks when it's written; contract-guardian asked).
+  - **RP-063:** the daily disk growth is a 2-hour slope, extrapolated.
+  - **Harness:** observability load and disk phases, new
+    `--package-load-*`/`--package-disk-*` flags, `--package` refuses an
+    unknown provider, an interrupted phase marks the summary incomplete.
+    go-reviewer's findings fixed; not done: a test injecting the load
+    runner to lock in stop-in-defer (medium effort).
 - **T011 (the console):** `ui/src/screens/Observability.tsx` plus a
   shared `ui/src/components/MetricChart.tsx`.
   - **Component screen:** the Observability tab shows CPU and memory
@@ -37,12 +55,7 @@ T470).**
     server gives 20 s.
   - **Checks:** 150 UI tests pass, and the build is 103.9 KiB gz
     (tasks.md T011).
-- **GitHub runs (background, previous session's scratchpad
-  `a80ea285-.../scratchpad/prs/`):** the PR run is done (#26–#45). The
-  epic run (`track.sh`) is creating closed epics 2 minutes apart, up to
-  spec 016 (#57) at 11:22. `setup.sh`, then `backfill.sh`, wait on it.
-  `setup.sh` closes each spec 023 task already ticked in tasks.md
-  (T011 now included).
+- **GitHub runs:** see "GitHub (2026-11-14)" below.
 - **T010 (CLI and MCP tests):** `cmd/serendip/observability_test.go`
   (via a new `newWorldWith`): the three commands' requests and usage
   errors, real calls, and the MCP metrics tool on a 24-hour range
@@ -175,52 +188,50 @@ T470).**
     `signoz-query.env` and `prometheus-plain-values.yaml`.
   - `load.sh` now passes the driver's env inside `--overrides`.
   - `registry-cache.sh`: local pull-through image caches, wired into
-    new kind clusters by `kind-t470-setup.sh`. **Not yet verified** on
-    a fresh cluster.
+    new kind clusters by `kind-t470-setup.sh`. **Verified** by T012's
+    two fresh-cluster runs. 7 `kind-cache-*` containers are running;
+    keep them through T013, then `registry-cache.sh down` (`--purge`
+    frees the disk).
 - **Clusters:**
-  - **`bench-t470`** (kind, simulated T470) still exists, with the
-    edge-1 platform and no observability installs. Delete it, or keep it
-    to verify the caches.
-  - **`serendip-t018` is running, with the observability package
-    installed** (by `TestLiveInstall`, outside any `serendipd`, so no
-    Serendip store records it). Remove it with `TestLiveUninstall`, or
-    keep it for T007–T013. The test objects (the loggers' namespace, the
-    stand-in build pod) are deleted. Its node IP may change after a
-    restart (the node rule handles that).
+  - **`bench-t470`** (kind, simulated T470) is running, with T012's
+    package run's stack and the observability package installed
+    (kubeconfig in session `d193d427-...`'s scratchpad). Delete it with
+    `kind-t470-setup.sh down bench-t470` once T013 no longer needs it.
+  - **`serendip-t018` is stopped** (`docker start
+    serendip-t018-control-plane`; its node IP may change, the node rule
+    handles that). It still has the observability package installed (by
+    `TestLiveInstall`, outside any `serendipd`), from before the SSRF
+    fix: its destination already existed, so it never hit it.
   - **Spec 022 T014's store** (the Serendip IDs for `serendip-t018`'s
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
     Deployments.
-- **Next:** T011, the console's Observability tab and the Packages
-  page's disk line.
-- **GitHub (2026-11-14):** four paced background scripts in the previous
-  session's scratchpad `prs/` folder, chained: `run.sh` (spec PRs
-  003–022, opened by Yasindu007, merged by serendipinfra) → `track.sh`
-  (closed epics for 005–022, plus 023's epic in "v1 GA") → `setup.sh` →
-  `backfill.sh`. Check their `*.log` files before any other GitHub
-  write.
-  - **023's task issues** (T007–T015) come from `setup.sh`. It now
-    closes each task already ticked ✅ in tasks.md when it gets there,
-    naming the task's feat/fix/test commit, so T007–T010 (and any task
-    done before then) arrive closed. Nothing to do by hand. It was
-    stopped and restarted for this before its first write (2026-11-14);
-    the earlier copy is `setup.sh.orig`. Don't edit a script while it
-    runs.
-  - **At 11:11 local on 2026-11-14:** `track.sh` had made 9 of the 18
-    closed epics (#46–#54, specs 005–013), no failures; `setup.sh` and
-    `backfill.sh` were waiting, as designed.
-  - **`backfill.sh` is re-paced (the user wants the back-fill, without
-    being rate-limited):** about 770 writes (35 Epic types, then 245
-    tasks × create, link and close), one every 90 s, with a 6-hour rest
-    after every 200, so about two days. It still waits for `setup.sh`,
-    stops at the first failed write, and resumes from `backfill.state`
-    if re-run (`bash <prs>/backfill.sh`). Its writes are counted in
-    `backfill.count`. A subshell bug that let it carry on after a failed
-    create is fixed. If the laptop sleeps or the shell is reaped, it
-    stops; re-run it, after checking the log's last line.
+  - **The console isn't served by Docker:** after `docker start`, the UI
+    needs `serendipd` running on the host, and login needs ThunderID via
+    `identity.localhost:30080`. The user will look at it later.
+- **Next:** T013 on `serendip-t018`.
+- **GitHub (2026-11-14):** paced background scripts in the previous
+  session's scratchpad `prs/` folder, plus `epics/` in session
+  `d193d427-...`'s scratchpad. Check their `*.log` files before any
+  other GitHub write. Never two such runs at once.
+  - **Done:** `run.sh` (PRs #26–#45); `track.sh` (epics #46–#74, #21–#23
+    closed); `setup.sh` (setup PR #77, merged by hand on the website
+    since serendipinfra's token lacks the `workflow` scope; labels; the
+    board's fields; spec 023's tasks #82–#90 under epic #64, T007–T011
+    closed); `epics/epics.sh` (all 22 epics for specs 002–023 rewritten
+    in epic #1's layout, each in its phase milestone; #64 open in "v1
+    GA"). Spec 023's task issues: T012 #87 (closed by `3024f1c` once
+    it reaches GitHub), T013 #88, T014 #89, T015 #90.
+  - **Running: `backfill.sh`**, started 2026-11-14 09:17 UTC: about 770
+    writes (35 Epic types, then 245 older tasks × create, link and
+    close), one every 90 s, with a 6-hour rest after every 200, ending
+    around early Monday. At 10:24 UTC it was at task #93 (spec 002
+    T003). It stops at the first failed write and resumes from
+    `backfill.state` if re-run (`bash <prs>/backfill.sh`), after
+    checking the log's last line. A keep-awake process runs beside it.
     The user set the lid action to "do nothing" and idle sleep to never
-    (AC and battery) for this run. When it finishes, remind them to
-    restore sleep: `powercfg /change standby-timeout-ac 15` and
+    for this run. When it finishes, remind them to restore sleep:
+    `powercfg /change standby-timeout-ac 15` and
     `standby-timeout-dc 3` (prefix `MSYS_NO_PATHCONV=1` in Git Bash).
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
@@ -228,6 +239,9 @@ T470).**
     ADR (`deployment-profiles.md`, open questions).
   - **The full test pass after v1:** every feature, on real hardware,
     with upgrades and long runs.
+  - **After v1 GA (the user's choice, 2026-11-14):** releases (git
+    tags, semver, a changelog) and branch protection on `main`
+    (required CI checks, no direct pushes). Not before.
 - **Plan leanings carried forward:**
   - `provider.Requirements` gains an optional disk part;
   - a core `ObservabilityProvider` with a lazy handle like builds';
