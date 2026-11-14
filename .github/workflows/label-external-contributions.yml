@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Label PR if author is not an org member/owner/collaborator
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const external = new Set([
