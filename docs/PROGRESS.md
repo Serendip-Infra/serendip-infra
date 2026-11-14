@@ -174,10 +174,13 @@ is T011 (the console).**
   (closed epics for 005–022, plus 023's epic in "v1 GA") → `setup.sh` →
   `backfill.sh`. Check their `*.log` files before any other GitHub
   write.
-  - **023's task issues** (T007–T015) come from `setup.sh`, opened
-    from a fixed list, so they didn't exist at T007–T010's commits.
-    Close T007's to T010's at the next checkpoint, once they exist (one
-    write a minute). Don't edit `setup.sh` while it runs.
+  - **023's task issues** (T007–T015) come from `setup.sh`. It now
+    closes each task already ticked ✅ in tasks.md when it gets there,
+    naming the task's feat/fix/test commit, so T007–T010 (and any task
+    done before then) arrive closed. Nothing to do by hand. It was
+    stopped and restarted for this before its first write (2026-11-14);
+    the earlier copy is `setup.sh.orig`. Don't edit a script while it
+    runs.
   - **At 11:11 local on 2026-11-14:** `track.sh` had made 9 of the 18
     closed epics (#46–#54, specs 005–013), no failures; `setup.sh` and
     `backfill.sh` were waiting, as designed.
