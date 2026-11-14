@@ -679,15 +679,3 @@ function BuildDetail({ b, compId, canWrite, onChanged }: { b: Build; compId: str
     </>
   );
 }
-
-/** ObservabilityTab: stored logs, metrics, traces and alerts need the observability package. */
-export function ObservabilityTab() {
-  const opt = useOptional("observability");
-  if (!opt.loaded) return <LoadingState what="package availability" />;
-  return (
-    <>
-      <AvailabilityGate title="Metrics, traces and alerts" id="obs-title" readiness={opt.readiness} packageName={opt.packageName} what="metrics, traces, alerts and log search" />
-      <p className="field-hint">Recent logs and events don't need this package: they're on the Runtime tab.</p>
-    </>
-  );
-}

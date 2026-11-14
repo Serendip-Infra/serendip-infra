@@ -37,6 +37,7 @@ documented below.
 | Accent | `--accent`, `--accent-hover`, `--accent-text`, `--focus`, `--selection` | The primary action, links, and focus. |
 | Rail | `--rail-bg`, `--rail-active`, `--rail-text`, `--rail-text-strong`, `--rail-muted` | |
 | Status | `--ok`, `--ok-mark`, `--progress`, `--warn-text`/`-bg`/`-border`, `--danger`/`-bg`/`-border`, `--unknown` | Each is always paired with an icon and a word. |
+| Charts | `--chart-series` | The one data hue (spec 023): the dataviz reference palette's slot 1, `#2a78d6` light and `#3987e5` dark, validated against `--surface-raised` in each theme. Never used for text; status colours are never used for data. |
 
 **Dark theme:** the same names, redefined under
 `prefers-color-scheme: dark` and under `[data-theme="dark"]`.
@@ -95,6 +96,7 @@ Two other vocabularies map onto the same five (`src/lib/health.ts`):
 | `ActionConfirm` | Asks before a change that isn't a delete (deploy, promote, roll back, install): what it does, the exact request, and the failure inline. |
 | `EnvironmentPipeline` | A Project's Environments in the order releases move through them, each a panel with its state, what runs there and its actions, and where it promotes to in words. |
 | `LogView` | Workload log lines as plain text in a scrolling box (`role="log"`), time and instance muted. While following it keeps the newest line in view unless the person scrolled up. |
+| `MetricChart` | One measured series over a time range (spec 023): a 2 px `--chart-series` line with a 10% wash, hairline grid, gaps in the samples left as gaps, the latest sample dotted. Request and limit are neutral reference lines on the same axis (the request dashed), named at the plot's right end. A line above states the latest, highest, request and limit. A crosshair tooltip follows the pointer, and the arrow keys, Home and End when it has focus; every sample is also in "Show as a table". No samples is said in words, never drawn. Never two y-axes: CPU and memory are two charts. |
 | `TopologyDiagram` | An Application's declared calls drawn as boxes and arrows, callers left of callees. It's a picture (`role="img"`) of a table on the same page, which carries the facts for screen readers. Declared, never presented as observed traffic. |
 | `AvailabilityGate` | A feature that needs an optional package: the feature once ready, otherwise the section greyed out (sunken surface, muted text) with the package's state, why, and the package's name. Nothing is mocked in its place. |
 | `DeleteConfirm` | Asks before a delete (spec 019): what it removes (`BlastRadius`, walked from the graph for a cascade), a note when Secrets' values will be erased, and the DELETE request. The server records the delete as an Approval; the screen then opens it. |
@@ -144,5 +146,6 @@ Two other vocabularies map onto the same five (`src/lib/health.ts`):
   `prefers-reduced-motion`.
 - **Keyboard:** every action is reachable and visibly focused
   (`:focus-visible`), and a skip link leads to `#main`.
+- **Filters** (spec 023) sit in one row above what they scope (`form-row`): Environment, then time range presets.
 - **Layout:** works from 390 px wide. The rail becomes a top bar under
   720 px, and wide tables scroll inside their own box.

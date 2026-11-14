@@ -67,6 +67,8 @@ const pairs = [
   ["progress", "surface-sunken", 4.5],
   ["danger", "surface-sunken", 4.5],
   ["unknown", "surface-sunken", 4.5],
+  // A chart's line sits on the raised surface (spec 023); its text uses text tokens.
+  ["chart-series", "surface-raised", 3],
 ];
 
 let failed = 0;

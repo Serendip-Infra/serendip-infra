@@ -18,6 +18,7 @@ import { action } from "../lib/permissions";
 import { orderEnvironments, promotionTargets } from "../lib/pipeline";
 import { navigate } from "../lib/router";
 import { schemaFields } from "../lib/schemaForm";
+import { formatAge } from "../lib/time";
 import { UpdatedLine } from "./common";
 
 const enc = encodeURIComponent;
@@ -195,6 +196,24 @@ export function costWords(pkg: Package): { idle: string; peak?: string; source?:
 /** An API message as a sentence: capitalised, with a full stop. */
 const sentence = (m: string) => `${m.charAt(0).toUpperCase()}${m.slice(1)}${/[.!?]$/.test(m) ? "" : "."}`;
 
+/**
+ * A package that keeps data (spec 023): what it writes to disk, from its
+ * measured requirements, and how much it uses now, when installed.
+ */
+export function diskWords(pkg: Package, now: Date): { stated?: string; inUse?: string } {
+  const d = pkg.requirements?.disk;
+  const out: { stated?: string; inUse?: string } = {};
+  if (d) out.stated = `About ${d.growthMiBPerDay.toLocaleString()} MiB a day, kept ${d.retentionDays} ${d.retentionDays === 1 ? "day" : "days"}, at most ${d.budgetMiB.toLocaleString()} MiB.`;
+  if (pkg.usage) {
+    const u = pkg.usage;
+    const of = u.capacityMiB > 0 ? ` of ${u.capacityMiB.toLocaleString()} MiB` : " (its volumes' size isn't known)";
+    out.inUse = `${u.usedMiB.toLocaleString()} MiB${of}, read ${formatAge(u.readAt, now)}.`;
+  } else if (pkg.usageError) {
+    out.inUse = `Couldn't be read: ${pkg.usageError}`;
+  }
+  return out;
+}
+
 const genericRemoval = "Removing it uninstalls it and deletes what it stored. Features that need it are greyed out again.";
 
 type Open = { kind: "install"; pkg: Package } | { kind: "remove"; pkg: Package; instance: ProviderInstance };
@@ -239,6 +258,7 @@ export function PackagesPage() {
           const { kind, word } = availabilityWords[state];
           const body = { metadata: { name: pkg.provider }, spec: { capabilityId: pkg.capability, providerId: pkg.provider } };
           const cost = costWords(pkg);
+          const disk = diskWords(pkg, now);
           // Servers before spec 022 don't send installable: available alone decided.
           const installable = pkg.installable ?? pkg.available;
           return (
@@ -265,6 +285,8 @@ export function PackagesPage() {
                       )}
                     </>,
                   ],
+                  ...(disk.stated ? [["Disk", disk.stated] as [string, string]] : []),
+                  ...(disk.inUse ? [["Disk in use", disk.inUse] as [string, string]] : []),
                   ...(cost.source ? [["Measured", cost.source] as [string, string]] : []),
                   ...(pkg.requirements?.note ? [["How it fits", pkg.requirements.note] as [string, string]] : []),
                   ["Removing it", pkg.removal ?? genericRemoval],
@@ -284,6 +306,7 @@ export function PackagesPage() {
                   <p>Install {pkg.provider} for the whole platform? It runs, and uses memory and CPU, until it's removed.</p>
                   <p>{cost.idle}</p>
                   {cost.peak && <p>{cost.peak}</p>}
+                  {disk.stated && <p>Disk: {disk.stated}</p>}
                 </ActionConfirm>
               )}
               {open?.pkg.provider === pkg.provider && open.kind === "remove" && (

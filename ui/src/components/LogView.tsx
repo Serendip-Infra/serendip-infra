@@ -32,7 +32,7 @@ export function LogView({ lines, label, following }: { lines: LogLine[]; label: 
     >
       {lines.map((l, i) => (
         <div key={i} className="log-line">
-          <time dateTime={l.time} className="log-meta">
+          <time dateTime={l.time} title={l.time} className="log-meta">
             {l.time ? l.time.slice(11, 23) : ""}
           </time>
           <span className="log-meta">{l.instance}</span>

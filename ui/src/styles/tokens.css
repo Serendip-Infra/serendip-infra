@@ -61,6 +61,10 @@
   --danger-bg: #fbe9e7;
   --danger-border: #f1c4bf;
   --unknown: #556273;
+
+  /* Charts (spec 023): one data hue, the dataviz reference palette's
+     slot 1, validated against --surface-raised in each theme. */
+  --chart-series: #2a78d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,6 +99,8 @@
     --danger-bg: #2c1716;
     --danger-border: #5c2b27;
     --unknown: #9aa7b5;
+
+    --chart-series: #3987e5;
   }
 }
 
@@ -129,4 +135,6 @@
   --danger-bg: #2c1716;
   --danger-border: #5c2b27;
   --unknown: #9aa7b5;
+
+  --chart-series: #3987e5;
 }

@@ -432,7 +432,7 @@ delete each before the next. Run the keep-awake beside long runs.
   metrics tool's output for a 24-hour range is at most 60 points plus a
   summary.
 
-## T011 [P] — The console
+## T011 [P] — The console ✅ 2026-11-14
 
 - **Do:**
   - **The Observability tab:**
@@ -447,6 +447,42 @@ delete each before the next. Run the keep-awake beside long runs.
   the Application screen, `Packages`, with tests.
 - **Verify:** `npm test` and `npm run build` in `ui/` pass; the charts
   read in light and dark (a screenshot in the T013 verification).
+
+> **Done as:** a new `ui/src/screens/Observability.tsx` and a shared
+> `MetricChart` component (Runtime.tsx was already ~700 lines).
+> - **The Observability tab:** greyed out until the package is ready.
+>   Then come Environment and time range (15 minutes to 2 days, inside
+>   the 3-day retention) in one row above everything they scope. CPU
+>   and memory are two charts (never two y-axes) with request and
+>   limit as reference lines, the latest and highest stated above each,
+>   and "not available" items listed in words. Log search by phrase,
+>   newest first, with "Show older lines". A search's range is frozen
+>   when it starts, so its pages agree, and up to 4 empty pages with
+>   `next` set are read on before "older" is offered. Traces and alerts
+>   read "Not available yet". A Reader sees metrics but not logs.
+> - **The Application screen:** a log search per Environment, each line
+>   prefixed with its component's name, the `omitted` notice, and 403
+>   and 422 (over 20 components) said in words.
+> - **Packages:** "About N MiB a day, kept D days, at most M MiB" from
+>   `requirements.disk`, and "Disk in use" from `usage`, or why it
+>   couldn't be read.
+> - **The dataviz method:** one hue (`--chart-series`, the reference
+>   palette's slot 1), passing the validator against `--surface-raised`
+>   in both themes and added to `check-contrast.mjs`. 2 px line, 10%
+>   wash, hairline grid, gaps left as gaps, a crosshair tooltip by
+>   pointer and keyboard, and a table view. Rendered in headless Edge at
+>   360 px and 560 px, light and dark. That showed a clipped last time
+>   tick and reference labels that didn't fit a phone, both fixed (the
+>   labels now sit inside the plot). The live screenshot is still
+>   T013's.
+> - **Also:** `apiFetch` takes a timeout, 25 s for these queries,
+>   because the server gives each 20 s and the console's 15 s default
+>   would cut them off first. LogView's time shows the full timestamp on
+>   hover. `ui/DESIGN.md` gains the chart token, `MetricChart` and the
+>   filter row.
+> - **Tests:** `ui/src/screens/observability.test.tsx`, 16 tests.
+> - **Verify:** `pnpm typecheck`, `pnpm test` (150 passed), `pnpm build`
+>   (103.9 KiB gz of 160) and `check-contrast.mjs` pass.
 
 ## T012 — The package's footprint, and its Requirements
 
@@ -491,7 +527,7 @@ delete each before the next. Run the keep-awake beside long runs.
 
 - **Do:**
   - `application-platform.md` ("Observability (spec 023)"),
-    `provider-model.md` (`Disk`) and `authorization.md`;
+    `provider-model.md` (`Disk`) and `authorization.md
   - the risk register (new RPs: the Observer's auth off, `hostNetwork`
     Fluent Bit, stored secrets in logs, disk, CRDs left behind, time
     cursors);

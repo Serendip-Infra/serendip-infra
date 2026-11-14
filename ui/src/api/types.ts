@@ -417,6 +417,23 @@ export interface Package {
   removal?: string;
   installable?: boolean;
   notInstallable?: string;
+  /** An installed package's current disk use (spec 023), or why it couldn't be read. */
+  usage?: DiskUsage;
+  usageError?: string;
+}
+
+/** How much of its volumes an installed package uses now (core/reconcile.DiskUsage). capacityMiB 0: not known. */
+export interface DiskUsage {
+  usedMiB: number;
+  capacityMiB: number;
+  readAt: string;
+}
+
+/** What a package that keeps data writes to disk (core/provider.DiskRequirements). */
+export interface DiskRequirements {
+  growthMiBPerDay: number;
+  retentionDays: number;
+  budgetMiB: number;
 }
 
 /** A package's measured cost on the reference machine (core/provider.Requirements). */
@@ -428,6 +445,7 @@ export interface Requirements {
   measuredOn: string;
   results: string;
   note?: string;
+  disk?: DiskRequirements;
 }
 
 export type BuildPhase = "Queued" | "Running" | "Succeeded" | "Failed" | "Cancelled";
@@ -456,3 +474,53 @@ export type Build = Resource<
 >;
 
 export type ProviderInstance = Resource<{ capabilityId?: string; providerId?: string; environmentId?: string }, BaseStatus>;
+
+/** A stored log line (spec 023, core/reconcile.StoredLogLine). component is the Component's ID. */
+export interface StoredLogLine {
+  time: string;
+  component: string;
+  instance: string;
+  container?: string;
+  line: string;
+}
+
+/**
+ * One page of a stored-log search, newest first. Only an empty next ends a
+ * search: a page can be short, or empty, with next set. omitted is on an
+ * Application's search: Deployments left out because the caller may not
+ * read their logs.
+ */
+export interface LogSearchPage {
+  lines: StoredLogLine[];
+  next?: string;
+  truncated?: boolean;
+  omitted?: number;
+}
+
+export interface MetricPoint {
+  time: string;
+  value: number;
+}
+
+export interface SeriesSummary {
+  min: number;
+  avg: number;
+  max: number;
+  latest: number;
+  points: number;
+}
+
+/** A Deployment's CPU (millicores) and memory (MiB) over a range (GET /v1/deployments/{id}/metrics). */
+export interface Metrics {
+  cpu: MetricPoint[];
+  memory: MetricPoint[];
+  cpuRequest?: number;
+  cpuLimit?: number;
+  memoryRequest?: number;
+  memoryLimit?: number;
+  /** What the backend can't provide, each with the reason. */
+  unavailable?: string[];
+  from: string;
+  to: string;
+  summary: Partial<Record<"cpu" | "memory", SeriesSummary>>;
+}

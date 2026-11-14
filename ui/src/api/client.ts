@@ -34,19 +34,20 @@ export function onSessionEnded(fn: SessionEndedListener): () => void {
   return () => sessionEnded.delete(fn);
 }
 
-export async function apiFetch<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await request(method, path, body, signal);
+/** timeoutMs is how long to wait for the answer: longer for a stored-log or metrics query, which the server gives 20 s. */
+export async function apiFetch<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown, signal?: AbortSignal, timeoutMs = TIMEOUT_MS): Promise<T> {
+  const res = await request(method, path, body, signal, false, timeoutMs);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
 /** Sends one request; a non-2xx answer becomes an ApiError. */
-async function request(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown, signal?: AbortSignal, stream = false): Promise<Response> {
+async function request(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown, signal?: AbortSignal, stream = false, timeoutMs = TIMEOUT_MS): Promise<Response> {
   // A stream's body may last minutes: its timeout covers only the wait
   // for the answer's headers.
   const timer = new AbortController();
-  const id = stream ? setTimeout(() => timer.abort(), TIMEOUT_MS) : undefined;
-  const timeout = stream ? timer.signal : AbortSignal.timeout(TIMEOUT_MS);
+  const id = stream ? setTimeout(() => timer.abort(), timeoutMs) : undefined;
+  const timeout = stream ? timer.signal : AbortSignal.timeout(timeoutMs);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const headers: Record<string, string> = { Accept: stream ? "application/x-ndjson" : "application/json", "X-Serendip-Csrf": "1" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -65,7 +66,7 @@ async function request(method: "GET" | "POST" | "PUT" | "DELETE", path: string, 
   } catch (err) {
     clearTimeout(id);
     if (signal?.aborted) throw err; // the caller cancelled: not an error to show
-    if (timeout.aborted) throw new NetworkError("Serendip didn't answer within 15 seconds.");
+    if (timeout.aborted) throw new NetworkError(`Serendip didn't answer within ${Math.round(timeoutMs / 1000)} seconds.`);
     throw new NetworkError("Can't reach Serendip.");
   }
   clearTimeout(id);
