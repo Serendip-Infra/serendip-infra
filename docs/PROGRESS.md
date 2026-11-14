@@ -12,14 +12,29 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-14 (after spec 023 T012)
+Last updated: 2026-11-14 (after spec 023 T014)
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T013 done (2026-11-14); next
-is T014 (reviews: go-reviewer and contract-guardian over the whole spec,
-plus `security-review`), then T015 (docs and close: the epic body, the
-spec PR, `docs/architecture/` for the `Removing` readiness reason).**
+**Spec 023 (observability package): T001–T014 done (2026-11-14); next
+is T015 (docs and close: the epic body, the spec PR, `docs/architecture/`
+for the `Removing` readiness reason, the docs-keeper drift check).**
+- **T014 (`3f81280` and the commit after it, closes #89):** reviews done
+  (tasks.md T014).
+  - **RP-064 fixed:** Fluent Bit is off the host network, on Serendip's
+    copy of the chart's config (`fluentbit.go`, `fluent-bit/`). The node
+    rule is gone. Checked live on `serendip-t018`.
+  - **RP-065:** the copy must be re-rendered on every logs-chart upgrade.
+    The API-server lookup wasn't re-measured; re-run T012's benchmark in
+    the post-v1 test pass.
+  - **go-reviewer:** fixed: drift restarts Fluent Bit, and a moved chart
+    line fails `Install`.
+  - **contract-guardian:** pass. **security-review:** no findings at
+    confidence 8 or above.
+  - **`serendip-t018` now:** the package is installed (ProviderInstance
+    `observability`), and `serendipd` runs from this session's
+    scratchpad build on :8088. The T013 binary `serendipd-t013c.exe` was
+    stopped to free the port.
 - **T013 (`d4c7a9e`, closes #88):** `specs/023-observability/verification.md`
   has evidence for criteria 1, 3–11 and 13 on `serendip-t018`, through
   the console (headless Chrome), CLI and MCP (CLI signed in as `admin`).
@@ -30,8 +45,8 @@ spec PR, `docs/architecture/` for the `Removing` readiness reason).**
     - F3: Argo executor lines in stored build logs;
     - F4: policy Approvals' `decision.at` was year 1 (spec 019's bug);
     - F5: new readiness reason `Removing` during the uninstall.
-  - **RP-064:** Fluent Bit's `:2020` answers counters to any pod.
-    **The user chose to fix it in T014 (2026-11-14), option 1:** run the
+  - **RP-064 (fixed in T014; T013's plan for it):** Fluent Bit's `:2020`
+    answered counters to any pod. **The user chose option 1:** run the
     logs module's Fluent Bit without `hostNetwork`, so the plane's
     NetworkPolicies cover `:2020`.
     - **Check first:** that the chart exposes the setting (oss-researcher),

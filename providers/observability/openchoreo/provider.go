@@ -163,7 +163,9 @@ func (p *Provider) SearchLogs(ctx context.Context, targets []reconcile.LogTarget
 		compID := t.Deployment.Spec.Component
 		sources = append(sources, &logSource{scope: scope, text: q.Text, keep: func(e logEntry, l *line) bool {
 			// Defence in depth (spike finding 5): a line from anywhere
-			// else is dropped, never passed on.
+			// else is dropped, never passed on. Keep it: it's also what
+			// makes the search phrase harmless, whatever the adapter does
+			// with it upstream (T014 security review).
 			m := e.Metadata
 			if m.ComponentUID != scope.ComponentUID || m.EnvironmentUID != scope.EnvironmentUID || m.ProjectUID != scope.ProjectUID {
 				return false

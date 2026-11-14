@@ -556,7 +556,7 @@ delete each before the next. Run the keep-awake beside long runs.
 >   UI typecheck, 154 tests and build pass. `contract-guardian` passed;
 >   its one finding (the 503's wording while removing) is fixed.
 
-## T014 — Reviews and fixes
+## T014 — Reviews and fixes ✅ 2026-11-14
 
 - **Do:** `contract-guardian` on `core/` and `providers/`; `go-reviewer`;
   a security review of the query path, the policies and the generated
@@ -564,6 +564,31 @@ delete each before the next. Run the keep-awake beside long runs.
 - **Files:** as the reviews find.
 - **Verify:** each review's findings are fixed or recorded with an RP
   number; `go test ./...` passes.
+
+> **Done as:**
+> - **RP-064 fixed, the user's option 1 (`3f81280`).** Fluent Bit runs
+>   off the host network on Serendip's copy of the chart's config
+>   (`fluentbit.go`), with the kubernetes filter on the API server, since
+>   the chart hard-codes `Use_Kubelet` at 127.0.0.1. The node rule is gone.
+>   Checked live on `serendip-t018` (`verification.md` criterion 9).
+>   RP-065 records the copy, and that the API-server lookup wasn't
+>   re-measured.
+> - **contract-guardian:** pass. Its findings were the stale RP-064 and
+>   unlogged trade-offs (now RP-065 and `build-vs-adopt.md`), and the
+>   drift repair (below).
+> - **go-reviewer** (no blockers). Fixed:
+>   - an edited or deleted config copy now also restarts Fluent Bit
+>     (checked live, about 10 s);
+>   - a moved chart line fails `Install`, not every binary at start;
+>   - the API-server lookup is logged in RP-065.
+>
+>   A node rule left by a pre-T014 install isn't removed: never released
+>   (RP-064).
+> - **security-review** (`ac9008f..HEAD`, query path, policies,
+>   credentials): no findings at confidence 8 or above. The client-side
+>   UID filter in `provider.go` is marked as a control to keep: it's what
+>   makes an unescaped search phrase harmless upstream.
+> - `go test ./...` passes.
 
 ## T015 [A] — Docs and close-out
 
