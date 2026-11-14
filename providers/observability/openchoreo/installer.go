@@ -322,7 +322,7 @@ func (i *Installer) helmInstall(ctx context.Context, r release) error {
 		return err
 	}
 	if rerr := i.recoverPending(ctx, r.name); rerr != nil {
-		return fmt.Errorf("%w; recovering the release left mid-operation: %v", err, rerr)
+		return fmt.Errorf("%w (%s: %s); recovering the release left mid-operation: %v", err, r.name, helmBusy, rerr)
 	}
 	_, err = i.runInstall(ctx, r)
 	return err
@@ -366,11 +366,12 @@ func (i *Installer) recoverPending(ctx context.Context, name string) error {
 	if start := bytes.IndexByte(out, '{'); start < 0 || json.Unmarshal(out[start:], &st) != nil {
 		return fmt.Errorf("read the release's status: %.200s", out)
 	}
-	log.Printf("openchoreo observability: release %s was left %s; recovering it", name, st.Info.Status)
 	switch st.Info.Status {
 	case "pending-install":
+		log.Printf("openchoreo observability: release %s was left %s; uninstalling it", name, st.Info.Status)
 		_, err = i.run(ctx, "uninstall", name, "--namespace", PlaneNamespace, "--wait", "--timeout", helmUninstallTimeout)
 	case "pending-upgrade", "pending-rollback":
+		log.Printf("openchoreo observability: release %s was left %s; rolling it back", name, st.Info.Status)
 		_, err = i.run(ctx, "rollback", name, "--namespace", PlaneNamespace, "--wait", "--timeout", helmInstallTimeout)
 	default:
 		err = fmt.Errorf("the release is %q, not pending", st.Info.Status)
