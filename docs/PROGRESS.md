@@ -16,8 +16,18 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T003 done (2026-11-14); next
-is T004 (core types).**
+**Spec 023 (observability package): T001–T004 done (2026-11-14); next
+is T005 (the installer).**
+- **T004 (`1ebe9d8`):**
+  - `provider.Requirements.Disk`;
+  - `core/reconcile/observability.go`: the types, the caps as
+    constants, and `LogCursor`, which is versioned base64url, refuses any
+    other spelling, and encodes an empty cursor as the first page;
+  - `PackageUsage` and `DiskUsage`;
+  - `policy.ActionObservabilityRead`.
+  - **A test flake, not from T004:**
+    `TestEngine_RequeueAfter_BackoffCapsAtResync` (timing) fails about 1
+    run in 5 on unchanged code.
 - **ADR 0021** (`docs/decisions/0021-observability-backend.md`) chose
   **OpenObserve for logs** and **plain Prometheus for metrics**, both
   read through OpenChoreo's adapters. It was measured on the simulated
@@ -67,11 +77,9 @@ is T004 (core types).**
   - **`serendip-t018` is stopped.** Start it with `docker start
     serendip-t018-control-plane`; its node IP may change (the node rule
     handles that).
-- **Next:** T004 (core types: `provider.Requirements.Disk`,
-  `ObservabilityProvider`, `PackageUsage`, `ActionObservabilityRead`,
-  the cursor).
-  - After it: T005, the installer, in ADR 0021's order, with a readiness
-    check that runs a real metrics query.
+- **Next:** T005, the installer, in ADR 0021's order, with a readiness
+  check that runs a real metrics query. The API layer (T008) validates
+  and caps queries; `core` only declares the caps.
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or
