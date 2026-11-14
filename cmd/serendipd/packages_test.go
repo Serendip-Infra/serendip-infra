@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
 )
 
-// The optional capabilities show in GET /v1/readiness from the start,
-// as not available in this build until specs 022 and 023.
+// The optional capabilities show in GET /v1/readiness from the start, as
+// not available in a build without their installers.
 func TestPackagesReportReadiness(t *testing.T) {
 	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "p.db"))
 	if err != nil {
@@ -28,7 +29,7 @@ func TestPackagesReportReadiness(t *testing.T) {
 	}
 	bus := event.NewInProcessBus()
 	registry := provider.NewRegistry()
-	clean := registerPackages(db, bus, reconcile.NewEngine(bus, time.Minute, time.Minute), registry, packageCatalogue(nil), nil)
+	clean := registerPackages(db, bus, reconcile.NewEngine(bus, time.Minute, time.Minute), registry, packageCatalogue(nil, nil), nil)
 	if clean == nil {
 		t.Fatal("no clean-up")
 	}
@@ -43,7 +44,7 @@ func TestPackagesReportReadiness(t *testing.T) {
 // The builds package carries its measured cost (T013), so it can be
 // installed, and the catalogue states the same numbers the package does.
 func TestBuildsPackageInstallableWithMeasuredCost(t *testing.T) {
-	c := packageCatalogue(installerStub{})
+	c := packageCatalogue(installerStub{}, nil)
 	p := c["openchoreo-workflow-plane"]
 	if p.Installer == nil || p.Removal == "" || p.Capability != capBuild {
 		t.Fatalf("builds entry = %+v", p)
@@ -85,6 +86,138 @@ func TestBuildHandleFollowsReadiness(t *testing.T) {
 	if !notReady() {
 		t.Fatal("handle still set after the package stopped being Ready")
 	}
+}
+
+// The observability package is offered with its installer and removal
+// wording, but can't be installed until T012 measures its cost.
+func TestObservabilityPackageOfferedNotYetInstallable(t *testing.T) {
+	c := packageCatalogue(nil, installerStub{})
+	p := c["openchoreo-observability-plane"]
+	if p.Installer == nil || p.Capability != capObservability || p.Removal != observabilityRemoval {
+		t.Fatalf("observability entry = %+v", p)
+	}
+	if p.Requirements != nil {
+		t.Fatalf("Requirements = %+v before T012 measured them", p.Requirements)
+	}
+	if p.Installable() == nil {
+		t.Error("Installable() = nil for an unmeasured package")
+	}
+	if err := c.Validate(resource.ProviderInstanceSpec{ProviderID: p.Provider, CapabilityID: capObservability}); !errors.Is(err, resource.ErrValidation) {
+		t.Errorf("Validate = %v, want a validation error", err)
+	}
+}
+
+// With measured requirements, an observability install runs through the
+// engine to Ready, and the handle then reaches the provider.
+func TestObservabilityInstallReachesHandle(t *testing.T) {
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "p.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	bus := event.NewInProcessBus()
+	registry := provider.NewRegistry()
+	engine := reconcile.NewEngine(bus, time.Minute, time.Minute)
+	c := packageCatalogue(nil, readyInstaller{})
+	p := c["openchoreo-observability-plane"]
+	p.Requirements = &provider.Requirements{IdleMemoryMiB: 400, IdleCPUMillicores: 50, PeakMemoryMiB: 600, PeakCPUMillicores: 500,
+		MeasuredOn: "a test", Results: "none", Note: "a test package"}
+	c["openchoreo-observability-plane"] = p
+	obs := &lazyObservability{}
+	want := &observabilityStub{}
+	registerPackages(db, bus, engine, registry, c, onReadiness{capObservability: observabilityHandle(registry, obs, want)})
+	if rd := registry.Readiness()[capObservability]; rd.Ready || rd.Reason != reconcile.ReasonNotInstalled {
+		t.Fatalf("before install: %+v", rd)
+	}
+	if _, err := obs.Metrics(t.Context(), reconcile.LogTarget{}, reconcile.MetricsQuery{}); !errors.Is(err, reconcile.ErrProviderNotReady) {
+		t.Fatalf("handle before install: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	var runErr error
+	go func() { defer close(done); runErr = engine.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	select {
+	case <-engine.Ready():
+	case <-done:
+		t.Fatalf("engine stopped before it was ready: %v", runErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("engine not ready")
+	}
+	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).SetBus(bus)
+	if _, err := insts.Create(t.Context(), resource.ProviderInstance{Metadata: resource.Metadata{Name: "observability"},
+		Spec: resource.ProviderInstanceSpec{ProviderID: p.Provider, CapabilityID: capObservability}}); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := obs.Metrics(t.Context(), reconcile.LogTarget{}, reconcile.MetricsQuery{}); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("handle not ready; readiness %+v", registry.Readiness()[capObservability])
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if want.metrics.Load() != 1 {
+		t.Errorf("provider saw %d metrics reads, want 1", want.metrics.Load())
+	}
+	if rd := registry.Readiness()[capObservability]; !rd.Ready {
+		t.Errorf("readiness = %+v", rd)
+	}
+	if impl, ok := registry.Lookup(capObservability); !ok || impl != reconcile.ObservabilityProvider(want) {
+		t.Errorf("registry observability = %v, %v", impl, ok)
+	}
+}
+
+// The observability handle follows readiness like the build handle.
+func TestObservabilityHandleFollowsReadiness(t *testing.T) {
+	registry := provider.NewRegistry()
+	obs := &lazyObservability{}
+	set := observabilityHandle(registry, obs, &observabilityStub{})
+	notReady := func() bool {
+		_, err := obs.SearchLogs(t.Context(), nil, reconcile.LogQuery{})
+		return errors.Is(err, reconcile.ErrProviderNotReady)
+	}
+	if !notReady() {
+		t.Fatal("handle ready before the package")
+	}
+	set(true)
+	if notReady() {
+		t.Fatal("handle not set once Ready")
+	}
+	set(false)
+	if !notReady() {
+		t.Fatal("handle still set after the package stopped being Ready")
+	}
+	set(true) // Ready again, e.g. after a repair
+	if notReady() {
+		t.Fatal("handle not set when Ready again")
+	}
+}
+
+type observabilityStub struct{ metrics atomic.Int32 }
+
+func (*observabilityStub) SearchLogs(context.Context, []reconcile.LogTarget, reconcile.LogQuery) (reconcile.LogPage, error) {
+	return reconcile.LogPage{}, nil
+}
+func (*observabilityStub) BuildLogs(context.Context, resource.Build, reconcile.LogQuery) (reconcile.LogPage, error) {
+	return reconcile.LogPage{}, nil
+}
+func (o *observabilityStub) Metrics(context.Context, reconcile.LogTarget, reconcile.MetricsQuery) (reconcile.Metrics, error) {
+	o.metrics.Add(1)
+	return reconcile.Metrics{}, nil
+}
+
+type readyInstaller struct{ installerStub }
+
+func (readyInstaller) Install(context.Context, resource.ProviderInstance) (reconcile.PackageState, error) {
+	return reconcile.PackageState{Ready: true, Applied: "test"}, nil
 }
 
 type installerStub struct{}

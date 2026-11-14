@@ -24,12 +24,20 @@ const (
 const buildsRemoval = "Build history stays, but run logs and the stored images built from source are deleted. " +
 	"Components running a built image keep running, but can't be rebuilt, or started on a node that doesn't have the image, until the package is back."
 
+// observabilityRemoval is what removing the observability package loses
+// (specs/023-observability plan decision 13), shown before the request to
+// remove it.
+const observabilityRemoval = "All stored logs and metrics history are deleted. Recent logs and events on the Runtime tab keep working. " +
+	"Finished builds' logs can no longer be read once their pods are gone."
+
 // packageCatalogue is the optional packages this build offers (specs/020
-// plan decision 5). builds installs the workflow plane (spec 022), or is
-// nil when there's no cluster to install it on. Its Requirements were
-// measured in T013; the catalogue refuses any package without them.
-// Observability (spec 023) has no installer yet.
-func packageCatalogue(builds reconcile.PackageInstaller) reconcile.Catalogue {
+// plan decision 5). builds installs the workflow plane (spec 022) and
+// observability the observability plane (spec 023); either is nil when
+// there's no cluster to install it on. The catalogue refuses any package
+// without measured Requirements: builds' were measured in its T013, and
+// observability's come in spec 023's T012, so until then it's offered but
+// can't be installed.
+func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcile.Catalogue {
 	return reconcile.Catalogue{
 		"openchoreo-workflow-plane": {
 			Provider: "openchoreo-workflow-plane", Capability: capBuild,
@@ -41,6 +49,8 @@ func packageCatalogue(builds reconcile.PackageInstaller) reconcile.Catalogue {
 		"openchoreo-observability-plane": {
 			Provider: "openchoreo-observability-plane", Capability: capObservability,
 			Description: "Stored logs, metrics, traces and alerts; heavy on a 16 GB machine",
+			Installer:   observability,
+			Removal:     observabilityRemoval,
 		},
 	}
 }
@@ -69,24 +79,34 @@ func registerPackages(db *sql.DB, bus event.Bus, engine *reconcile.Engine, regis
 	return r.UninstallCleanup()
 }
 
-// buildHandle sets builds to p while the build package is Ready, and
-// clears it otherwise, registering p once it's first Ready.
-func buildHandle(registry *provider.Registry, builds *lazyBuilds, p reconcile.BuildProvider) func(ready bool) {
+// packageHandle sets l to p while capability's package is Ready, and
+// clears it otherwise, registering p each time it becomes Ready. name is
+// the provider, for the log. The get-then-set isn't atomic: it relies on
+// the reconciler reporting one package's readiness at a time.
+func packageHandle[T any](registry *provider.Registry, capability, name string, l *lazy[T], p T) func(ready bool) {
 	return func(ready bool) {
-		if !ready {
-			if _, err := builds.get(); err == nil {
-				log.Print("serendipd: kubernetes: build provider (openchoreo workflow plane) not ready")
-			}
-			builds.clear()
-			return
+		_, err := l.get()
+		active := err == nil
+		switch {
+		case !ready && active:
+			l.clear()
+			log.Printf("serendipd: kubernetes: %s provider (%s) not ready", capability, name)
+		case ready && !active:
+			registry.Register(capability, p)
+			l.set(p)
+			log.Printf("serendipd: kubernetes: %s provider (%s) active", capability, name)
 		}
-		if _, err := builds.get(); err == nil {
-			return
-		}
-		registry.Register(capBuild, p)
-		builds.set(p)
-		log.Print("serendipd: kubernetes: build provider (openchoreo workflow plane) active")
 	}
+}
+
+// buildHandle is the build package's handle (spec 022).
+func buildHandle(registry *provider.Registry, builds *lazyBuilds, p reconcile.BuildProvider) func(ready bool) {
+	return packageHandle(registry, capBuild, "openchoreo workflow plane", &builds.lazy, p)
+}
+
+// observabilityHandle is the observability package's handle (spec 023).
+func observabilityHandle(registry *provider.Registry, obs *lazyObservability, p reconcile.ObservabilityProvider) func(ready bool) {
+	return packageHandle(registry, capObservability, "openchoreo observability plane", &obs.lazy, p)
 }
 
 // registerBuilds wires the Build reconciler (spec 022) against the lazy

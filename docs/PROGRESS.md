@@ -16,8 +16,18 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T006 done (2026-11-14); next
-is T007 (wiring in serendipd).**
+**Spec 023 (observability package): T001–T007 done (2026-11-14); next
+is T008 (the API).**
+- **T007 (wiring in `serendipd`):** the `openchoreo-observability-plane`
+  catalogue entry has its installer and decision 13's removal wording.
+  `Requirements` stays nil until T012, so the package is offered but
+  can't be installed. A generic `packageHandle[T]` now backs both
+  `buildHandle` and `observabilityHandle`. `lazyObservability` is in
+  `lazy.go`, and `kubeWiring.observability` is the handle T008's API
+  reads. Disk use: the catalogue's `Installer` is `*obsplane.Installer`,
+  which implements `reconcile.PackageUsage`, so T008 reads it by type
+  assertion. Tested through the real engine
+  (`TestObservabilityInstallReachesHandle`).
 - **T006 (the client and the provider):** `providers/observability/openchoreo/`
   `observer.go` (the adapters through the Service proxy), `scope.go`,
   `provider.go` (`SearchLogs`, `BuildLogs`, `Metrics`) and `usage.go`,
@@ -130,14 +140,20 @@ is T007 (wiring in serendipd).**
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
     Deployments.
-- **Next:** T007, wiring in `serendipd`:
-  - the catalogue entry (installer, `Removal`, `Requirements` still nil);
-  - the lazy `observability` handle over `NewProvider`;
-  - registration on readiness;
-  - `Installer` as `PackageUsage`.
-
-  Then T008 (the API), which validates and caps queries; `core` only
-  declares the caps.
+- **Next:** T008, the API: the three routes (decision 11) with
+  decision 6's scoping, the caps (`core` only declares them; the API
+  validates and enforces them), 503 while `kubeWiring.observability`
+  isn't ready, `omitted`, the build-logs fallback (decision 10), package
+  usage in `GET /v1/packages`, the authz rules and the catalogue entries,
+  and `api/spec023_acceptance_test.go`. Remember that a log page can be
+  short or empty with `Next` set.
+- **GitHub (2026-11-14):** four paced background scripts in the previous
+  session's scratchpad `prs/` folder, chained: `run.sh` (spec PRs
+  003–022, opened by Yasindu007, merged by serendipinfra) → `track.sh`
+  (closed epics for 005–022, plus 023's epic in "v1 GA") → `setup.sh` →
+  `backfill.sh`. Check their `*.log` files before any other GitHub
+  write. 023's task issues come from that run, so T001–T007 get closed
+  at a checkpoint once they exist.
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or

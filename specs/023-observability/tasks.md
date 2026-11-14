@@ -262,7 +262,27 @@ delete each before the next. Run the keep-awake beside long runs.
   was given; an over-16-KiB line cut; HTTP metrics reported unavailable.
   Then `go-reviewer`.
 
-## T007 — Wiring in serendipd
+## T007 — Wiring in serendipd ✅ 2026-11-14
+
+> **Done as:** `cmd/serendipd/packages.go`: the
+> `openchoreo-observability-plane` entry carries its installer and
+> decision 13's removal wording, with `Requirements` nil until T012, so
+> it's offered but `Installable()` and `Validate` refuse it. A generic
+> `packageHandle[T]` now backs both `buildHandle` and the new
+> `observabilityHandle`: it sets the lazy handle when the package becomes
+> Ready, clears it when it stops, and registers the provider each time it
+> becomes Ready. `lazy.go` adds `lazyObservability`. In `wiring.go`,
+> `obsplane.NewInstaller` fails startup without `helm`, like builds', and
+> `kubeWiring.observability` is the handle the API reads in T008. Disk
+> use needs no wiring: the catalogue's `Installer` is the provider's
+> `*Installer`, which implements `reconcile.PackageUsage`, and T008 reads
+> it by type assertion.
+> - **Verify:** `go build ./...` and `go test ./cmd/serendipd/...` pass
+>   (also `-race -count=5`). `TestObservabilityInstallReachesHandle` runs
+>   the real engine against a catalogue with requirements: before
+>   install, `NotInstalled` and `ErrProviderNotReady`; after creating the
+>   ProviderInstance, Ready, the provider registered, and a read through
+>   the handle reaches it.
 
 - **Do:**
   - the catalogue entry, with the installer, `Removal` and
