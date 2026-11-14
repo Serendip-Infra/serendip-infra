@@ -110,3 +110,13 @@ Concrete behavior:
 - Whether a `cloud` profile (managed Kubernetes, e.g. EKS/AKS, as the
   substrate instead of bare metal) is in scope at all was raised in the
   source discussion only as a long-term possibility, not committed.
+- **Hardware tiers (maybe, to do).** The user recalls offering low,
+  medium, high and custom spec installs. That isn't designed anywhere:
+  the profiles above are topologies (node counts), not hardware sizes.
+  - **One possible shape:** a hardware tier chosen within each topology,
+    plus "custom". The tier would pick each package's resource-driven
+    options. For example, edge-1 at low spec gets ADR 0021's plain
+    Prometheus; a higher tier could get the metrics module as shipped,
+    or SigNoz.
+  - **Needs its own spec or ADR,** proposed for the user's approval
+    before anything depends on it (noted 2026-11-14, spec 023).

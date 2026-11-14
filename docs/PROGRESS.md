@@ -72,6 +72,12 @@ is T004 (core types).**
   the cursor).
   - After it: T005, the installer, in ADR 0021's order, with a readiness
     check that runs a real metrics query.
+- **Maybe, to do (not scheduled):**
+  - **Hardware tiers.** Propose how the user's low, medium, high and
+    custom spec installs fit with the topology profiles, as a spec or
+    ADR (`deployment-profiles.md`, open questions).
+  - **The full test pass after v1:** every feature, on real hardware,
+    with upgrades and long runs.
 - **Plan leanings carried forward:**
   - `provider.Requirements` gains an optional disk part;
   - a core `ObservabilityProvider` with a lazy handle like builds';
