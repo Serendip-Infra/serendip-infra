@@ -41,6 +41,15 @@ Notes (T001):
     `geoip.zinclabs.dev` and LLM pricing from GitHub at start. The chart
     renders only the `config` keys it knows, so the pricing switch goes
     through `extraEnv`.
+  - `openobserve-standalone.extraEnv[1]` `ZO_SSRF_ALLOW_LOOPBACK=true`
+    (T012, seen live on a fresh `bench-t470`): OpenObserve's SSRF guard
+    refuses alert destinations at private addresses, so the chart's
+    setup Job can't create its `http://logs-adapter:9098/...` webhook,
+    fails with `BackoffLimitExceeded`, and the install never finishes.
+    With the flag, v0.92.2 skips the create-time check entirely
+    (`ssrf_guard.rs`); `ZO_SKIP_SSRF_CHECKS` is the documented switch
+    for private addresses. The module's `main` sets the same flag.
+    `serendip-t018` hid this: its destination already existed. RP-062.
 - **Scopes are UIDs** (`projectUid`, `componentUid`, `environmentUid`).
   The adapters ignore names, and the query widens to the whole namespace.
 - **The chart's own NetworkPolicy blocks `hostNetwork` Fluent Bit.**

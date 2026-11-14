@@ -84,7 +84,26 @@ Docker volumes that outlive clusters. `kind-t470-setup.sh up` wires new
 clusters to them when they're running; `registry-cache.sh wire <cluster>`
 wires an existing one. A cache that's down or can't serve an image falls
 back to the real registry. `registry-cache.sh status` shows the disk each
-cache uses, and `down --purge` frees it.
+cache uses, and `down --purge` frees it. First used for spec 023's T012
+runs (2026-11-14): both cold starts pulled through them, with results in
+line with spec 022's runs.
+
+### Measuring an optional package
+
+`--package <provider>` installs that package through the API after the
+platform's idle sample, measures it, and writes a package section and
+its stated cost (the node's use beyond the platform phase) to the
+summary. An unknown provider is refused. The catalogue refuses a package
+without `Requirements`, so the first measurement runs a `serendipd`
+built with `go build -overlay` and placeholder numbers.
+
+- **Builds** (`openchoreo-workflow-plane`): idle, two builds, auto-build
+  and one full Helm run.
+- **Observability** (`openchoreo-observability-plane`): idle, then
+  `--package-load-script` (default `observability-load/load.sh`) for
+  `--package-load-samples` (180) samples every 10 s, then
+  `--package-disk-samples` (121) every `--package-disk-interval` (1m)
+  for the volumes' growth per day, then the load's query latencies.
 
 Any `--sim-*` flag marks the run as a simulation. Its summary opens with
 "SIMULATION — does not satisfy the reference-hardware gate", and no

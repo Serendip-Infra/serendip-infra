@@ -720,6 +720,32 @@ only; the first live queries are T012's.
    and a first search's GETs (at most 60) stay on the local API server.
    `contract-guardian` passed.
 
+## Findings from T012 (2026-11-14, `bench-t470`): the package's cost
+
+Results: `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`.
+
+1. **No regression without the package:** every group is within
+   tolerance of spec 022's run; `serendipd` 29.5 MiB, rule 4 passes.
+2. **Stated cost** (the node beyond the platform, as for builds):
+   - idle 608 MiB, 21 mcores;
+   - peak 967 MiB, 372 mcores over 2.5 hours of T002's load.
+   Of the idle figure, ~275 MiB is the package's own pods (OpenObserve
+   ~125, Prometheus ~85). The rest is kube-apiserver (+40 MiB) and node
+   memory outside pods (+285 MiB).
+3. **Disk:** 496 MiB a day under the load (logs 431, metrics 65). With
+   3 days kept, that levels off near 1.5 GiB of the stores' 8 GiB. The
+   budget is the two stores' volumes, `capacityMiB`, the same figure
+   usage reports. The growth is a 2-hour slope, extrapolated (RP-063).
+4. **Resync:** +0.87 mcores over 10 minutes idle (criterion 4).
+5. **Queries under load:** metrics mean 12 ms; logs mean 0.47 s, max
+   1.5 s; none failed.
+6. **A fresh install never finished.** OpenObserve's SSRF guard refused
+   the logs chart's in-cluster webhook (a private ClusterIP), so its
+   setup Job failed. `serendip-t018` had hidden it: its destination
+   already existed. Fixed with `ZO_SSRF_ALLOW_LOOPBACK=true`, as the
+   module's newer releases set (RP-062). Spec 024 must validate alert
+   destinations itself.
+
 ## Interfaces and types (sketch; settled in T002)
 
 - **`core/provider`:** `Requirements.Disk *DiskRequirements{GrowthMiBPerDay,

@@ -82,6 +82,8 @@ purpose), **Closed** (fixed).
 | RP-059 | Stored logs are scoped by OpenChoreo object UIDs, so a re-created platform object hides its predecessor's logs | Correctness | Accepted | Spec 023 T006 |
 | RP-060 | Fluent Bit's read-position file stays on the node after the package is removed | Operability | Accepted | Spec 023 T006 |
 | RP-061 | The package's reported disk use lags, and leaves out the logs store's newest data and metadata | Honesty of a reported number | Accepted | Spec 023 T006 |
+| RP-062 | OpenObserve's SSRF guard is off, so its in-cluster alert webhook can be created | Security | Accepted | Spec 023 T012 |
+| RP-063 | The observability package's disk growth is a 2-hour slope under a synthetic load, extrapolated to a day | Honesty of a reported number | Accepted | Spec 023 T012 |
 
 ---
 
@@ -1437,3 +1439,47 @@ purpose), **Closed** (fixed).
 - **Revisit:** if a store exposes its on-disk size, or local-path is
   replaced by a CSI provisioner whose volumes the kubelet measures.
 
+## RP-062 — OpenObserve's SSRF guard is off
+
+- **Kind:** security. **Status:** Accepted, 2026-11-14. **Found:** spec
+  023 T012, on a fresh `bench-t470`.
+- **What:** OpenObserve v0.92.2 refuses alert destinations at private
+  addresses (its SSRF guard). The logs module's setup Job creates one,
+  OpenChoreo's webhook at `http://logs-adapter:9098`, a ClusterIP, so
+  on a fresh store the Job fails and the install never becomes Ready.
+  `serendip-t018` didn't show it, because its destination already
+  existed from the first install. The installer now sets
+  `ZO_SSRF_ALLOW_LOOPBACK=true`, as the module's newer releases do. At
+  v0.92.2 that skips the create-time check entirely, not only for
+  loopback (checked live: the destination was then created).
+- **Why accepted:** only Serendip (with the admin Secret, kept in the
+  cluster) and the chart's Job can reach OpenObserve's API: the plane's
+  NetworkPolicies admit only pods in its namespace, plus the node rule
+  to the ingest port. No person or AI creates OpenObserve destinations;
+  alerts are spec 024's, through Serendip's API. OpenObserve has no
+  allow-list at v0.92.2 to admit only `logs-adapter`.
+- **Mitigation:** the policies above; spec 024 must validate any
+  destination a person sets before it reaches OpenObserve.
+- **Revisit:** when OpenObserve has an allow-list of hosts or CIDRs (a
+  chart PR mentioned `ZO_SSRF_ALLOWED_HOSTS`; not in v0.92.2), or when
+  spec 024 adds notification channels.
+
+## RP-063 — The stated disk growth is a 2-hour slope, extrapolated
+
+- **Kind:** honesty of a reported number. **Status:** Accepted,
+  2026-11-14. **Found:** spec 023 T012 (go-reviewer).
+- **What:** the observability package states 496 MiB a day: the
+  volumes' growth over the benchmark's 2-hour disk phase, scaled to 24
+  hours, under T002's synthetic load (five loggers, 10 lines a second
+  each). A fresh store's first hours aren't steady state: the 31-minute
+  load phase before it scaled to 727 MiB a day, as the logs store
+  compacted its first data. Neither phase reaches the 3-day retention,
+  so the ~1.5 GiB level the note states is growth × retention, not a
+  measurement. A real cluster's logging rate can be far higher or lower.
+- **Why accepted:** a multi-day run per package is out of proportion
+  for v1. The figure only informs the person installing, and the
+  package's own volumes (5 GiB logs, 3 GiB metrics, Prometheus capped at
+  2 GB) bound the real use whatever the rate. `GET /v1/packages` reports
+  the measured current use beside the stated figure.
+- **Revisit:** in the full test pass after v1, with a run past the
+  retention window on reference hardware.

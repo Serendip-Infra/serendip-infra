@@ -11,6 +11,7 @@ import (
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
 	"github.com/serendip-infra/serendip-infra/providers/gateway/kgateway"
 	"github.com/serendip-infra/serendip-infra/providers/identity/thunderid"
+	obsplane "github.com/serendip-infra/serendip-infra/providers/observability/openchoreo"
 	"github.com/serendip-infra/serendip-infra/providers/secrets/openbao"
 )
 
@@ -114,10 +115,8 @@ var namespaceGroups = map[string]string{
 	buildplane.PlaneNamespace:        GroupBuilds,
 	buildplane.BuildsNamespace:       GroupBuilds,
 	buildplane.RunNamespace:          GroupBuilds,
-	// The observability package (spec 023). Its provider doesn't export
-	// the namespace yet; T005 replaces these with its constants.
-	"openchoreo-observability-plane": GroupObservability,
-	"signoz":                         GroupObservability, // T003's config C only
+	obsplane.PlaneNamespace:          GroupObservability,
+	"signoz":                         GroupObservability, // spec 023 T003's config C only
 }
 
 // groupFor attributes a namespace to a group. Unknown namespaces are
@@ -429,7 +428,7 @@ func aggregateVolumes(samples []Sample) []VolumeAggregate {
 // sortedGroups returns group names in a stable reporting order: known
 // groups first in a fixed order, then "Other: ..." alphabetically.
 func sortedGroups(groups map[string]GroupAggregate) []string {
-	order := []string{GroupKubernetes, GroupSecrets, GroupCertificates, GroupPlatformCtrl, GroupPlatformData, GroupGateway, GroupIdentity, GroupWorkloads, GroupBuilds}
+	order := []string{GroupKubernetes, GroupSecrets, GroupCertificates, GroupPlatformCtrl, GroupPlatformData, GroupGateway, GroupIdentity, GroupWorkloads, GroupBuilds, GroupObservability}
 	var out []string
 	seen := map[string]bool{}
 	for _, g := range order {

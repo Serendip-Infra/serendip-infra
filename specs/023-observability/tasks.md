@@ -484,7 +484,7 @@ delete each before the next. Run the keep-awake beside long runs.
 > - **Verify:** `pnpm typecheck`, `pnpm test` (150 passed), `pnpm build`
 >   (103.9 KiB gz of 160) and `check-contrast.mjs` pass.
 
-## T012 — The package's footprint, and its Requirements
+## T012 — The package's footprint, and its Requirements ✅ 2026-11-14
 
 - **Do:**
   - on the simulated T470, install through Serendip's own installer;
@@ -498,6 +498,31 @@ delete each before the next. Run the keep-awake beside long runs.
 - **Verify:** `GET /v1/packages` shows the numbers and they match the
   results folder (criterion 1); resync adds near-zero CPU over a
   10-minute idle (criterion 4).
+
+> **Done as:** `requirements.go` with the package run's numbers: idle
+> 608 MiB, 21 mcores; peak 967 MiB, 372 mcores; disk 496 MiB a day, 3
+> days kept, a budget of the stores' 8 GiB (`capacityMiB`). The catalogue
+> now points at it. Findings are in plan.md, "Findings from T012".
+> - **Runs:** `2026-11-14-spec023-simulated-t470/`. `no-package/`
+>   against spec 022 is a PASS. `package/` covers install, 10 min idle,
+>   31 min under load and 2 h of disk, all through the local image caches.
+> - **Fixed on the way:** a fresh install never finished, because
+>   OpenObserve's SSRF guard refused the chart's in-cluster webhook. It
+>   now sets `ZO_SSRF_ALLOW_LOOPBACK=true` (RP-062).
+> - **Harness:** an observability run drives T002's load through load
+>   and disk phases, with new flags. `--package` refuses an unknown
+>   provider, and the cost works for any package's group.
+> - **Verify:** `GET /v1/packages` on a `serendipd` built from the
+>   tree returns the same numbers and `disk` as the results folder, with
+>   `installable: true`. Resync adds +0.87 mcores over the 10-minute
+>   idle. `go test ./cmd/... ./providers/observability/... ./core/...`
+>   passes.
+> - **Reviews:** `contract-guardian` passed. `go-reviewer`'s harness
+>   findings are fixed: the load's stop has a time limit, an interrupted
+>   phase marks the summary incomplete, the load flags and script are
+>   checked before the install, the kubeconfig goes in `KUBECONFIG`, and
+>   a shrinking store counts as no growth. One is recorded rather than
+>   fixed: the daily growth is a 2-hour slope (RP-063).
 
 ## T013 — Real-cluster verification on serendip-t018
 

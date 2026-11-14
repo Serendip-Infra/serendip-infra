@@ -14,6 +14,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
+	obsplane "github.com/serendip-infra/serendip-infra/providers/observability/openchoreo"
 )
 
 // The optional capabilities show in GET /v1/readiness from the start, as
@@ -88,26 +89,27 @@ func TestBuildHandleFollowsReadiness(t *testing.T) {
 	}
 }
 
-// The observability package is offered with its installer and removal
-// wording, but can't be installed until T012 measures its cost.
-func TestObservabilityPackageOfferedNotYetInstallable(t *testing.T) {
+// The observability package carries its measured cost (T012), including
+// its disk use, so it can be installed, and the catalogue states the same
+// numbers the package does.
+func TestObservabilityPackageInstallableWithMeasuredCost(t *testing.T) {
 	c := packageCatalogue(nil, installerStub{})
 	p := c["openchoreo-observability-plane"]
 	if p.Installer == nil || p.Capability != capObservability || p.Removal != observabilityRemoval {
 		t.Fatalf("observability entry = %+v", p)
 	}
-	if p.Requirements != nil {
-		t.Fatalf("Requirements = %+v before T012 measured them", p.Requirements)
+	if err := p.Installable(); err != nil {
+		t.Fatalf("Installable() = %v, want nil", err)
 	}
-	if p.Installable() == nil {
-		t.Error("Installable() = nil for an unmeasured package")
+	if p.Requirements != obsplane.Requirements || p.Requirements.Disk == nil {
+		t.Fatalf("Requirements = %+v, want the package's %+v with Disk", p.Requirements, obsplane.Requirements)
 	}
-	if err := c.Validate(resource.ProviderInstanceSpec{ProviderID: p.Provider, CapabilityID: capObservability}); !errors.Is(err, resource.ErrValidation) {
-		t.Errorf("Validate = %v, want a validation error", err)
+	if err := c.Validate(resource.ProviderInstanceSpec{ProviderID: p.Provider, CapabilityID: capObservability}); err != nil {
+		t.Fatalf("Validate = %v", err)
 	}
 }
 
-// With measured requirements, an observability install runs through the
+// With its measured requirements, an observability install runs through the
 // engine to Ready, and the handle then reaches the provider.
 func TestObservabilityInstallReachesHandle(t *testing.T) {
 	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "p.db"))
@@ -122,10 +124,6 @@ func TestObservabilityInstallReachesHandle(t *testing.T) {
 	registry := provider.NewRegistry()
 	engine := reconcile.NewEngine(bus, time.Minute, time.Minute)
 	c := packageCatalogue(nil, readyInstaller{})
-	p := c["openchoreo-observability-plane"]
-	p.Requirements = &provider.Requirements{IdleMemoryMiB: 400, IdleCPUMillicores: 50, PeakMemoryMiB: 600, PeakCPUMillicores: 500,
-		MeasuredOn: "a test", Results: "none", Note: "a test package"}
-	c["openchoreo-observability-plane"] = p
 	obs := &lazyObservability{}
 	want := &observabilityStub{}
 	registerPackages(db, bus, engine, registry, c, onReadiness{capObservability: observabilityHandle(registry, obs, want)})
@@ -150,7 +148,7 @@ func TestObservabilityInstallReachesHandle(t *testing.T) {
 	}
 	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).SetBus(bus)
 	if _, err := insts.Create(t.Context(), resource.ProviderInstance{Metadata: resource.Metadata{Name: "observability"},
-		Spec: resource.ProviderInstanceSpec{ProviderID: p.Provider, CapabilityID: capObservability}}); err != nil {
+		Spec: resource.ProviderInstanceSpec{ProviderID: "openchoreo-observability-plane", CapabilityID: capObservability}}); err != nil {
 		t.Fatal(err)
 	}
 

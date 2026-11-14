@@ -101,10 +101,18 @@ var releases = []release{
 			// every 30 days) and LLM pricing from GitHub at start.
 			"openobserve-standalone.config.ZO_MMDB_DISABLE_DOWNLOAD=true",
 			// Not a key the chart's config renders, so it goes in as an
-			// extra variable (checked live). extraEnv[0] is claimed; a
-			// second variable takes index 1.
+			// extra variable (checked live). A third variable takes index 2.
 			"openobserve-standalone.extraEnv[0].name=ZO_MODEL_PRICING_ENABLED",
 			"openobserve-standalone.extraEnv[0].value=false",
+			// OpenObserve's SSRF guard refuses alert destinations at
+			// private addresses, so on a fresh store the chart's setup Job
+			// can't create its in-cluster webhook (logs-adapter, a
+			// ClusterIP) and the install never finishes (T012, RP-062).
+			// The module's newer releases set the same. At v0.92.2 it
+			// skips the create-time check entirely; only Serendip and the
+			// chart can reach OpenObserve's API (plan decision 4).
+			"openobserve-standalone.extraEnv[1].name=ZO_SSRF_ALLOW_LOOPBACK",
+			"openobserve-standalone.extraEnv[1].value=true",
 		},
 	},
 	{

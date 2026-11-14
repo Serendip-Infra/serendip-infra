@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -90,12 +92,24 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&o.pkg.fullHelm, "package-full-helm", true, "run the package's full Helm command once, for comparison with the fingerprint path")
 	fs.DurationVar(&o.pkg.installTimeout, "package-install-timeout", 20*time.Minute, "how long the package may take to become Ready")
 	fs.DurationVar(&o.pkg.buildTimeout, "package-build-timeout", 20*time.Minute, "how long one build may take")
+	fs.StringVar(&o.pkg.loadScript, "package-load-script", "profiles/edge-1/bench/observability-load/load.sh", "observability package: the load script (plan decision 9), run with bash")
+	fs.IntVar(&o.pkg.loadSamples, "package-load-samples", 180, "observability package: samples under load, every package-idle-interval (180 at 10 s is about 30 minutes)")
+	fs.IntVar(&o.pkg.diskSamples, "package-disk-samples", 121, "observability package: disk-phase samples under load, every package-disk-interval, with the du probe at both ends (121 at 60 s spans 2 hours; 0 skips it)")
+	fs.DurationVar(&o.pkg.diskInterval, "package-disk-interval", time.Minute, "observability package: time between disk-phase samples")
 	fs.BoolVar(&diskProbe, "disk-probe", true, "measure host-path volumes (local-path) with a short-lived du pod at the start and end of each phase; the kubelet reports no usage for them")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
 	if o.serendipd == "" || o.kubeconfig == "" {
 		return o, fmt.Errorf("--serendipd and --kubeconfig are required")
+	}
+	if _, ok := packageKinds[o.pkg.provider]; o.pkg.provider != "" && !ok {
+		return o, fmt.Errorf("--package %q: the harness measures only %s", o.pkg.provider, strings.Join(slices.Sorted(maps.Keys(packageKinds)), ", "))
+	}
+	if kindOf(o.pkg.provider).capability == observabilityCapability {
+		if err := checkLoadFlags(o.pkg); err != nil {
+			return o, err
+		}
 	}
 	for _, s := range strings.Split(o.notSimulated, ";") {
 		if s = strings.TrimSpace(s); s != "" {
@@ -447,4 +461,22 @@ func runRender(args []string) error {
 	}
 	out := filepath.Join(filepath.Dir(args[0]), "summary.md")
 	return os.WriteFile(out, []byte(renderSummary(r)), 0o644)
+}
+
+// checkLoadFlags refuses load and disk phases that can't give a cost, and
+// a load script that isn't there, before a 20-minute install rather than
+// after it.
+func checkLoadFlags(po packageOptions) error {
+	switch {
+	case po.loadSamples < 1:
+		return fmt.Errorf("--package-load-samples %d: at least 1", po.loadSamples)
+	case po.diskSamples < 0 || po.diskSamples == 1:
+		return fmt.Errorf("--package-disk-samples %d: 0 to skip the disk phase, or at least 2 to measure growth", po.diskSamples)
+	case po.diskSamples > 1 && po.diskInterval <= 0:
+		return fmt.Errorf("--package-disk-interval %s: must be positive", po.diskInterval)
+	}
+	if _, err := os.Stat(po.loadScript); err != nil {
+		return fmt.Errorf("--package-load-script: %w", err)
+	}
+	return nil
 }

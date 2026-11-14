@@ -12,6 +12,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/store"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
+	obsplane "github.com/serendip-infra/serendip-infra/providers/observability/openchoreo"
 )
 
 const (
@@ -34,9 +35,8 @@ const observabilityRemoval = "All stored logs and metrics history are deleted. R
 // plan decision 5). builds installs the workflow plane (spec 022) and
 // observability the observability plane (spec 023); either is nil when
 // there's no cluster to install it on. The catalogue refuses any package
-// without measured Requirements: builds' were measured in its T013, and
-// observability's come in spec 023's T012, so until then it's offered but
-// can't be installed.
+// without measured Requirements: builds' were measured in spec 022's
+// T013, and observability's in spec 023's T012.
 func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcile.Catalogue {
 	return reconcile.Catalogue{
 		"openchoreo-workflow-plane": {
@@ -48,9 +48,10 @@ func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcil
 		},
 		"openchoreo-observability-plane": {
 			Provider: "openchoreo-observability-plane", Capability: capObservability,
-			Description: "Stored logs, metrics, traces and alerts; heavy on a 16 GB machine",
-			Installer:   observability,
-			Removal:     observabilityRemoval,
+			Description:  "Stored logs, metrics, traces and alerts; heavy on a 16 GB machine",
+			Installer:    observability,
+			Requirements: obsplane.Requirements,
+			Removal:      observabilityRemoval,
 		},
 	}
 }

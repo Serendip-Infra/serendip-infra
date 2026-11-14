@@ -974,6 +974,8 @@ func TestLogsModuleValuesStayOffline(t *testing.T) {
 		"openobserve-standalone.config.ZO_MMDB_DISABLE_DOWNLOAD=true",
 		"openobserve-standalone.extraEnv[0].name=ZO_MODEL_PRICING_ENABLED",
 		"openobserve-standalone.extraEnv[0].value=false",
+		"openobserve-standalone.extraEnv[1].name=ZO_SSRF_ALLOW_LOOPBACK",
+		"openobserve-standalone.extraEnv[1].value=true",
 	} {
 		if !strings.Contains(joined, "--set-string "+want) {
 			t.Errorf("the logs module isn't given --set-string %s", want)
