@@ -4,8 +4,8 @@
 // `helm` CLI (ADR 0010, via providers/internal/helm) it installs the plane
 // chart, the OpenObserve logs module, plain Prometheus, and the metrics
 // module for its adapter only; it hand-builds the placeholder and admin
-// Secrets, the CA trust copy, Serendip's node rule for hostNetwork Fluent
-// Bit, and ObservabilityPlane/default through the generic
+// Secrets, the CA trust copy, Fluent Bit's config (off the host network,
+// RP-064), and ObservabilityPlane/default through the generic
 // providers/kubernetes.Client.
 //
 // The logs module also renders an HTTPRoute for remote Fluent Bit,

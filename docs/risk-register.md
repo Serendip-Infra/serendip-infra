@@ -84,7 +84,8 @@ purpose), **Closed** (fixed).
 | RP-061 | The package's reported disk use lags, and leaves out the logs store's newest data and metadata | Honesty of a reported number | Accepted | Spec 023 T006 |
 | RP-062 | OpenObserve's SSRF guard is off, so its in-cluster alert webhook can be created | Security | Accepted | Spec 023 T012 |
 | RP-063 | The observability package's disk growth is a 2-hour slope under a synthetic load, extrapolated to a day | Honesty of a reported number | Accepted | Spec 023 T012 |
-| RP-064 | Fluent Bit's monitoring port (:2020, host network) answers any pod on the node: counters, no log content | Security (information) | Accepted | Spec 023 T013 |
+| RP-064 | Fluent Bit's monitoring port (:2020, host network) answered any pod on the node: counters, no log content | Security (information) | Fixed (T014) | Spec 023 T013 |
+| RP-065 | Serendip carries a copy of the logs chart's Fluent Bit config, and pod metadata now comes from the API server (not re-measured) | Maintenance; performance | Accepted | Spec 023 T014 |
 
 ---
 
@@ -1487,9 +1488,26 @@ purpose), **Closed** (fixed).
 
 ## RP-064 — Fluent Bit's monitoring port answers any pod on the node
 
-- **Kind:** security (information exposure). **Status:** Accepted,
-  2026-11-14. **Found:** spec 023 T001 (noted in plan.md), checked on
-  `serendip-t018` in T013 (criterion 9).
+- **Kind:** security (information exposure). **Status:** Fixed in spec
+  023 T014 (2026-11-14); accepted in T013 until then. **Found:** spec
+  023 T001 (noted in plan.md), checked on `serendip-t018` in T013
+  (criterion 9).
+- **Fix (T014, the user's choice of option 1):** Fluent Bit runs off the
+  host network (`fluent-bit.hostNetwork=false`, `dnsPolicy=ClusterFirst`),
+  so the plane chart's policy, which admits only pods in the namespace,
+  covers `:2020`. That needed Serendip's own copy of the chart's config
+  (RP-065). The node rule `serendip-allow-node-to-openobserve` is gone:
+  Fluent Bit's flushes now come from a pod in the namespace. **Checked on
+  `serendip-t018`:** from a workload pod, `:2020` timed out by Service and
+  by pod IP, and the node's address refused it; the DaemonSet's probes
+  pass; a Component's lines were searchable through the API about a
+  second after they were written, scoped by its UID.
+  - **Not handled:** an install from before T014 would keep the node rule
+    until the namespace is removed. Spec 023 was never released, so no
+    such install exists outside the test clusters, whose namespace was
+    removed first.
+
+The text below is the T013 record.
 - **What:** the logs module's Fluent Bit runs with `hostNetwork`, so the
   plane's NetworkPolicies don't apply to it, and its HTTP server listens
   on `0.0.0.0:2020`. From a workload pod in another Project,
@@ -1509,3 +1527,35 @@ purpose), **Closed** (fixed).
 - **Revisit:** if the chart lets the probes be exec-based or the server
   bind to a node-local address; or on a multi-tenant edge profile where
   a tenant's log volume is itself sensitive.
+
+## RP-065 — Serendip carries the logs chart's Fluent Bit config
+
+- **Kind:** maintenance; performance (not re-measured). **Status:**
+  Accepted, 2026-11-14. **Found:** spec 023 T014, fixing RP-064.
+- **What:**
+  - **The copy:** the logs module 0.8.0 hard-codes the kubernetes
+    filter's `Use_Kubelet true`, with `Kubelet_Host` at its default of
+    127.0.0.1, so off the host network it can't reach the kubelet. Serendip
+    embeds the chart's render of its Fluent Bit ConfigMap verbatim
+    (`providers/observability/openchoreo/fluent-bit/`), edits two lines
+    (`Use_Kubelet false`, `tls.verify On`), applies it as
+    `serendip-fluent-bit`, and points the chart at it. Every chart upgrade
+    must re-render it; the tests fail if an edited line moved, and
+    `Install` refuses rather than the binary panicking at start.
+  - **The API server instead of the kubelet:** each Fluent Bit pod GETs a
+    pod's metadata from kube-apiserver the first time it tails that pod's
+    log, then caches it (no watch). On a single-node edge that is a small
+    burst after a restart or a large rollout. T012's footprint
+    (`requirements.go`) was measured with the kubelet lookup and wasn't
+    re-run.
+  - **Drift:** an edited or deleted copy is re-applied within a resync and
+    Fluent Bit's pods are restarted (checked live: about 10 s). A
+    deliberate change rolls the DaemonSet through a config-hash pod
+    annotation.
+- **Why accepted:** the alternatives were the kubelet on the node's
+  address (also a copy, plus repeating the chart's four credential `env`
+  entries, since Helm replaces the list) or leaving RP-064 open.
+- **Revisit:** when the logs module makes the kubelet host or
+  `Use_Kubelet` configurable (then drop the copy); and in the post-v1
+  full test pass, re-run the T012 package benchmark to confirm the
+  footprint.

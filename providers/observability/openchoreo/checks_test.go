@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -111,58 +111,50 @@ func TestInstall_CancelledContextIsAnError(t *testing.T) {
 	}
 }
 
-func TestNodeRule_Addresses(t *testing.T) {
-	tests := []struct {
-		name    string
-		nodes   []string // each node's status
-		want    []string
-		wantErr bool
-	}{
-		{"nodes sorted and deduplicated, other address types ignored", []string{
-			`{"addresses":[{"type":"InternalIP","address":"10.0.0.9"}]}`,
-			`{"addresses":[{"type":"InternalIP","address":"10.0.0.2"},{"type":"ExternalIP","address":"1.2.3.4"}]}`,
-			`{"addresses":[{"type":"InternalIP","address":"10.0.0.2"}]}`,
-		}, []string{"10.0.0.2/32", "10.0.0.9/32"}, false},
-		{"dual stack", []string{
-			`{"addresses":[{"type":"InternalIP","address":"10.0.0.2"},{"type":"InternalIP","address":"fd00::2"}]}`,
-		}, []string{"10.0.0.2/32", "fd00::2/128"}, false},
-		{"no InternalIP", []string{`{"addresses":[{"type":"Hostname","address":"n"}]}`}, nil, true},
-		{"not an address", []string{`{"addresses":[{"type":"InternalIP","address":"node-1"}]}`}, nil, true},
+// Serendip's Fluent Bit config is the chart's render with the kubernetes
+// filter on the API server, verified, and nothing else changed (RP-064).
+func TestFluentBitConfig_OnlyTheMetadataLookupChanges(t *testing.T) {
+	conf, err := fluentBitConf()
+	if err != nil {
+		t.Fatalf("fluentBitConf() = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			api := newFakeAPI()
-			for k, st := range tt.nodes {
-				api.put(fmt.Sprintf("/api/v1/nodes/n%d", k), kubernetes.Object{Kind: "Node", Status: json.RawMessage(st)})
-			}
-			ips, err := nodeIPs(context.Background(), newTestKubeClient(t, api.handler(t)))
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("nodeIPs() = %v, %v", ips, err)
-			}
-			if err != nil {
-				return
-			}
-			var spec struct {
-				Ingress []struct {
-					From []struct {
-						IPBlock struct {
-							CIDR string `json:"cidr"`
-						} `json:"ipBlock"`
-					} `json:"from"`
-				} `json:"ingress"`
-			}
-			json.Unmarshal(nodeRule(ips).Spec, &spec)
-			var got []string
-			for _, f := range spec.Ingress[0].From {
-				got = append(got, f.IPBlock.CIDR)
-			}
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("CIDRs = %v, want %v", got, tt.want)
-			}
-			if !ruleMatches(nodeRule(ips), ips) || ruleMatches(nodeRule(ips[:1]), ips) {
-				t.Errorf("ruleMatches disagrees with nodeRule")
-			}
-		})
+	for _, want := range []string{"Use_Kubelet false\n", "tls.verify On\n",
+		"Set openchoreo_cluster_instance " + fluentBitInstance + "\n", "HTTP_Port     2020\n", "Host openobserve\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("config lacks %q", want)
+		}
+	}
+	if strings.Contains(conf, "Use_Kubelet true") || strings.Contains(conf, "tls.verify Off") {
+		t.Errorf("config still has the kubelet lookup:\n%s", conf)
+	}
+	// Undoing the edits gives back the chart's render, byte for byte.
+	undone := conf
+	for _, e := range fluentBitEdits {
+		undone = strings.Replace(undone, e.new, e.old, 1)
+	}
+	if undone != chartFluentBitConf {
+		t.Errorf("the config differs from the chart's beyond fluentBitEdits")
+	}
+	var data map[string]string
+	json.Unmarshal(fluentBitConfig().Data, &data)
+	if data["fluent-bit.conf"] != conf || data["parsers.conf"] != chartParsersConf || len(data) != 2 {
+		t.Errorf("ConfigMap data keys = %v", slices.Collect(maps.Keys(data)))
+	}
+	if h := fluentBitConfigHash(); len(h) != 16 {
+		t.Errorf("hash = %q", h)
+	}
+}
+
+// A chart upgrade that moves an edited line fails loudly, not silently
+// shipping the kubelet lookup.
+func TestFluentBitConfig_MovedLineIsAnError(t *testing.T) {
+	moved := strings.Replace(chartFluentBitConf, "    Use_Kubelet true\n", "", 1)
+	if _, err := editFluentBitConf(moved); err == nil || !strings.Contains(err.Error(), "has 0 copies") {
+		t.Errorf("editFluentBitConf(moved) err = %v", err)
+	}
+	twice := chartFluentBitConf + fluentBitEdits[0].old
+	if _, err := editFluentBitConf(twice); err == nil || !strings.Contains(err.Error(), "has 2 copies") {
+		t.Errorf("editFluentBitConf(twice) err = %v", err)
 	}
 }
 

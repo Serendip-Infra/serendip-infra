@@ -96,6 +96,10 @@ adapter pointed at it:
   credentials, and a 3-day retention.
 - **The node rule goes in before the install** (T003): it admits the
   nodes to OpenObserve's ingest port.
+  - **Superseded in T014 (RP-064):** Fluent Bit runs off the host
+    network, on Serendip's copy of the chart's config with pod metadata
+    from the API server, so it needs no node rule and the plane's
+    policy covers its `:2020`.
 
 ### 2. Metrics: plain Prometheus, with the module's adapter only
 

@@ -90,8 +90,16 @@ var releases = []release{
 		sets: []string{
 			"fluentBitCustomizations.clusterInstance=" + fluentBitInstance,
 			"openobserve-standalone.persistence.size=" + logVolumeSize,
+			// Off the host network, so the plane's NetworkPolicies cover
+			// Fluent Bit's :2020 and its flushes come from a pod in the
+			// namespace (RP-064). Its config is Serendip's (fluentbit.go).
+			"fluent-bit.hostNetwork=false",
+			"fluent-bit.dnsPolicy=ClusterFirst",
+			"fluent-bit.existingConfigMap=" + fluentBitConfigName,
 		},
 		strings: []string{
+			// Hex may be all digits, hence a string.
+			"fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(),
 			fmt.Sprintf("openobserve-standalone.config.ZO_COMPACT_DATA_RETENTION_DAYS=%d", logRetentionDays),
 			// On by default: a heartbeat to the vendor every 30 minutes.
 			// Nothing leaves the machine unless asked (T003).

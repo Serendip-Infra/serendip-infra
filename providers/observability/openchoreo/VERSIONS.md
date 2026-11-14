@@ -52,9 +52,19 @@ Notes (T001):
     `serendip-t018` hid this: its destination already existed. RP-062.
 - **Scopes are UIDs** (`projectUid`, `componentUid`, `environmentUid`).
   The adapters ignore names, and the query widens to the whole namespace.
-- **The chart's own NetworkPolicy blocks `hostNetwork` Fluent Bit.**
-  Serendip adds a rule for the nodes' current `InternalIP`s, on
-  OpenObserve's port 5080 only.
+- **Fluent Bit runs off the host network** (T014, RP-064):
+  `fluent-bit.hostNetwork=false`, `dnsPolicy=ClusterFirst`, and
+  `existingConfigMap=serendip-fluent-bit`. That ConfigMap is the chart's
+  render of `templates/fluent-bit/config.yaml`, embedded verbatim in
+  `fluent-bit/`, with one edit (`fluentbit.go`): the kubernetes filter's
+  `tls.verify Off` / `Use_Kubelet true` become `On` / `false`. The
+  chart's default `Kubelet_Host` is 127.0.0.1, the pod's own loopback
+  off the host network, so pod metadata now comes from the API server
+  (the chart's ClusterRole allows `pods`/`namespaces` get, list and
+  watch). A hash of it goes in a pod annotation, so a change rolls the
+  DaemonSet. The plane chart's policy then covers `:2020`, and Fluent
+  Bit's flushes come from a pod in the namespace, so the T001 node rule
+  is gone.
 - **Uninstall leaves** the PVCs, the Secrets, the CA ConfigMap, a setup-job
   pod, and the CRDs (Prometheus Operator's 10, and `observabilityalertrules`).
 - **Plain Prometheus must look like kube-prometheus-stack to the adapter**
@@ -65,7 +75,6 @@ Notes (T001):
     `kube-state-metrics`;
   - kube-state-metrics' `metricAllowlist` and `metricLabelsAllowlist`,
     copied from the module's values.
-- **The node rule is applied before the logs module's install** (T003).
 - **Re-check on every upgrade:**
   - the policy selectors (the labels `app.kubernetes.io/name=openobserve-standalone`
     and others);
@@ -73,7 +82,9 @@ Notes (T001):
   - the metrics module's kube-prometheus-stack values (scrape jobs,
     kube-state-metrics allowlists) and the adapter's Prometheus address,
     against the plain Prometheus values above;
-  - the hardcoded `Use_Kubelet true`;
+  - the Fluent Bit config: re-render it into `fluent-bit/` (the command
+    is in `fluentbit.go`); `TestFluentBitConfig_*` fail if the edited
+    lines moved;
   - OpenObserve's start-up log for any outside URL, and the `config`
     keys the chart renders (a new key may need `extraEnv`);
   - the streams API's stats fields and unit (`usage.go`).

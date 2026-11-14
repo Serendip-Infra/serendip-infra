@@ -134,11 +134,19 @@ Times are UTC.
      Prometheus (Service `:9091`, and pod IP `:9090`), the Observer
      (`:8080`), `observer-internal` (`:8081`), both adapters (`:9098`,
      `:9099`) and kube-state-metrics.
-   - **Fluent Bit's own `:2020` answers.** It's on `hostNetwork`, so no
-     policy applies to it. It serves counters, uptime and version, never
-     log lines. Closing it would break the DaemonSet's own probes.
-     Recorded as **RP-064**. This is the remaining path the criterion
-     allows when it's in the risk register.
+   - **Fluent Bit's own `:2020` answered** in T013: it was on
+     `hostNetwork`, so no policy applied to it (counters, uptime and
+     version, never log lines). Recorded as **RP-064**.
+   - **Fixed in T014:** Fluent Bit now runs off the host network, on
+     Serendip's copy of the chart's config (RP-065). Re-installed through
+     `serendipd`, Ready in about 2 minutes. From a workload pod
+     (`t023-echo`'s), `:2020` **timed out** by Service and by pod IP
+     (`10.244.0.101`), and the node's address (`172.22.0.9`) refused it.
+     The DaemonSet's probes pass, Fluent Bit reaches the API server over
+     verified TLS, and `t023-echo`'s lines were searchable through
+     `GET /v1/deployments/{id}/logs/search` about a second after they
+     were written, scoped by its UID. An edited `serendip-fluent-bit`
+     was restored and Fluent Bit restarted within about 10 s.
 10. **Retention and disk use:**
     - **Retention as stated:** OpenObserve's ConfigMap has
       `ZO_COMPACT_DATA_RETENTION_DAYS=3`. Prometheus runs with

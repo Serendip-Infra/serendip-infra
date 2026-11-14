@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -156,9 +157,7 @@ func observerSecret() kubernetes.Object {
 // Fingerprint identifies what a full install applies: every release's
 // Helm arguments, the Prometheus values, and the hand-built objects. When
 // an instance's status.applied equals it, Install only checks (plan
-// decision 12). The nodes' addresses aren't in it: they change without
-// any install, so the checks compare them and repair the rule instead.
-// The generated password and the copied CA aren't in it either.
+// decision 12). The generated password and the copied CA aren't in it.
 func Fingerprint() string { return fingerprint() }
 
 var fingerprint = sync.OnceValue(func() string {
@@ -171,7 +170,7 @@ var fingerprint = sync.OnceValue(func() string {
 		Helm    [][]string          `json:"helm"`
 		Values  string              `json:"values"`
 		Objects []kubernetes.Object `json:"objects"`
-	}{args, hex.EncodeToString(values[:]), []kubernetes.Object{observabilityPlane(), observerSecret(), nodeRule(nil)}})
+	}{args, hex.EncodeToString(values[:]), []kubernetes.Object{observabilityPlane(), observerSecret(), fluentBitConfig()}})
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
 })
@@ -193,6 +192,9 @@ type problem struct {
 	// noDataYet: the reportOnly fault is a metrics query finding nothing,
 	// which is expected before the first scrape.
 	noDataYet bool
+	// restartCollector: the repair also restarts Fluent Bit's pods, which
+	// read their config only at start.
+	restartCollector bool
 }
 
 // Install brings the package towards installed. With a matching
@@ -200,9 +202,14 @@ type problem struct {
 // settling check soon after an install is waited out; anything else is
 // repaired, with Helm only for the release at fault.
 func (i *Installer) Install(ctx context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
+	// A chart upgrade that moved what fluentBitEdits edits fails here,
+	// not at process start for every binary importing the package.
+	if _, err := fluentBitConf(); err != nil {
+		return reconcile.PackageState{}, fmt.Errorf("openchoreo observability: %w", err)
+	}
 	want := fingerprint()
 	if inst.Status.Applied != want {
-		return i.install(ctx, want, allReleases)
+		return i.install(ctx, want, allReleases, false)
 	}
 	i.mu.Lock()
 	if i.lastInstall.IsZero() {
@@ -229,7 +236,7 @@ func (i *Installer) Install(ctx context.Context, inst resource.ProviderInstance)
 	if p.settling && i.waitOut() {
 		return reconcile.PackageState{Message: p.message, Applied: want}, nil
 	}
-	return i.install(ctx, want, p.release)
+	return i.install(ctx, want, p.release, p.restartCollector)
 }
 
 // settling reports whether the last install is inside its first settle
@@ -265,11 +272,13 @@ func (i *Installer) waitOut() bool {
 
 // install applies the package in plan decision 1's order, as amended by
 // T003 (ADR 0021): the namespace, the CA trust copy, the placeholder and
-// admin Secrets, the plane chart, the node rule (before the logs module:
-// T003 finding 1), the logs module, plain Prometheus, the metrics
+// admin Secrets, the plane chart, Fluent Bit's config (before the logs
+// module, whose DaemonSet mounts it), the logs module, plain Prometheus, the metrics
 // module's adapter, then the ObservabilityPlane. Helm runs for the
-// release named by which (allReleases for every one, "" for none).
-func (i *Installer) install(ctx context.Context, want, which string) (reconcile.PackageState, error) {
+// release named by which (allReleases for every one, "" for none). With
+// restart, Fluent Bit's pods are deleted after its config is re-applied,
+// so the DaemonSet starts them on it.
+func (i *Installer) install(ctx context.Context, want, which string, restart bool) (reconcile.PackageState, error) {
 	if err := i.applyObjects(ctx, func(ctx context.Context) error {
 		return i.helmReleases(ctx, which, planeRelease)
 	}); err != nil {
@@ -277,6 +286,11 @@ func (i *Installer) install(ctx context.Context, want, which string) (reconcile.
 	}
 	if err := i.helmReleases(ctx, which, logsRelease, prometheusRelease, metricsRelease); err != nil {
 		return reconcile.PackageState{}, err
+	}
+	if restart {
+		if err := i.restartCollector(ctx); err != nil {
+			return reconcile.PackageState{}, err
+		}
 	}
 	if _, err := apply(ctx, i.client, observabilityPlanesPath, observabilityPlane()); err != nil {
 		return reconcile.PackageState{}, fmt.Errorf("openchoreo observability: %w", err)
@@ -298,7 +312,7 @@ func (i *Installer) install(ctx context.Context, want, which string) (reconcile.
 
 // applyObjects applies the hand-built objects that come before the logs
 // module, running plane (the plane chart's install) after the Secrets it
-// needs and before the node rule.
+// needs and before Fluent Bit's config.
 func (i *Installer) applyObjects(ctx context.Context, plane func(context.Context) error) error {
 	if err := ensureNamespace(ctx, i.client, PlaneNamespace); err != nil {
 		return fmt.Errorf("openchoreo observability: %w", err)
@@ -315,11 +329,7 @@ func (i *Installer) applyObjects(ctx context.Context, plane func(context.Context
 	if err := plane(ctx); err != nil {
 		return err
 	}
-	ips, err := nodeIPs(ctx, i.client)
-	if err != nil {
-		return fmt.Errorf("openchoreo observability: %w", err)
-	}
-	if _, err := apply(ctx, i.client, networkPoliciesPath, nodeRule(ips)); err != nil {
+	if _, err := apply(ctx, i.client, configMapsPath, fluentBitConfig()); err != nil {
 		return fmt.Errorf("openchoreo observability: %w", err)
 	}
 	return nil
@@ -418,8 +428,7 @@ type workload struct {
 }
 
 // workloads are the charts' pods, by their selectors (the charts' own,
-// at the versions in VERSIONS.md). The logs store's is the node rule's,
-// so its check also shows that rule still selects a pod.
+// at the versions in VERSIONS.md).
 var workloads = []workload{
 	{"the Observer", map[string]string{"app.kubernetes.io/instance": planeRelease, "app.kubernetes.io/component": "observer"}, planeRelease},
 	{"the observability plane's agent", map[string]string{"app.kubernetes.io/instance": planeRelease, "app.kubernetes.io/component": "cluster-agent"}, planeRelease},
@@ -439,8 +448,8 @@ const (
 
 // check runs the quick checks (plan decision 12): six GETs and one
 // metrics query. Every workload has a ready pod, Fluent Bit runs on every
-// node it should, both policies are there and the node rule admits the
-// nodes' current addresses, the plane is registered, and a real metrics
+// node it should with Serendip's config, the chart's policy is there, the
+// plane is registered, and a real metrics
 // query returns series for a running Component (RP-056). It returns nil
 // and the ready message when all is well; err is for a failed request.
 func (i *Installer) check(ctx context.Context) (*problem, string, error) {
@@ -494,38 +503,59 @@ func (i *Installer) checkFluentBit(ctx context.Context) (*problem, error) {
 		return &problem{message: fmt.Sprintf("waiting for the log collector to run on every node (%d of %d ready)", st.Ready, st.Desired),
 			settling: true, release: logsRelease}, nil
 	}
+	// A missing or edited config is re-applied with no Helm run, and the
+	// pods restarted: one started meanwhile may run the wrong config, and
+	// the check can't see what a running pod loaded.
+	cm, err := i.client.Get(ctx, configMapsPath+"/"+fluentBitConfigName)
+	if errors.Is(err, kubernetes.ErrNotFound) {
+		return &problem{message: "the log collector's configuration is missing", restartCollector: true}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("openchoreo observability: get configmap %s: %w", fluentBitConfigName, err)
+	}
+	if !dataEqual(cm.Data, fluentBitConfig().Data) {
+		return &problem{message: "the log collector's configuration was changed", restartCollector: true}, nil
+	}
 	return nil, nil
 }
 
-// checkPolicies checks both policies are there and the node rule admits
-// exactly the nodes' current addresses. A changed address is repaired by
-// re-applying the rule, with no Helm run.
-func (i *Installer) checkPolicies(ctx context.Context) (*problem, error) {
-	policies, err := i.client.List(ctx, networkPoliciesPath)
+// fluentBitSelector selects the logs chart's Fluent Bit pods.
+var fluentBitSelector = map[string]string{"app.kubernetes.io/name": "fluent-bit", "app.kubernetes.io/instance": logsRelease}
+
+// restartCollector deletes Fluent Bit's pods; the DaemonSet replaces them.
+func (i *Installer) restartCollector(ctx context.Context) error {
+	pods, err := i.client.List(ctx, planePodsPath)
 	if err != nil {
-		return nil, fmt.Errorf("openchoreo observability: list network policies: %w", err)
+		return fmt.Errorf("openchoreo observability: list pods: %w", err)
 	}
-	var chart, rule *kubernetes.Object
-	for k := range policies {
-		switch policies[k].Metadata.Name {
-		case chartPolicyName:
-			chart = &policies[k]
-		case NodeRuleName:
-			rule = &policies[k]
+	for _, p := range pods {
+		if !matches(p.Metadata.Labels, fluentBitSelector) {
+			continue
+		}
+		if err := deleteIfExists(ctx, i.client, planePodsPath+"/"+p.Metadata.Name); err != nil {
+			return fmt.Errorf("openchoreo observability: restart the log collector: %w", err)
 		}
 	}
-	if chart == nil {
+	return nil
+}
+
+// dataEqual compares two ConfigMaps' data as decoded JSON.
+func dataEqual(live, want json.RawMessage) bool {
+	var a, b map[string]string
+	if json.Unmarshal(live, &a) != nil || json.Unmarshal(want, &b) != nil {
+		return false
+	}
+	return maps.Equal(a, b)
+}
+
+// checkPolicies checks the chart's policy is there.
+func (i *Installer) checkPolicies(ctx context.Context) (*problem, error) {
+	_, err := i.client.Get(ctx, networkPoliciesPath+"/"+chartPolicyName)
+	if errors.Is(err, kubernetes.ErrNotFound) {
 		return &problem{message: "the observability plane's network policy is missing", release: planeRelease}, nil
 	}
-	if rule == nil {
-		return &problem{message: "the log collector's network rule is missing"}, nil
-	}
-	ips, err := nodeIPs(ctx, i.client)
 	if err != nil {
-		return nil, fmt.Errorf("openchoreo observability: %w", err)
-	}
-	if !ruleMatches(*rule, ips) {
-		return &problem{message: "the log collector's network rule doesn't match the nodes' addresses"}, nil
+		return nil, fmt.Errorf("openchoreo observability: get network policy %s: %w", chartPolicyName, err)
 	}
 	return nil, nil
 }
@@ -729,9 +759,9 @@ func podReady(p kubernetes.Object) bool {
 }
 
 // Uninstall removes the package in plan decision 13's order, as amended
-// by T001: the ObservabilityPlane, the node rule, the releases in reverse,
-// then the namespace, which takes the volumes (every stored log and
-// metric), the Secrets, the CA copy and the setup job with it. Every step
+// by T001: the ObservabilityPlane, the releases in reverse, then the
+// namespace, which takes the volumes (every stored log and metric), the
+// Secrets, the CA copy, Fluent Bit's config and the setup job with it. Every step
 // treats "already gone" as done, so it's idempotent, and safe for an
 // instance that never installed anything. It returns
 // ErrNamespaceRemaining until the namespace is gone. The plane chart's
@@ -748,9 +778,6 @@ func (i *Installer) Uninstall(ctx context.Context, instanceID string) error {
 		return fmt.Errorf("openchoreo observability: %w", ErrPlaneRemaining)
 	} else if !errors.Is(err, kubernetes.ErrNotFound) {
 		return fmt.Errorf("openchoreo observability: get ObservabilityPlane: %w", err)
-	}
-	if err := deleteIfExists(ctx, i.client, networkPoliciesPath+"/"+NodeRuleName); err != nil {
-		return fmt.Errorf("openchoreo observability: %w", err)
 	}
 	for _, r := range slices.Backward(releases) {
 		if _, err := i.run(ctx,

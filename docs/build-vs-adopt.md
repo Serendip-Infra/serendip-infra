@@ -63,7 +63,7 @@ Last updated: 2026-11-09.
 | `registry:2` (CNCF `distribution`) | Storing built images | Spec 022 plan decision 2 | Hand-built Deployment with `hostNetwork`, pulled through `localhost`, so single-node (RP-041) |
 | `podman` (upstream's `podman-runner` image) | Building a Dockerfile inside the run | Spec 022 plan decision 1 | Privileged, without user namespaces on kind (RP-038) |
 | MCP Go SDK (`modelcontextprotocol/go-sdk` v1.8.0) | MCP protocol (stdio and streamable HTTP) | ADR 0017, spec 021 | Chosen over hand-written, to avoid maintaining protocol churn ourselves. 9 modules, at most +2.4 MB; confined to `mcp/` (its `golang.org/x/sys` is also used directly by the CLI for an owner-only folder ACL on Windows) |
-| OpenObserve, via OpenChoreo's logs-openobserve module 0.8.0 | Log store and collector (Fluent Bit) | ADR 0021, spec 023 | The lightest of three measured: about 0.4 GB of disk a day at the test load. Telemetry off, 3-day retention; its search slows as data grows (RP-055) |
+| OpenObserve, via OpenChoreo's logs-openobserve module 0.8.0 | Log store and collector (Fluent Bit) | ADR 0021, spec 023 | Fluent Bit runs off the host network on Serendip's copy of the chart's config (T014, RP-064, RP-065), adopted rather than written: one edit to the chart's render. The lightest of three measured: about 0.4 GB of disk a day at the test load. Telemetry off, 3-day retention; its search slows as data grows (RP-055) |
 | Plain Prometheus (`prometheus-community/prometheus` 29.47.2), with the metrics module's adapter only | Metrics store | ADR 0021, spec 023 | In place of the module's kube-prometheus-stack: about 450 MiB less at idle and no CRDs. Serendip's values must keep matching the adapter (RP-056) |
 
 ## Rejected (considered and turned down)

@@ -93,7 +93,7 @@ func (f *fakeAPI) reset() {
 }
 
 // lists are the collections that answer an empty list rather than 404.
-var lists = []string{planePodsPath, networkPoliciesPath, "/api/v1/nodes", "/api/v1/pods"}
+var lists = []string{planePodsPath, networkPoliciesPath, "/api/v1/pods"}
 
 func (f *fakeAPI) handler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +241,8 @@ func installRelease(api *fakeAPI, name string) {
 		api.put(networkPoliciesPath+"/"+chartPolicyName, kubernetes.Object{Kind: "NetworkPolicy",
 			Metadata: kubernetes.ObjectMeta{Name: chartPolicyName}})
 	case logsRelease:
+		api.put(fluentBitPodPath, kubernetes.Object{Kind: "Pod",
+			Metadata: kubernetes.ObjectMeta{Name: "fluent-bit-1", Labels: fluentBitSelector}})
 		api.put(daemonSetPath, kubernetes.Object{Kind: "DaemonSet",
 			Status: json.RawMessage(`{"desiredNumberScheduled":1,"numberReady":1}`)})
 	}
@@ -256,12 +258,14 @@ const (
 	caConfigPath  = "/api/v1/namespaces/openchoreo-observability-plane/configmaps/cluster-gateway-ca"
 	adminPath     = secretsPath + "/" + adminSecretName
 	observerPath  = secretsPath + "/" + observerSecretName
-	nodeRulePath  = networkPoliciesPath + "/" + NodeRuleName
-	chartPolicy   = networkPoliciesPath + "/" + chartPolicyName
-	planeCRPath   = observabilityPlanesPath + "/" + PlaneName
-	namespacePath = "/api/v1/namespaces/" + PlaneNamespace
-	appPodPath    = "/api/v1/namespaces/apps/pods/app-1"
-	metricsPath   = "/api/v1/namespaces/openchoreo-observability-plane/services/metrics-adapter:9099/proxy/api/v1/metrics/query"
+	fluentBitPath = configMapsPath + "/" + fluentBitConfigName
+	// fluentBitPodPath is the fake logs release's Fluent Bit pod.
+	fluentBitPodPath = planePodsPath + "/fluent-bit-1"
+	chartPolicy      = networkPoliciesPath + "/" + chartPolicyName
+	planeCRPath      = observabilityPlanesPath + "/" + PlaneName
+	namespacePath    = "/api/v1/namespaces/" + PlaneNamespace
+	appPodPath       = "/api/v1/namespaces/apps/pods/app-1"
+	metricsPath      = "/api/v1/namespaces/openchoreo-observability-plane/services/metrics-adapter:9099/proxy/api/v1/metrics/query"
 )
 
 type testEnv struct {
@@ -272,23 +276,17 @@ type testEnv struct {
 }
 
 // newTestEnv is an installer over a fake API holding the control plane's
-// CA, one node, and a Component pod that has run for an hour.
+// CA and a Component pod that has run for an hour.
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	e := &testEnv{api: newFakeAPI(), now: time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)}
 	e.api.put(caSecretPath, kubernetes.Object{APIVersion: "v1", Kind: "Secret",
 		Data: json.RawMessage(`{"ca.crt":"LS0tLUNBLS0tLQ=="}`)}) // "----CA----"
-	e.setNodeIP("172.22.0.2")
 	e.api.put(appPodPath, componentPod("app-1", e.now.Add(-time.Hour)))
 	e.helm = &fakeHelm{api: e.api}
 	e.inst = newInstaller(e.helm.run, newTestKubeClient(t, e.api.handler(t)))
 	e.inst.now = func() time.Time { return e.now }
 	return e
-}
-
-func (e *testEnv) setNodeIP(ip string) {
-	e.api.put("/api/v1/nodes/node-1", kubernetes.Object{Kind: "Node", Metadata: kubernetes.ObjectMeta{Name: "node-1"},
-		Status: json.RawMessage(`{"addresses":[{"type":"Hostname","address":"node-1"},{"type":"InternalIP","address":"` + ip + `"}]}`)})
 }
 
 func componentPod(name string, started time.Time) kubernetes.Object {
@@ -341,7 +339,7 @@ func TestInstall_FirstInstallAppliesEverythingInOrder(t *testing.T) {
 		"APPLY " + observerPath,
 		"POST " + secretsPath,
 		"HELM upgrade " + planeRelease,
-		"APPLY " + nodeRulePath, // before the logs module (T003 finding 1)
+		"APPLY " + fluentBitPath, // before the logs module, whose DaemonSet mounts it
 		"HELM upgrade " + logsRelease,
 		"HELM upgrade " + prometheusRelease,
 		"HELM upgrade " + metricsRelease,
@@ -363,10 +361,25 @@ func TestInstall_FirstInstallAppliesEverythingInOrder(t *testing.T) {
 		!strings.Contains(s, `"name":"cluster-agent-tls","namespace":"openchoreo-observability-plane"`) {
 		t.Errorf("ObservabilityPlane spec = %s", s)
 	}
-	rule, _ := e.api.get(nodeRulePath)
-	if s := string(rule.Spec); !strings.Contains(s, `"cidr":"172.22.0.2/32"`) || !strings.Contains(s, `"port":5080`) ||
-		!strings.Contains(s, `"app.kubernetes.io/name":"openobserve-standalone"`) {
-		t.Errorf("node rule spec = %s", s)
+	fb, _ := e.api.get(fluentBitPath)
+	var fbData map[string]string
+	json.Unmarshal(fb.Data, &fbData)
+	if !strings.Contains(fbData["fluent-bit.conf"], "Use_Kubelet false") || fb.Metadata.Labels["app.kubernetes.io/managed-by"] != "serendip" {
+		t.Errorf("Fluent Bit config = %+v", fb)
+	}
+}
+
+// wantRestarted checks the repair deleted Fluent Bit's pod, after the
+// config was re-applied, and no other pod.
+func wantRestarted(t *testing.T, e *testEnv) {
+	t.Helper()
+	tl := e.api.timeline()
+	apply, del := slices.Index(tl, "APPLY "+fluentBitPath), slices.Index(tl, "DELETE "+fluentBitPodPath)
+	if apply < 0 || del < apply {
+		t.Errorf("Fluent Bit not restarted after its config was re-applied: %v", tl)
+	}
+	if n := e.api.count("DELETE "); n != 1 {
+		t.Errorf("deletes = %d, want only Fluent Bit's pod", n)
 	}
 }
 
@@ -386,7 +399,12 @@ func TestInstall_HelmArguments(t *testing.T) {
 			"--set observer.secretName=observer-secret", "--set observer.extraEnvs[0].value=http://observer.openchoreo-observability-plane:8080"}},
 		{logsRelease, []string{"--version 0.8.0", "--set-string openobserve-standalone.config.ZO_TELEMETRY=false",
 			"--set-string openobserve-standalone.config.ZO_COMPACT_DATA_RETENTION_DAYS=3",
-			"--set openobserve-standalone.persistence.size=5Gi"}},
+			"--set openobserve-standalone.persistence.size=5Gi",
+			// RP-064: off the host network, on Serendip's config, rolled
+			// when it changes.
+			"--set fluent-bit.hostNetwork=false", "--set fluent-bit.dnsPolicy=ClusterFirst",
+			"--set fluent-bit.existingConfigMap=serendip-fluent-bit",
+			"--set-string fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash()}},
 		{prometheusRelease, []string{"--version 29.47.2", "oci://ghcr.io/prometheus-community/charts/prometheus"}},
 		{metricsRelease, []string{"--version 0.9.3", "--set kube-prometheus-stack.enabled=false"}},
 	}
@@ -475,18 +493,23 @@ func TestInstall_Repairs(t *testing.T) {
 		wantHelm []string // releases
 		check    func(t *testing.T, e *testEnv)
 	}{
-		{"deleted node rule", func(e *testEnv) { e.api.del(nodeRulePath) }, nil,
+		{"deleted Fluent Bit config", func(e *testEnv) { e.api.del(fluentBitPath) }, nil,
 			func(t *testing.T, e *testEnv) {
-				if _, ok := e.api.get(nodeRulePath); !ok {
-					t.Error("node rule not restored")
+				if fb, ok := e.api.get(fluentBitPath); !ok || !dataEqual(fb.Data, fluentBitConfig().Data) {
+					t.Error("Fluent Bit config not restored")
 				}
+				wantRestarted(t, e)
 			}},
-		{"changed node address", func(e *testEnv) { e.setNodeIP("172.22.0.5") }, nil,
+		{"edited Fluent Bit config", func(e *testEnv) {
+			fb, _ := e.api.get(fluentBitPath)
+			fb.Data = mustJSON(map[string]string{"fluent-bit.conf": chartFluentBitConf, "parsers.conf": chartParsersConf})
+			e.api.put(fluentBitPath, fb)
+		}, nil,
 			func(t *testing.T, e *testEnv) {
-				rule, _ := e.api.get(nodeRulePath)
-				if s := string(rule.Spec); !strings.Contains(s, "172.22.0.5/32") || strings.Contains(s, "172.22.0.2") {
-					t.Errorf("rule = %s", s)
+				if fb, _ := e.api.get(fluentBitPath); !dataEqual(fb.Data, fluentBitConfig().Data) {
+					t.Error("Fluent Bit config not restored")
 				}
+				wantRestarted(t, e)
 			}},
 		{"deleted plane object", func(e *testEnv) { e.api.del(planeCRPath) }, nil,
 			func(t *testing.T, e *testEnv) {
@@ -673,7 +696,6 @@ func TestUninstall_OrderAndTwiceIsClean(t *testing.T) {
 	}
 	once := []string{
 		"DELETE " + planeCRPath,
-		"DELETE " + nodeRulePath,
 		"HELM uninstall " + metricsRelease,
 		"HELM uninstall " + prometheusRelease,
 		"HELM uninstall " + logsRelease,
@@ -688,7 +710,7 @@ func TestUninstall_OrderAndTwiceIsClean(t *testing.T) {
 			t.Errorf("uninstall without --ignore-not-found: %v", c)
 		}
 	}
-	for _, p := range []string{planeCRPath, nodeRulePath, namespacePath} {
+	for _, p := range []string{planeCRPath, namespacePath} {
 		if _, ok := e.api.get(p); ok {
 			t.Errorf("%s left", p)
 		}
