@@ -31,6 +31,21 @@ spec PR, `docs/architecture/` for the `Removing` readiness reason).**
     - F4: policy Approvals' `decision.at` was year 1 (spec 019's bug);
     - F5: new readiness reason `Removing` during the uninstall.
   - **RP-064:** Fluent Bit's `:2020` answers counters to any pod.
+    **The user chose to fix it in T014 (2026-11-14), option 1:** run the
+    logs module's Fluent Bit without `hostNetwork`, so the plane's
+    NetworkPolicies cover `:2020`.
+    - **Check first:** that the chart exposes the setting (oss-researcher),
+      and that nothing needs the host network (the kubernetes filter's
+      `Use_Kubelet`, DNS policy).
+    - **Then:** set it in `values.go` with a test. Drop
+      `serendip-allow-node-to-openobserve` if it's no longer needed
+      (`policies.go`).
+    - **Verify live on `serendip-t018`:** logs still flow, the
+      DaemonSet's probes pass, and `:2020` times out from a workload pod.
+    - **Then** close RP-064 and update `verification.md` criterion 9.
+    - **Rejected:** binding to 127.0.0.1 and dropping the HTTP probes
+      (loses hang detection); exec probes (the image has no shell); a
+      node firewall.
   - **Tooling, kept outside the repo** in `C:/Users/malit/.serendip-t018/`:
     `cdp.mjs` (headless Chrome driver, signs in on ThunderID), `t023-*.sh`
     (start script, API helper), `t023api.py`, `t023-mcp.py`, the keys
