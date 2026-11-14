@@ -6,10 +6,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 )
+
+// ErrNotFound is returned by Get/Delete when the Kubernetes API
+// responds 404 -- callers (capability-specific providers) use this to
+// distinguish "doesn't exist yet, create it" from a real failure,
+// mirroring core/store.ErrNotFound's existing sentinel-error pattern.
+var ErrNotFound = errors.New("kubernetes: object not found")
 
 // ObjectMeta is the subset of Kubernetes' metadata every object shares,
 // enough to address, create, and identify one.
@@ -112,12 +119,16 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 }
 
 // Get fetches the object at path (e.g. "/api/v1/nodes/my-node").
+// Returns ErrNotFound on a 404.
 func (c *Client) Get(ctx context.Context, path string) (Object, error) {
 	resp, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return Object{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return Object{}, ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return Object{}, unexpectedStatus(resp)
 	}
@@ -146,13 +157,19 @@ func (c *Client) Create(ctx context.Context, path string, obj Object) (Object, e
 	return created, nil
 }
 
-// Delete removes the object at path.
+// Delete removes the object at path. Returns ErrNotFound on a 404 --
+// callers that want "already gone is fine" semantics check for it
+// explicitly (the generic client reports what actually happened; a
+// specific provider's business logic decides whether that's an error).
 func (c *Client) Delete(ctx context.Context, path string) error {
 	resp, err := c.do(ctx, http.MethodDelete, path, nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
 		return unexpectedStatus(resp)
 	}

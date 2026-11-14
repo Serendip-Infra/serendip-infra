@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,26 @@ func TestClient_Get_UnexpectedStatus(t *testing.T) {
 	_, err := client.Get(context.Background(), "/api/v1/nodes/node-1")
 	if err == nil {
 		t.Fatal("Get() = nil error, want an error for a 404 response")
+	}
+}
+
+func TestClient_Get_404ReturnsErrNotFound(t *testing.T) {
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	_, err := client.Get(context.Background(), "/api/v1/nodes/node-1")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get() error = %v, want errors.Is(err, ErrNotFound)", err)
+	}
+}
+
+func TestClient_Delete_404ReturnsErrNotFound(t *testing.T) {
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	err := client.Delete(context.Background(), "/api/v1/nodes/node-1")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete() error = %v, want errors.Is(err, ErrNotFound)", err)
 	}
 }
 
