@@ -16,32 +16,42 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T005 done (2026-11-14); next
-is T006 (the Observer client and the provider).**
-- **T005 (the installer):** `providers/observability/openchoreo/`
-  (`installer.go`, `values.go`, `policies.go`, `doc.go`, embedded
-  `prometheus-values.yaml`), plus `kubernetes.Client.PostRaw` and
-  `ServiceProxyPath`. Tested on fakes only; the first live install is
-  T012's.
-  - **Install order** follows ADR 0021: the plane chart, the node rule,
-    the logs module, plain Prometheus, the adapter, then the
-    ObservabilityPlane.
-  - **An unchanged resync** is 6 GETs and one metrics query, with no Helm
-    run.
-  - **Repairs** run Helm only for the release at fault. A query that
-    returns no data is reported, not repaired.
-  - **Uninstall** is idempotent and waits for the plane object, then the
-    namespace.
-  - **Records:** plan.md "Findings from T005" (10 items), VERSIONS.md
-    (the selectors the checks use), and **RP-057**: ThunderID's proxy
-    calls drop a bearer token. That's latent, since K3s and kind use
-    client certificates.
-  - **Reviews:** `go-reviewer`'s "should" findings are fixed;
-    `contract-guardian` passed.
-  - **T006 notes:** the metrics answer's point shape is still unknown.
-    The readiness check only requires `memoryUsage` to be a list with a
-    non-null point; T006 settles the shape. `Usage` asks the stores
-    (plan "Finding from T002").
+**Spec 023 (observability package): T001–T006 done (2026-11-14); next
+is T007 (wiring in serendipd).**
+- **T006 (the client and the provider):** `providers/observability/openchoreo/`
+  `observer.go` (the adapters through the Service proxy), `scope.go`,
+  `provider.go` (`SearchLogs`, `BuildLogs`, `Metrics`) and `usage.go`,
+  tested against an `httptest` API server. Not run live yet (T012).
+  - **Scopes** are UIDs read from the live OpenChoreo objects (names
+    repeated from the application and build providers), cached for a
+    minute. A target must hang together, and a gone one is skipped,
+    never widened. Returned lines are checked against all three UIDs.
+  - **Paging** is newest first by time and a seen count, up to 4 rounds a
+    page. A target that answered in full isn't trusted below its oldest
+    line. A page can be short or empty with `Next` set (noted on
+    `reconcile.LogPage`), so the API and UI must read on until `Next` is
+    empty.
+  - **Metrics:** millicores and MiB, whole-minute steps, at most 300
+    points; request metrics always "not available".
+  - **Disk use** comes from the stores' `/metrics`. The installer now sets
+    OpenObserve's `ZO_PROMETHEUS_ENABLED=true` (a fingerprint change).
+    **T012 must check** that this needs no credentials and matches a
+    `du`; the fallback is the streams API with the admin Secret.
+  - **Outside the package:** `kubernetes.ObjectMeta.UID` and
+    `kubernetes.ErrBodyTooLarge`.
+  - **Records:** plan.md "Findings from T006", VERSIONS.md (query shapes,
+    disk-use metrics), **RP-058** (tied timestamps) and **RP-059** (a
+    re-created object hides earlier logs).
+  - **Reviews:** `go-reviewer`'s findings are fixed, except sequential
+    scope resolution (cached; left as is). `contract-guardian` passed.
+- **T005 (the installer, `eacba73`):** `installer.go`, `values.go`,
+  `policies.go`, embedded `prometheus-values.yaml`, plus
+  `kubernetes.Client.PostRaw` and `ServiceProxyPath`.
+  - It installs in ADR 0021's order. An unchanged resync costs 6 GETs and
+    one metrics query, with no Helm run.
+  - Repairs run Helm only for the release at fault. Uninstall is
+    idempotent.
+  - **RP-057:** ThunderID's proxy calls drop a bearer token (latent).
 - **T004 (`1ebe9d8`):**
   - `provider.Requirements.Disk`;
   - `core/reconcile/observability.go`: the types, the caps as
@@ -101,10 +111,14 @@ is T006 (the Observer client and the provider).**
   - **`serendip-t018` is stopped.** Start it with `docker start
     serendip-t018-control-plane`; its node IP may change (the node rule
     handles that).
-- **Next:** T006, the Observer client (the adapters through the
-  Service proxy, using `PostRaw`), `SearchLogs`, `BuildLogs`, `Metrics`
-  and `usage.go`, tested against an `httptest` adapter. The API layer
-  (T008) validates and caps queries; `core` only declares the caps.
+- **Next:** T007, wiring in `serendipd`:
+  - the catalogue entry (installer, `Removal`, `Requirements` still nil);
+  - the lazy `observability` handle over `NewProvider`;
+  - registration on readiness;
+  - `Installer` as `PackageUsage`.
+
+  Then T008 (the API), which validates and caps queries; `core` only
+  declares the caps.
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or
