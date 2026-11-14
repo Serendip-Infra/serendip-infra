@@ -14,7 +14,9 @@ scope            = "/" or one resource; applies to everything that resource owns
 ```
 
 - **Scopes inherit down the ownership tree.** An assignment at a Project
-  applies to its Environments, Applications, Components and Secrets. The
+  applies to its Environments, Applications, Components and Secrets, and
+  to the Deployments in its Environments (spec 020: an Environment is the
+  resource group you deploy into, ADR 0019). The
   tree is the resources' `ownerRefs` ("owns" edges in the graph).
   A scope references a resource by `{kind, id}`, not a path, so renaming
   or moving never orphans an assignment.
@@ -58,11 +60,17 @@ Fixed IDs, the same on every install (`core/policy/builtins.go`):
 |---|---|---|
 | Owner | `*` | none |
 | Contributor | `*` except `serendip/authorization/*/write` and `serendip/authorization/*/delete` | none |
-| Reader | `*/read` | none |
-| User Access Administrator | `*/read`, `serendip/authorization/*` | none |
-| Role Based Access Control Administrator | `*/read`, role assignments write and delete | none |
+| Reader | `*/read` except `serendip/components/logs/read` | none |
+| User Access Administrator | `*/read`, `serendip/authorization/*`; no logs | none |
+| Role Based Access Control Administrator | `*/read`, role assignments write and delete; no logs | none |
 | Secrets Officer | `serendip/secrets/*` | `serendip/secrets/value/*` |
 | Secrets User | `serendip/secrets/read` | `serendip/secrets/value/read` |
+| Log Reader | `*/read`, including logs | none |
+
+**Logs are their own action** (`serendip/components/logs/read`, spec 020):
+they can carry sensitive data, so the read-only and access-management
+roles leave them out. Log Reader adds them; Owner and Contributor have
+them.
 
 Built-in roles can't be changed or deleted (400). **Custom roles**
 (`POST /v1/authorization/roleDefinitions`):
@@ -108,7 +116,24 @@ unrestricted, as in Azure.
   read from it with the same decoder the handler uses, and a body the
   check can't read is refused (400/413), never handed on.
 - **Platform-wide routes** (`GET /v1/readiness`, a capability's default
-  provider) are decided at `/`.
+  provider, `GET /v1/platform`, `GET /v1/packages`) are decided at `/`.
+- **Packages** (spec 020): creating or updating a `ProviderInstance` is
+  decided at `/`, whatever owner the body names, and the handler refuses
+  any owner, so removing one (decided at the instance) inherits from `/`
+  alone. A Project's Contributor can't install a package for everyone.
+- **Deployments: read the source, write the target** (spec 020, ADR 0019).
+  - **Deploying or changing** a Deployment needs
+    `serendip/deployments/write` at its Environment, by the route's rule.
+    The handler also checks read on the Component it runs.
+  - **Promoting** needs read on the source Deployment (the route's rule),
+    and the handler checks `serendip/deployments/write` at the target
+    Environment.
+  - **Declaring a dependency** needs read on the Component called.
+  - **Runtime state** (`…/runtime`, `…/events`) needs
+    `serendip/components/runtime/read`; **logs** need their own
+    `serendip/components/logs/read`, at the Deployment.
+  - **These handler checks** are refused, and audited, exactly like the
+    route's own (below).
 - **Lists and graph results** keep only what the caller may read.
 - **A refusal** is 403 naming the missing action and scope.
 - **Authenticated only:** `GET /v1/session`,
@@ -209,7 +234,10 @@ Every mutation's audit row carries the subject of the person behind it
 (`actor_subject`) and the decision that allowed it (`policy_decision`:
 `allow: <role> (<assignment>) at <scope>`). A refused mutation leaves its
 own row with no before or after (`deny: missing <action> at <scope>`).
-Refused reads are logged, not audited, as in Azure.
+That includes a check a handler makes beyond its route's rule, such as
+promote's write at the target Environment (`auditRefusal`, spec 020 T016:
+found missing on a real cluster). Refused reads are logged, not audited,
+as in Azure.
 
 Every delete also records an Approval (`approvals.md`, spec 019). The
 request, the decision and the execution each have their own row. A direct

@@ -238,6 +238,10 @@ type ServerOption func(*serverOptions)
 
 type serverOptions struct {
 	directory identity.Directory
+	runtime   reconcile.RuntimeProvider
+	schemas   reconcile.ConfigSchemaProvider
+	platform  reconcile.PlatformViewProvider
+	packages  reconcile.Catalogue
 	metadata  *ResourceMetadata
 	mcp       bool
 }
@@ -247,6 +251,33 @@ type serverOptions struct {
 // it they answer from the principals seen at sign-in.
 func WithDirectory(d identity.Directory) ServerOption {
 	return func(o *serverOptions) { o.directory = d }
+}
+
+// WithConfigSchemas lets Deployments' configuration be checked against
+// the platform's schemas, and serves them (spec 020). Without it,
+// configuration is refused (503) and the schema route answers 503.
+func WithConfigSchemas(s reconcile.ConfigSchemaProvider) ServerOption {
+	return func(o *serverOptions) { o.schemas = s }
+}
+
+// WithPackages offers the optional packages in c (spec 020): GET
+// /v1/packages lists them, and a ProviderInstance must name one of them,
+// one per capability. Without it, ProviderInstances stay unchecked
+// records nothing installs.
+func WithPackages(c reconcile.Catalogue) ServerOption {
+	return func(o *serverOptions) { o.packages = c }
+}
+
+// WithPlatformView serves GET /v1/platform from the application platform
+// (spec 020). Without it the route answers 503.
+func WithPlatformView(p reconcile.PlatformViewProvider) ServerOption {
+	return func(o *serverOptions) { o.platform = p }
+}
+
+// WithRuntime lets the runtime routes read what Deployments run as, live
+// from the application platform (spec 020). Without it they answer 503.
+func WithRuntime(rt reconcile.RuntimeProvider) ServerOption {
+	return func(o *serverOptions) { o.runtime = rt }
 }
 
 // registerAPI registers every /v1 route on mux. NewServer passes its
@@ -259,13 +290,38 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	// the per-kind generic type parameters, which is worse).
 	mountResource[resource.OrganizationSpec, resource.OrganizationStatus](apiMux, db, bus, resource.KindOrganization, "organizations")
 	mountResource[resource.TeamSpec, resource.TeamStatus](apiMux, db, bus, resource.KindTeam, "teams")
-	mountResource[resource.ProjectSpec, resource.ProjectStatus](apiMux, db, bus, resource.KindProject, "projects")
-	mountResource[resource.EnvironmentSpec, resource.EnvironmentStatus](apiMux, db, bus, resource.KindEnvironment, "environments")
+	envStore := sqlite.NewStore[resource.EnvironmentSpec, resource.EnvironmentStatus](db, resource.KindEnvironment).SetBus(bus)
+	projectStore := sqlite.NewStore[resource.ProjectSpec, resource.ProjectStatus](db, resource.KindProject).SetBus(bus)
+	appStore := sqlite.NewStore[resource.ApplicationSpec, resource.ApplicationStatus](db, resource.KindApplication).SetBus(bus)
+	// A Project's pipeline names only its own Environments (spec 020).
+	NewResourceHandler[resource.ProjectSpec, resource.ProjectStatus](projectStore, "projects").WithValidate(projectValidator(envStore)).Register(apiMux)
+	NewResourceHandler[resource.EnvironmentSpec, resource.EnvironmentStatus](envStore, "environments").Register(apiMux)
 	mountResource[resource.SiteSpec, resource.SiteStatus](apiMux, db, bus, resource.KindSite, "sites")
 	mountResource[resource.ClusterSpec, resource.ClusterStatus](apiMux, db, bus, resource.KindCluster, "clusters")
 	mountResource[resource.NodeSpec, resource.NodeStatus](apiMux, db, bus, resource.KindNode, "nodes")
-	mountResource[resource.ApplicationSpec, resource.ApplicationStatus](apiMux, db, bus, resource.KindApplication, "applications")
-	mountResource[resource.ComponentSpec, resource.ComponentStatus](apiMux, db, bus, resource.KindComponent, "components")
+	NewResourceHandler[resource.ApplicationSpec, resource.ApplicationStatus](appStore, "applications").Register(apiMux)
+	compStore := sqlite.NewStore[resource.ComponentSpec, resource.ComponentStatus](db, resource.KindComponent).SetBus(bus)
+	// Components (spec 020 T009): their own Create and Update keep declared
+	// dependencies coherent; plus dependencies and an Application's topology.
+	(&ComponentHandler{
+		ResourceHandler: NewResourceHandler[resource.ComponentSpec, resource.ComponentStatus](compStore, "components"),
+		comps:           compStore,
+		apps:            appStore,
+		recordDenied:    recordDeniedIn(db),
+	}).Register(apiMux)
+	(&PlatformHandler{platform: opts.platform}).Register(apiMux)
+	// Deployments (spec 020): their own Create, Update and Promote.
+	deployStore := sqlite.NewStore[resource.DeploymentSpec, resource.DeploymentStatus](db, resource.KindDeployment).SetBus(bus)
+	(&DeploymentHandler{
+		ResourceHandler: NewResourceHandler[resource.DeploymentSpec, resource.DeploymentStatus](deployStore, "deployments"),
+		deployments:     deployStore, envs: envStore, comps: compStore,
+		apps:         appStore,
+		projects:     projectStore,
+		schemas:      opts.schemas,
+		recordDenied: recordDeniedIn(db),
+	}).Register(apiMux)
+	(&SchemaHandler{comps: compStore, schemas: opts.schemas}).Register(apiMux)
+	NewRuntimeHandler(deployStore, envStore, opts.runtime).Register(apiMux)
 	// Capability's store is shared with RegistryHandler below (T019 gap
 	// fix -- specs/002-http-api/spec.md Scope-IN item 2, "get/set a
 	// capability's default provider", was never wired up) rather than
@@ -273,7 +329,14 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	capStore := sqlite.NewStore[resource.CapabilitySpec, resource.CapabilityStatus](db, resource.KindCapability).SetBus(bus)
 	NewResourceHandler[resource.CapabilitySpec, resource.CapabilityStatus](capStore, "capabilities").Register(apiMux)
 	mountResource[resource.ProviderSpec, resource.ProviderStatus](apiMux, db, bus, resource.KindProvider, "providers")
-	mountResource[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](apiMux, db, bus, resource.KindProviderInstance, "provider-instances")
+	instStore := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).SetBus(bus)
+	instances := NewResourceHandler[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](instStore, "provider-instances").
+		WithMetadataCheck(platformWide)
+	if opts.packages != nil {
+		instances.WithValidate(packageValidator(opts.packages, instStore))
+	}
+	instances.Register(apiMux)
+	(&PackageHandler{catalogue: opts.packages}).Register(apiMux)
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
 	mountResource[resource.AlertSpec, resource.AlertStatus](apiMux, db, bus, resource.KindAlert, "alerts")
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")

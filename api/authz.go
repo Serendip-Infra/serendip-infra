@@ -102,6 +102,7 @@ var resourcePaths = map[resource.Kind]string{
 	resource.KindAlert:            "alerts",
 	resource.KindVolume:           "volumes",
 	resource.KindSecret:           "secrets",
+	resource.KindDeployment:       "deployments",
 }
 
 func authzAction(what, verb string) policy.Action {
@@ -167,6 +168,22 @@ func routeTable() map[string]rule {
 		"POST /v1/approvals/{id}/approve": {action: approvalsAction("write"), target: targetApprovalDecide, kind: resource.KindApproval},
 		"POST /v1/approvals/{id}/reject":  {action: approvalsAction("write"), target: targetApprovalDecide, kind: resource.KindApproval},
 
+		// Declared dependencies and topology, and the platform (spec 020).
+		"GET /v1/components/{id}/dependencies": {action: action(resource.KindComponent, "read"), target: targetResource, kind: resource.KindComponent},
+		"GET /v1/applications/{id}/topology":   {action: action(resource.KindApplication, "read"), target: targetResource, kind: resource.KindApplication},
+		"GET /v1/packages":                     {action: action(resource.KindProviderInstance, "read"), target: targetRoot},
+		"GET /v1/platform":                     {action: policy.Action{Name: policy.ActionPlatformRead}, target: targetRoot},
+		// What a Component can be configured with (spec 020).
+		"GET /v1/components/{id}/schemas": {action: action(resource.KindComponent, "read"), target: targetResource, kind: resource.KindComponent},
+		// What a Deployment runs as, and its logs, read live (spec 020);
+		// logs are their own action, as they can hold sensitive data.
+		"GET /v1/deployments/{id}/runtime": {action: policy.Action{Name: policy.ActionComponentRuntimeRead}, target: targetResource, kind: resource.KindDeployment},
+		"GET /v1/deployments/{id}/events":  {action: policy.Action{Name: policy.ActionComponentRuntimeRead}, target: targetResource, kind: resource.KindDeployment},
+		"GET /v1/deployments/{id}/logs":    {action: policy.Action{Name: policy.ActionComponentLogsRead}, target: targetResource, kind: resource.KindDeployment},
+		// Promote reads the source Deployment; the handler checks writing
+		// deployments at the target Environment (spec 020).
+		"POST /v1/deployments/{id}/promote": {action: action(resource.KindDeployment, "read"), target: targetResource, kind: resource.KindDeployment},
+
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
 	}
@@ -176,6 +193,16 @@ func routeTable() map[string]rule {
 		t["GET /v1/"+path+"/{id}"] = rule{action: action(kind, "read"), target: targetResource, kind: kind}
 		t["PUT /v1/"+path+"/{id}"] = rule{action: action(kind, "write"), target: targetResource, kind: kind}
 		t["DELETE /v1/"+path+"/{id}"] = rule{action: action(kind, "delete"), target: targetResource, kind: kind}
+	}
+	// A ProviderInstance installs a platform-wide package (spec 020), so
+	// writing one is decided at "/", whatever owner its body names: owning
+	// it by a Project must not let that Project's Contributor install a
+	// package for everyone (T016 security review). Its handler also refuses
+	// any owner, so its delete, decided at the instance, inherits from "/"
+	// alone.
+	pi := resourcePaths[resource.KindProviderInstance]
+	for _, route := range []string{"POST /v1/" + pi, "PUT /v1/" + pi + "/{id}"} {
+		t[route] = rule{action: action(resource.KindProviderInstance, "write"), target: targetRoot, kind: resource.KindProviderInstance}
 	}
 	return t
 }
@@ -252,14 +279,25 @@ type deciderKey struct{}
 
 type decider func(ctx context.Context, act policy.Action, at resource.Scope) (bool, error)
 
-// allowedAt answers through the request's decider. Without one (a handler
-// on a plain mux, in unit tests) everything is allowed, as for lists.
+// allowedAt answers through the request's decider, which the authorizer
+// attaches to every route it lets through. Without one it refuses: a
+// permission check never fails open (spec 020 T006 found a handler's extra
+// check silently passing on a route that had none).
 func allowedAt(ctx context.Context, act policy.Action, at resource.Scope) (bool, error) {
 	d, ok := ctx.Value(deciderKey{}).(decider)
 	if !ok {
-		return true, nil
+		return false, nil
 	}
 	return d(ctx, act, at)
+}
+
+// withDecider lets a handler ask further "may the caller do this there?"
+// questions of the policy engine (allowedAt).
+func (a *authorizer) withDecider(ctx context.Context, caller policy.Principal) context.Context {
+	return context.WithValue(ctx, deciderKey{}, decider(func(ctx context.Context, act policy.Action, at resource.Scope) (bool, error) {
+		d, err := a.engine.Decide(ctx, caller, act, at)
+		return d.Effect == policy.Allow, err
+	}))
 }
 
 func (a *authorizer) wrap(ru rule, h http.HandlerFunc) http.HandlerFunc {
@@ -272,7 +310,7 @@ func (a *authorizer) wrap(ru rule, h http.HandlerFunc) http.HandlerFunc {
 			WriteProblem(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token", reqID)
 			return
 		}
-		ctx := r.Context()
+		ctx := a.withDecider(r.Context(), caller)
 		switch {
 		case ru.authOnly:
 			h(w, r.WithContext(ctx))
@@ -309,10 +347,6 @@ func (a *authorizer) wrap(ru rule, h http.HandlerFunc) http.HandlerFunc {
 				}
 				decided[key] = d.Effect == policy.Allow
 				return decided[key], nil
-			}))
-			ctx = context.WithValue(ctx, deciderKey{}, decider(func(ctx context.Context, act policy.Action, at resource.Scope) (bool, error) {
-				d, err := a.engine.Decide(ctx, caller, act, at)
-				return d.Effect == policy.Allow, err
 			}))
 			h(w, r.WithContext(ctx))
 			return

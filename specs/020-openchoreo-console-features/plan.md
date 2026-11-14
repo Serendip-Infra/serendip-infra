@@ -1,6 +1,38 @@
 # Plan 020: OpenChoreo's portal features in Serendip's own console
 
-Status: Draft, awaiting approval. Spec: `spec.md` (draft, 2026-10-20).
+Status: Approved 2026-10-22. Updated 2026-10-22 after spec 021
+(see "What changed since spec 021"). Spec: `spec.md` (draft, 2026-10-20).
+
+## What changed since spec 021 (2026-10-22)
+
+- **Parity is mechanical now.** Every new route enters `api/catalog` as a
+  CLI command and an MCP tool, or is excluded with a reason, and
+  `TestCatalogueCoversEveryRoute` fails otherwise. Spec acceptance
+  criterion 11 is met by construction and checked by that test.
+  `docs/cli-and-mcp.md` is regenerated.
+- **AI callers already exist:** an agent (spec 018) or a person's
+  assistant (`Via`, spec 021). Both meet `Principal.guarded()`:
+  - **Undeploying and removing a package** are deletes, so through MCP
+    they wait for a person.
+  - **Deploy, promote and rollback are writes,** decided by roles for AI
+    and people alike (spec criterion 3).
+- **Live log following is a stream; an MCP tool answers once** (decision
+  8, amended):
+  - **The CLI** gets `--follow`, printing the NDJSON stream line by line.
+  - **MCP** gets the non-following read (recent lines, `since` and
+    `tailLines`). `follow=true` is excluded from MCP with that reason.
+- **The ADR for the environment model is 0019.** 0017 and 0018 went to
+  spec 021.
+- **Today's mapping, found while re-reading the code:**
+  - Each Serendip Application is an OpenChoreo Project (`app-<hash>`).
+  - Each Component auto-deploys to one hard-coded OpenChoreo environment,
+    `development` (spec 011 decision 5, `names.go`).
+  - **Serendip's Environments aren't mapped to anything in OpenChoreo
+    yet.** Decision 2 has to add that mapping, not just re-parent
+    Applications.
+  - **Nothing enforces which kind may own an Application,** so the
+    re-parenting is a data migration of owner references (`0008`, the
+    next free number), plus the provider change.
 
 ## What the research found (OpenChoreo 1.3.1, 2026-10-20)
 
@@ -51,6 +83,80 @@ unless marked inferred.
 - **No upstream statement** says "OpenChoreo without Backstage is
   supported". The chart does have `backstage.enabled=false`, and the API
   and CLI are first-class.
+
+## Spike findings (T001, 2026-10-22, on `serendip-t018`, OpenChoreo 1.3.1)
+
+Observed with scratch objects, all removed afterwards; the running
+Components were restored exactly.
+
+1. **A second environment needs two bindings, not one.**
+   - **The `Environment` CR:** `spec.dataPlaneRef: {kind: DataPlane, name:
+     default}`, `isProduction`. It's Ready at once.
+   - **A `ReleaseBinding` alone fails:** "namespaces … not found". The
+     data-plane namespace for (project, environment) is created by a
+     **`ProjectReleaseBinding`** (`spec.environment`, `owner.projectName`,
+     `projectRelease`), which Serendip already creates for `development`.
+   - **With both,** the Component was Ready in staging in **about 23 s**,
+     in namespace `dp-<org>-<project>-<environment>-<hash>`.
+2. **Promotion is a `ReleaseBinding` with the same `releaseName`.**
+   - **No pipeline check upstream:** staging wasn't in the project's
+     `DeploymentPipeline`, and the binding was accepted. Serendip enforces
+     the order (decision 2).
+   - **Today's pipeline:** one, `serendip`, with `promotionPaths:
+     [{sourceEnvironmentRef: development, targetEnvironmentRefs: []}]`,
+     shared by every project (`project.spec.deploymentPipelineRef`).
+3. **Overrides** live on the `ReleaseBinding`:
+   - **`componentTypeEnvironmentConfigs`:** what the component type's
+     `environmentConfigs` schema allows. For Serendip's
+     `serendip-service` type that's `replicas` (integer, minimum 0),
+     `resources` (requests and limits: cpu, memory) and `imagePullPolicy`
+     (an enum).
+   - **`workloadOverrides.container.env[]`** (`key`, `value` or
+     `valueFrom.secretKeyRef`), and `files[]`.
+   - **`traitEnvironmentConfigs`,** keyed by trait instance.
+   - **Verified:** staging ran 2 replicas and `SPIKE_ENV=staging`, through
+     an `env-configs` ConfigMap (`envFrom`). Development was untouched (1
+     replica, no variable).
+4. **Rollback** is patching `releaseName` to an older release.
+   - Promoting staging to a new release took **about 15 s**; patching back
+     was immediate.
+   - **Overrides survived both directions.**
+   - **Undeploy:** `state: Undeploy`, or delete the binding.
+5. **Releases come from auto-deploy.**
+   - **With `autoDeploy: true`,** a workload change makes a new
+     `ComponentRelease` named `<component>-<content hash>` and rebinds the
+     first environment only. Identical content reuses the same name.
+   - **With it off,** a workload change makes **no** release, and the
+     existing binding keeps running.
+   - **A release is `{componentType (embedded spec), workload, owner}`,**
+     so Serendip can create one itself (decision 2 amended).
+6. **Runtime reads through `serendipd`'s own Kubernetes client:**
+   - **`RenderedRelease.status.resources`** lists kind, name, namespace
+     and `healthStatus` (here a ConfigMap, Deployment, Service and
+     NetworkPolicy).
+   - **Events: `Client.List` loses their fields.** `kubernetes.Object`
+     keeps only `metadata`/`spec`/`status`/`data`, but an Event's
+     `reason`, `message` and `involvedObject` are top-level. A raw read is
+     needed (T007).
+   - **Pod logs with `follow=true`** stream chunked `text/plain` through
+     the client's transport, once the client's request timeout is lifted.
+     The client has no stream method yet (T007).
+7. **Schemas:**
+   - **The only component type installed** is Serendip's own
+     `serendip-service` (a `ClusterComponentType`). It has an
+     `environmentConfigs` schema and **no `parameters`**.
+   - **No `ClusterTrait`s are installed.** Trait forms appear only once a
+     trait is installed; the edge-1 forms are the per-environment
+     overrides.
+   - **Keywords in use:** `type`, `properties`, `enum`, `minimum`,
+     `default`, `$defs` and `$ref`. A small stdlib validator covers them.
+8. **Dependencies** are declared on the Workload: `spec.dependencies.endpoints[]`
+   (`component`, `project`, `name` (the endpoint), `visibility`
+   (`project` or `namespace`), `envBindings.address` and others).
+   - **Verified:** the binding reported "All 1 connections resolved", and
+     the caller got `BACKEND_URL=http://cmp-….svc.cluster.local:80`.
+   - **Serendip's `ComponentSpec` has no dependencies yet** (T009 adds
+     them).
 
 ## Decisions
 
@@ -109,6 +215,47 @@ unless marked inferred.
      - **Undeploying** (deleting a `Deployment`) is a delete, so it goes
        through an Approval (spec 019). Agents' undeploys wait for a
        person.
+   - **The mapping to OpenChoreo** (settled by T001 and T002):
+     - **A Serendip Environment becomes an OpenChoreo `Environment`,** on
+       the existing data plane.
+     - **A Project's promotion order** (its spec gains a `pipeline`: the
+       Environment IDs in order, or promotion paths) **becomes an
+       OpenChoreo `DeploymentPipeline`.**
+     - **A `Deployment` becomes a `ReleaseBinding`,** with its overrides,
+       plus the Application's **`ProjectReleaseBinding`** for that
+       Environment, which creates its data-plane namespace (spike finding
+       1). The latter is created with the Application's first Deployment
+       there, and removed with its last.
+     - **Each Serendip Project gets its own `DeploymentPipeline`,**
+       replacing today's shared `serendip` pipeline, so promotion order is
+       per Project.
+     - **Releases: Serendip creates every one, and auto-deploy is off**
+       (settled in T005, after a live check):
+       - **A release Serendip writes is accepted and runs.** A
+         `ComponentRelease` of `{componentType: {kind, name, spec copied
+         from the ClusterComponentType}, owner, workload}` (with no owner
+         inside the workload, which the CRD refuses) was Ready in a
+         scratch environment in 13 s.
+       - **So Components are created with `autoDeploy: false`:** the
+         platform neither makes releases nor binds the first environment
+         itself.
+       - **Each Component's spec change becomes a release named
+         `<component>-<content hash>`,** so the same spec is the same
+         release.
+       - **Serendip writes every binding.** That avoids two writers on one
+         binding (the platform's auto-deploy and Serendip's overrides), and
+         the ambiguous "first environment" of a pipeline without paths.
+       - **A Component's readiness changes meaning.** It's Ready once its
+         current spec is a release; running, health and endpoints belong
+         to each Deployment.
+       - **What ran before keeps running.** Turning auto-deploy off leaves
+         the existing `development` binding in place. A Deployment that's
+         Ready removes its Component's legacy binding, and an
+         Application's legacy project binding goes when none remain.
+     - **Components stop auto-deploying** to the hard-coded `development`.
+       The first Deployment in the pipeline's first environment replaces
+       it, and existing Components get one in their former Environment
+       during migration, so nothing running stops.
    - **Pipeline enforcement is Serendip's.** Upstream has none, so
      Serendip checks that a promotion follows the pipeline's
      `promotionPaths`. Skipping an environment is refused (400).
@@ -157,8 +304,25 @@ unless marked inferred.
      (`providers/application/openchoreo`). `core/` sees only
      capability-shaped interfaces (decision 4).
 
-4. **Capability interfaces in `core/`** (constitution 1). Their shape is
-   settled in T002:
+4. **Capability interfaces in `core/`** (constitution 1). **As settled
+   in T002** (`core/reconcile/platform.go`), they're separate small
+   interfaces, not growth of `ApplicationPlatformProvider`, so existing
+   providers and fakes are untouched, and a provider offers what it can:
+   - `DeploymentProvider`: `EnsureEnvironment`/`DeleteEnvironment`,
+     `EnsurePipeline`, `Releases`, `CreateRelease`, `Deploy`, `Undeploy`;
+   - `RuntimeProvider`: `RuntimeObjects`, `Events`, and `Logs`, which
+     returns a `LogStream` of lines;
+   - `ConfigSchemaProvider`: `ConfigSchemas`, for the environment
+     configuration and each trait;
+   - `PlatformViewProvider`: `Platform`.
+   - **Topology needs no provider:** dependencies are Serendip's own
+     `depends-on` relationships in the graph.
+   - **The model:** `KindDeployment` (`core/resource/deployment.go`) is
+     owned by its Environment, with a derived `depends-on` edge to its
+     Component. A Project's spec gains a `Pipeline` of promotion paths,
+     validated as one start, acyclic.
+
+   The first sketch, kept for the record:
    - **`ApplicationPlatformProvider` grows:**
      - `Releases(component)`;
      - `Deploy(component, environment, release)`, the same call for
@@ -215,7 +379,8 @@ unless marked inferred.
      "not recommended on this machine" with the numbers, and still lets an
      Owner install it. The lighter edge-1 backend is a later spec.
 
-8. **Live log following streams with `fetch`, not `EventSource`.**
+8. **Live log following streams with `fetch`, not `EventSource`.** (CLI
+   and MCP: see "What changed since spec 021".)
    - The console must send `X-Serendip-Csrf: 1` on cookie requests
      (ADR 0013), and `EventSource` can't set headers.
    - So `GET .../logs?follow=true` answers chunked NDJSON, and the
@@ -332,10 +497,11 @@ type ApplicationPlatformProvider interface {
   pipeline; the NetworkPolicy).
 - **api:**
   - deployments, runtime, logs (streaming), schema, pipeline and platform
-    routes;
+    routes, each with an `api/catalog` entry (CLI and MCP);
   - `provider-instances` gets real behaviour;
   - readiness for optional capabilities;
   - route-table rules.
+- **cmd/serendip:** `--follow` streaming for logs.
 - **ui:**
   - a Deploy tab with the environment pipeline, plus promote and
     rollback;
@@ -346,7 +512,8 @@ type ApplicationPlatformProvider interface {
   - a Packages page;
   - the "unavailable" treatment.
 - **docs:**
-  - ADR 0017 (the environment model and direct-Kubernetes access);
+  - ADR 0019 (the environment model and direct-Kubernetes access);
+  - `docs/cli-and-mcp.md`, regenerated from the catalogue;
   - `application-platform.md`, `authorization.md`, `resource-model.md`;
   - the risk register (RP-018 and anything new).
 

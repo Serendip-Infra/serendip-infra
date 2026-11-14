@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/identity"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
@@ -194,4 +195,140 @@ func (l *lazyLogin) client() identity.LoginClient {
 		return nil
 	}
 	return lc
+}
+
+// lazyDeployments is the platform's DeploymentProvider (spec 020), set
+// with lazyPlatform when the platform is ready.
+type lazyDeployments struct {
+	lazy[reconcile.DeploymentProvider]
+}
+
+var _ reconcile.DeploymentProvider = (*lazyDeployments)(nil)
+
+func (l *lazyDeployments) EnsureEnvironment(ctx context.Context, env resource.Environment) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	return p.EnsureEnvironment(ctx, env)
+}
+
+func (l *lazyDeployments) DeleteEnvironment(ctx context.Context, env resource.Environment) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	return p.DeleteEnvironment(ctx, env)
+}
+
+func (l *lazyDeployments) EnsurePipeline(ctx context.Context, project resource.Project) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	return p.EnsurePipeline(ctx, project)
+}
+
+func (l *lazyDeployments) DeletePipeline(ctx context.Context, projectID string) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	return p.DeletePipeline(ctx, projectID)
+}
+
+func (l *lazyDeployments) Releases(ctx context.Context, comp resource.Component) ([]reconcile.Release, error) {
+	p, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return p.Releases(ctx, comp)
+}
+
+func (l *lazyDeployments) CreateRelease(ctx context.Context, comp resource.Component) (reconcile.Release, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.Release{}, err
+	}
+	return p.CreateRelease(ctx, comp)
+}
+
+func (l *lazyDeployments) Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.DeploymentObservation{}, err
+	}
+	return p.Deploy(ctx, app, comp, env, d)
+}
+
+func (l *lazyDeployments) Undeploy(ctx context.Context, d resource.Deployment) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	return p.Undeploy(ctx, d)
+}
+
+// lazyRuntime is the platform's RuntimeProvider (spec 020), set with
+// lazyPlatform when the platform is ready.
+type lazyRuntime struct {
+	lazy[reconcile.RuntimeProvider]
+}
+
+var _ reconcile.RuntimeProvider = (*lazyRuntime)(nil)
+
+func (l *lazyRuntime) RuntimeObjects(ctx context.Context, d resource.Deployment, env resource.Environment) ([]reconcile.RuntimeObject, error) {
+	p, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return p.RuntimeObjects(ctx, d, env)
+}
+
+func (l *lazyRuntime) Events(ctx context.Context, d resource.Deployment, env resource.Environment, since time.Time) ([]reconcile.RuntimeEvent, error) {
+	p, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return p.Events(ctx, d, env, since)
+}
+
+func (l *lazyRuntime) Logs(ctx context.Context, d resource.Deployment, env resource.Environment, opts reconcile.LogOptions) (reconcile.LogStream, error) {
+	p, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return p.Logs(ctx, d, env, opts)
+}
+
+// lazySchemas is the platform's ConfigSchemaProvider (spec 020), set with
+// lazyPlatform when the platform is ready.
+type lazySchemas struct {
+	lazy[reconcile.ConfigSchemaProvider]
+}
+
+var _ reconcile.ConfigSchemaProvider = (*lazySchemas)(nil)
+
+func (l *lazySchemas) ConfigSchemas(ctx context.Context, comp resource.Component) (reconcile.ConfigSchemas, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.ConfigSchemas{}, err
+	}
+	return p.ConfigSchemas(ctx, comp)
+}
+
+// lazyPlatformView is the platform's PlatformViewProvider (spec 020), set
+// with lazyPlatform when the platform is ready.
+type lazyPlatformView struct {
+	lazy[reconcile.PlatformViewProvider]
+}
+
+var _ reconcile.PlatformViewProvider = (*lazyPlatformView)(nil)
+
+func (l *lazyPlatformView) Platform(ctx context.Context) (reconcile.PlatformView, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.PlatformView{}, err
+	}
+	return p.Platform(ctx)
 }

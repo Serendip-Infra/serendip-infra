@@ -16,6 +16,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/identity"
 	"github.com/serendip-infra/serendip-infra/core/policy"
+	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
@@ -32,6 +33,8 @@ type authzWorld struct {
 	db *sql.DB
 	h  http.Handler
 	id map[string]string // name -> resource ID
+	// registry, when grants sets it, serves GET /v1/readiness.
+	registry *provider.Registry
 }
 
 // people maps each test token to its person.
@@ -97,7 +100,7 @@ func newAuthzWorld(t *testing.T, grants func(w *authzWorld), opts ...api.ServerO
 	bus := event.NewInProcessBus()
 	secrets := sqlite.NewStore[resource.SecretSpec, resource.SecretStatus](w.db, resource.KindSecret).SetBus(bus)
 	rec := reconcile.NewSecretReconciler(secrets, newFakeSecretsProvider())
-	w.h = api.NewServer(w.db, bus, map[string]string{"key-ci": "ci"}, authn, rec, nil, nil, opts...).Handler
+	w.h = api.NewServer(w.db, bus, map[string]string{"key-ci": "ci"}, authn, rec, w.registry, nil, opts...).Handler
 	return w
 }
 
@@ -240,9 +243,10 @@ func TestAuthz_Contributor(t *testing.T) {
 // Moving a resource under a parent the caller can't write is refused.
 func TestAuthz_MoveNeedsWriteAtTheNewParent(t *testing.T) {
 	w := newAuthzWorld(t, func(w *authzWorld) { w.grant("tok-contrib", policy.ContributorRoleID, "prod") })
-	w.put("tok-contrib", "/v1/components", "web", "devapp", http.StatusForbidden)
+	// An Application: a Component's Application is fixed (spec 020 T009).
+	w.put("tok-contrib", "/v1/applications", "app", "projB", http.StatusForbidden)
 	// Moving within what they control is fine.
-	w.put("tok-contrib", "/v1/components", "web", "prod", http.StatusOK)
+	w.put("tok-contrib", "/v1/applications", "app", "prod", http.StatusOK)
 }
 
 // Acceptance criterion 3.

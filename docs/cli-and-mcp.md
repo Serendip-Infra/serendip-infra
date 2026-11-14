@@ -90,6 +90,21 @@ the process list shows it:
   serendip secrets value set <id> --data - < value.json
   ```
 
+## Logs
+
+- **Reading logs** needs the logs permission
+  (`serendip/components/logs/read`), which Reader doesn't have; Log
+  Reader does.
+- **Recent lines:** `serendip deployments logs <id>`, with `--tailLines`,
+  `--sinceSeconds` and `--previous`.
+- **Following:** add `--follow` to keep printing new lines as
+  `time instance line` (`--json` gives the raw NDJSON). Ctrl-C stops it.
+  - **The server ends a stream** after 5 minutes without new lines, or
+    10 minutes in all; run the command again to keep following.
+  - **Limits:** at most 3 streams at once per person, and 20 per server.
+- **MCP tools answer once,** so `deployments_logs` reads recent lines and
+  has no `follow`.
+
 ## AI assistants: `serendip mcp` (local)
 
 `serendip mcp` serves Serendip's MCP tools on standard input and output
@@ -180,6 +195,7 @@ tools.
 | `serendip applications delete <id>` | `applications_delete` | `DELETE /v1/applications/{id}` | Delete a Application. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip applications get <id>` | `applications_get` | `GET /v1/applications/{id}` | Get one Application |
 | `serendip applications list` | `applications_list` | `GET /v1/applications` | List applications the caller may read |
+| `serendip applications topology <id>` | `applications_topology` | `GET /v1/applications/{id}/topology` | An Application's declared topology: its Components and the calls between them (not live traffic) |
 | `serendip applications update <id>` | `applications_update` | `PUT /v1/applications/{id}` | Replace a Application's spec (send the version read, for a conflict check) |
 | `serendip approvals approve <id>` | — | `POST /v1/approvals/{id}/approve` | Approve a request; the approval reconciler then carries it out |
 | `serendip approvals get <id>` | `approvals_get` | `GET /v1/approvals/{id}` | One approval, with its decision and what it removed |
@@ -200,9 +216,20 @@ tools.
 | `serendip clusters update <id>` | — | `PUT /v1/clusters/{id}` | Replace a Cluster's spec (send the version read, for a conflict check) |
 | `serendip components create` | `components_create` | `POST /v1/components` | Create a Component |
 | `serendip components delete <id>` | `components_delete` | `DELETE /v1/components/{id}` | Delete a Component. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip components dependencies <id>` | `components_dependencies` | `GET /v1/components/{id}/dependencies` | A Component's declared dependencies: the Components it calls, and those of its Application that call it |
 | `serendip components get <id>` | `components_get` | `GET /v1/components/{id}` | Get one Component |
 | `serendip components list` | `components_list` | `GET /v1/components` | List components the caller may read |
+| `serendip components schemas <id>` | `components_schemas` | `GET /v1/components/{id}/schemas` | What can be configured on a Component, as JSON Schemas: its per-environment configuration (a Deployment's overrides.config) and each trait's |
 | `serendip components update <id>` | `components_update` | `PUT /v1/components/{id}` | Replace a Component's spec (send the version read, for a conflict check) |
+| `serendip deployments create` | `deployments_create` | `POST /v1/deployments` | Create a Deployment |
+| `serendip deployments delete <id>` | `deployments_delete` | `DELETE /v1/deployments/{id}` | Delete a Deployment. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip deployments events <id>` | `deployments_events` | `GET /v1/deployments/{id}/events` | Recent platform events about what a Deployment runs as, newest first |
+| `serendip deployments get <id>` | `deployments_get` | `GET /v1/deployments/{id}` | Get one Deployment |
+| `serendip deployments list` | `deployments_list` | `GET /v1/deployments` | List deployments the caller may read |
+| `serendip deployments logs <id>` | `deployments_logs` | `GET /v1/deployments/{id}/logs` | Recent log lines from a Deployment's running instances, oldest first. Logs can hold sensitive data, so they need their own permission |
+| `serendip deployments promote <id>` | `deployments_promote` | `POST /v1/deployments/{id}/promote` | Run the release a Deployment runs now in the next Environment of the Project's pipeline. The target keeps its own overrides |
+| `serendip deployments runtime <id>` | `deployments_runtime` | `GET /v1/deployments/{id}/runtime` | What a Deployment runs as on the platform: its objects with their health, then each running instance |
+| `serendip deployments update <id>` | `deployments_update` | `PUT /v1/deployments/{id}` | Replace a Deployment's spec (send the version read, for a conflict check) |
 | `serendip environments create` | — | `POST /v1/environments` | Create a Environment |
 | `serendip environments delete <id>` | — | `DELETE /v1/environments/{id}` | Delete a Environment. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip environments get <id>` | — | `GET /v1/environments/{id}` | Get one Environment |
@@ -226,6 +253,8 @@ tools.
 | `serendip organizations get <id>` | — | `GET /v1/organizations/{id}` | Get one Organization |
 | `serendip organizations list` | — | `GET /v1/organizations` | List organizations the caller may read |
 | `serendip organizations update <id>` | — | `PUT /v1/organizations/{id}` | Replace a Organization's spec (send the version read, for a conflict check) |
+| `serendip packages list` | `packages_list` | `GET /v1/packages` | The optional packages this server offers (builds, observability) and whether each is available. Install one by creating a ProviderInstance naming it |
+| `serendip platform` | `platform_get` | `GET /v1/platform` | The application platform, read-only: where workloads run, and the component types and traits installed with what each allows |
 | `serendip projects create` | — | `POST /v1/projects` | Create a Project |
 | `serendip projects delete <id>` | — | `DELETE /v1/projects/{id}` | Delete a Project. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip projects get <id>` | — | `GET /v1/projects/{id}` | Get one Project |

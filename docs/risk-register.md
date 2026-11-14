@@ -48,6 +48,8 @@ purpose), **Closed** (fixed).
 | RP-025 | An exchanged assistant token can be exchanged again after its person signs out | Security (medium) | Open | Spec 021 T012 security review |
 | RP-026 | Tokens other ThunderID clients receive may be exchangeable into Serendip access | Security (low) | Open | Spec 021 T012 security review |
 | RP-027 | Tokens aren't bound to the Serendip server they were issued for | Security (medium) | Mitigated | Spec 021 T012 security review |
+| RP-028 | Migration 0008 re-parents Applications and changes what Environment-scope assignments cover, without audit rows | Audit | Decided | Spec 020 T003 |
+| RP-029 | Release listing scans every release, and a component-type change re-releases every Component | Performance | Accepted | Spec 020 T005 review |
 
 ---
 
@@ -505,3 +507,258 @@ purpose), **Closed** (fixed).
 - **Full fix:** bind tokens to the server with RFC 8707 (`resource=`).
   ThunderID needs a registered resource server for that (spec 021 T001
   finding 1); then `serendipd` checks the audience is its own.
+
+## RP-028 — Migration 0008 changes ownership without audit rows
+
+- **Kind:** audit. **Status:** Decided, 2026-10-22. **Found:** spec 020
+  T003 contract review.
+- **What:** migration 0008 (Azure-style environments, spec 020 plan
+  decision 2) makes changes no person or reconciler made:
+  - **It moves each Application** from its Environment up to the
+    Environment's Project (owner references, graph edges, a version
+    bump).
+  - **It creates a Deployment per Component** in that Environment.
+  - **Role assignments at an Environment** then cover deployments into
+    it, not the Applications that were under it. That changes what a
+    person decided when they made the assignment.
+- **No audit row is written,** as with 0006 (RP-016). This goes further
+  than 0006, and RP-016 said to revisit "when a migration needs to change
+  anything a person decided".
+- **Why decided this way:**
+  - **The change is fixed SQL in the repository,** applied once per
+    database, in the migration's transaction.
+  - **Every affected role assignment, and every Application it couldn't
+    move,** is written to the permanent `migration_notes` table. It's
+    logged when the migration is applied (`sqlite.logMigrationNotes`), so
+    the record survives the log.
+  - **Writing audit rows from SQL** would mean building each resource's
+    before and after documents in SQL, which is easy to get subtly wrong.
+- **Revisit:** if an operator needs migration changes in the audit trail
+  itself, migrations should gain a Go step that writes proper audit
+  rows.
+
+## RP-029 — Release listing scans every release; a type change re-releases everything
+
+- **Kind:** performance. **Status:** Accepted, 2026-10-23. **Found:**
+  spec 020 T005 reviews.
+- **What:**
+  - **Listing a Component's releases reads every release in the
+    namespace,** and filters by owner in `serendipd`. Releases the
+    platform made before spec 020 carry no labels, so a label selector
+    would miss them, and they're valid rollback targets. Each release
+    embeds the whole component type spec. The legacy-binding cleanup also
+    lists every binding on each Application reconcile.
+  - **A release is named after its whole content,** the component type's
+    spec included. So an OpenChoreo upgrade that changes the component
+    type, or a Serendip change to the release format, gives every
+    Component a new release on its next reconcile. That's intended (the
+    release is a different thing), but it's a burst of writes.
+- **Why accepted:** edge-1 runs tens of Components with a few releases
+  each, so a list is small. Release creation is idempotent and rate-free.
+- **Revisit:** when a list costs measurable time on the T470, or
+  releases exceed a few hundred. Options are labelling legacy releases
+  once, pruning old releases, or a release index.
+
+## RP-030 — Deployment writes scan every Deployment; platform failures wait for a resync
+
+- **Kind:** performance and resilience. **Status:** Accepted, 2026-10-23.
+  **Found:** spec 020 T006 review.
+- **What:**
+  - **Each Deployment create, update or promote lists every Deployment.**
+    The pipeline rule needs the release this Component runs in every
+    other Environment. Writes are serialised by one mutex in the
+    handler, which also makes "one Deployment per Component per
+    Environment" hold under concurrent requests on one control plane.
+  - **A failed `Deploy` that isn't "provider not ready"** becomes an
+    `EnsureFailed` condition and waits for the next resync instead of
+    backing off. This matches the Application and Component reconcilers.
+  - **A pipeline naming a since-deleted Environment** keeps failing in
+    the Project reconciler until someone edits it. The API checks the
+    pipeline only when it's written.
+- **Why accepted:** edge-1 has tens of Deployments, so the list is small
+  and the mutex is never contended in practice. Consistent failure
+  handling across the platform reconcilers is worth more than one being
+  different.
+  - **Component writes and deletes** (spec 020 T009) are serialised
+    the same way, by a process-local lock across their checks. That
+    keeps a dependency from being added to a Component being deleted,
+    or to a port being removed.
+- **Revisit:**
+  - **Scan and mutex:** when Deployments reach the hundreds, or when
+    more than one `serendipd` writes. Options are an index by Component,
+    or a unique constraint in the store.
+  - **Failures:** together with the other platform reconcilers, if
+    resync latency turns out to hurt.
+  - **Deleted Environments:** remove them from pipelines when they are
+    deleted.
+
+## RP-031 — Log reads aren't audited; following logs holds connections open
+
+- **Kind:** security and performance. **Status:** Accepted, 2026-10-23.
+  **Found:** spec 020 T007.
+- **What:**
+  - **Reading a Deployment's logs leaves no audit row.** Logs can hold
+    sensitive data, which is why they have their own permission
+    (`serendip/components/logs/read`, outside Reader). Who read them
+    isn't recorded, the same as Secret value reads
+    (`docs/architecture/secrets.md`, "reads don't").
+  - **Each followed stream holds open:**
+    - a client connection;
+    - one platform stream per instance (up to 10);
+    - a few goroutines.
+
+    That's capped at 3 per caller and 20 per server, for at most 10
+    minutes, ending after 5 idle.
+- **Why accepted:**
+  - The constitution audits mutations. Auditing reads needs a
+    `core/audit` extension, which is already deferred for Secrets.
+  - The caps bound the cost on a T470: at most 200 platform streams.
+- **Also accepted:**
+  - **A stalled client** keeps its stream and its place until the
+    stream's write deadline, 10.5 minutes at most.
+  - **A stream that has started** isn't stopped when the caller's role
+    is removed or their session ends. It runs out within 10 minutes.
+  - **More than 10 instances:** only the newest 10 are read.
+- **Revisit:**
+  - **Audit:** add read auditing for logs and Secret values together,
+    when `core/audit` gains reads.
+  - **Caps:** if the console's reconnects make 20 streams too few for
+    a team.
+
+## RP-032 — A Deployment's unchanged configuration isn't checked again
+
+- **Kind:** correctness. **Status:** Accepted, 2026-10-23. **Found:**
+  spec 020 T008 review.
+- **What:** configuration overrides are checked against the platform's
+  schema only when they change.
+  - A Deployment stored before T008, or under an older component type
+    whose schema has since tightened, keeps configuration the current
+    schema would refuse. Promoting it, or changing its release, doesn't
+    re-check it.
+  - Numbers are checked as float64, so integer bounds beyond 2^53 are
+    approximate.
+- **Why accepted:** re-checking on every write would make promotion and
+  rollback depend on the platform answering. The platform still refuses
+  invalid configuration when the reconciler deploys it, and the
+  Deployment's Ready condition shows that.
+- **Revisit:** if a component type upgrade changes its schema
+  incompatibly, re-validate stored Deployments when the type changes.
+
+## RP-033 — Two simultaneous package installs could both pass the one-per-capability check
+
+- **Kind:** correctness. **Status:** Accepted, 2026-10-23. **Found:**
+  spec 020 T010.
+- **What:** the API checks a capability has no package before storing a
+  new ProviderInstance. Two requests at the same moment could both pass,
+  leaving two packages for one capability. Their installs would compete.
+- **Why accepted:**
+  - Installing a package is an Owner's rare, deliberate act, made from
+    one console screen.
+  - A second instance is visible in the API and can be removed through
+    an Approval.
+- **Revisit:** with the first real package (spec 022). A store-level
+  unique constraint on capability would close it.
+
+## RP-034 — The console can't state a package's measured cost yet; follows reconnect; the Deploy tab lists every Deployment
+
+- **Kind:** honesty and performance. **Status:** Accepted, 2026-10-23.
+  **Found:** spec 020 T012.
+- **What:**
+  - **Package cost.** Spec 020 asks the console to say what a package
+    costs before it's installed. `GET /v1/packages` carries no measured
+    memory or CPU, and neither package has an installer yet, so the
+    Packages page reads "Not measured yet: it can't be installed in this
+    version". The observability package's description says it's heavy
+    on a 16 GB machine. An available package without a stated cost reads
+    "Not stated by this server", never a guessed number.
+  - **Log following reconnects.** The server ends a followed stream
+    after 10 minutes (RP-031). The console reconnects on its own, asking
+    only for lines since the last one, so a follow lasts until the
+    person stops it or leaves the page. It keeps running while the tab
+    is hidden. Each reconnect is authorised again, so a removed role
+    takes effect within 10 minutes.
+  - **The Deploy and Runtime tabs** read `GET /v1/deployments` every 5
+    seconds and keep the Component's own. The API has no filter by
+    Component.
+- **Why accepted:**
+  - No package can be installed in this build, so no one is asked to
+    decide without a number.
+  - A follow is one of the person's 3 streams, and they started it.
+  - Deployments number a few per Component on the target machines, and
+    the list is filtered by what the caller may read.
+- **Revisit:**
+  - **Cost:** before spec 022 or 023 ships an installer, the catalogue
+    must carry the measured idle memory and CPU, and the Packages page
+    must show them.
+  - **Follow:** stop following when the tab is hidden, if streams turn
+    out to be held open for hours.
+  - **Listing:** add a `component` filter to `GET /v1/deployments` if
+    the list grows large.
+
+## RP-035 — The first deploy into a new Environment takes about 70 s to serve
+
+- **Kind:** performance. **Status:** Accepted, 2026-10-23. **Found:**
+  spec 020 T014 (`profiles/edge-1/bench/results/2026-10-23-spec020-simulated-t470/`).
+- **What:** on the simulated T470, a Component created and deployed into
+  a new Environment served after 70 s. Before spec 020, an auto-deployed
+  Component served after 16 to 24 s on the same host.
+  - The Component is released in under a second. Its Deployment then
+    reads Progressing for about 67 s.
+  - The platform does more on a first deploy into an Environment: it
+    makes the Environment's data-plane namespace and the Application's
+    binding to it.
+  - The engine re-checks a converging Deployment fast for one resync
+    interval (30 s), then only on the 30 s resync. Up to about 30 s of
+    the 70 can be that wait.
+- **Since measured on a real cluster** (spec 020 T015, `serendip-t018`):
+  first deploys into the new staging and production Environments served
+  in 18 s and 24 s. The 70 s is the simulated T470's.
+- **Why accepted:** memory and CPU don't regress. A first deploy into a
+  new Environment is rare. Later deploys and promotions into an existing
+  Environment weren't measured, and don't create a namespace.
+- **Revisit:**
+  - **Measure** a second Deployment into the same Environment, and a
+    promotion, to split the platform's time from the engine's wait.
+  - **If the wait dominates,** let a converging Deployment keep its fast
+    re-checks longer (a `core/reconcile` change, so a reviewed one).
+
+## RP-036 — Right after a restart, Applications, Components and Deployments read not-ready for a few seconds
+
+- **Kind:** honesty and noise. **Status:** Accepted, 2026-10-23.
+  **Found:** spec 020 T015 (finding F2).
+- **What:** for about 15 s after `serendipd` starts, while the
+  application platform capability re-checks the installed stack:
+  - each Application reads `ProviderNotReady`;
+  - its Components read `WaitingForApplication`;
+  - their Deployments read `WaitingForComponent`.
+
+  Nothing changed on the platform, and the workloads keep running. On
+  `serendip-t018` it lasted 14 s.
+- **Why accepted:** while the platform can't be read, "can't confirm
+  right now" is the honest state, and it clears without anyone acting.
+  T016 made the Deployment's message carry the Component's own reason
+  ("it isn't ready (WaitingForApplication)") instead of claiming it has
+  no release.
+- **Revisit:** if people take the flicker for an outage, keep the last
+  observed state with a "not re-checked since the restart" note instead
+  of flipping to not-ready.
+
+## RP-037 — No provider declares its resource requirements in code
+
+- **Kind:** honesty and documentation. **Status:** Accepted, 2026-10-23.
+  **Found:** spec 020 T016 contract review.
+- **What:** `providers/CLAUDE.md` and `provider-model.md` say a provider
+  declares its capabilities, resource requirements (RAM and CPU on
+  reference hardware), health check and upgrade behaviour.
+  - **No provider declares RAM and CPU in code.** That includes the
+    OpenChoreo provider spec 020 extended. Their measured footprints live
+    in the benchmark results
+    (`profiles/edge-1/bench/results/`, `002-edge1-footprint.md`) instead.
+  - **True of every provider since before spec 020.** It isn't new with
+    this spec.
+- **Why accepted:** the measured numbers exist and are what's honest to
+  quote (constitution 6). A declared number nothing measures would be
+  worse.
+- **Revisit:** when the provider registry gains a requirements field.
+  Spec 022's packages need it anyway, to state a package's cost before
+  installing it (RP-034). Fill it from the benchmark results then.

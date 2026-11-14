@@ -118,7 +118,11 @@ func run() error {
 		secretReconciler = kube.secretReconciler
 		authn = kube.authn
 	}
-	registerApprovals(db, bus, engine, secretReconciler)
+	var platformCleaners map[resource.Kind]reconcile.CleanupFunc
+	if kube != nil {
+		platformCleaners = kube.cleaners
+	}
+	registerApprovals(db, bus, engine, secretReconciler, platformCleaners)
 	if len(agentIssuers) > 0 {
 		agents, err := agentVerifiers(ctx, agentIssuers)
 		if err != nil {
@@ -143,7 +147,7 @@ func run() error {
 	}
 	var serverOpts []api.ServerOption
 	if kube != nil {
-		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithResourceMetadata(api.ResourceMetadata{
+		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithRuntime(kube.runtime), api.WithConfigSchemas(kube.schemas), api.WithPlatformView(kube.platformView), api.WithPackages(kube.packages), api.WithResourceMetadata(api.ResourceMetadata{
 			Issuer: kube.issuer, CLIClient: thunderid.ClientID, AssistantClient: thunderid.DelegateClientID,
 		}), api.WithMCP())
 	}

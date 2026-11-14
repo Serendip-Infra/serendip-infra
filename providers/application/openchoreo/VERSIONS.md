@@ -48,3 +48,42 @@ Notes:
   Re-check all three on every OpenChoreo upgrade. If Serendip ever calls
   the API, turn its OIDC security on rather than opening the policy.
 - Details: `docs/architecture/application-platform.md`.
+
+## Environments, promotion and runtime (spec 020 T001, verified on 1.3.1)
+
+- **An extra environment** needs an `Environment` (`dataPlaneRef`), plus
+  a `ProjectReleaseBinding` per project. That binding creates the
+  data-plane namespace; without it a `ReleaseBinding` fails with
+  "namespaces … not found".
+- **Promotion:** a `ReleaseBinding` with the same `releaseName`, Ready in
+  about 23 s. There's no pipeline enforcement upstream.
+- **Overrides:** `componentTypeEnvironmentConfigs` (schema-governed),
+  `workloadOverrides.container.env|files`, and `traitEnvironmentConfigs`.
+  They're delivered through an `env-configs` ConfigMap, and kept across
+  rollbacks.
+- **Releases:** `autoDeploy: true` creates `<component>-<content hash>`
+  releases and binds the first environment only. With it off, no release
+  is created.
+- **`RenderedRelease.status.resources`** lists kind, name, namespace and
+  `healthStatus`.
+  - The RenderedRelease is named after, and owned by, its
+    `ReleaseBinding`.
+  - Pods carry `openchoreo.dev/component` and `openchoreo.dev/environment`
+    labels (the object names), and the workload container is `main`.
+  - Pod logs with `timestamps=true` start each line with an RFC 3339
+    nanosecond time. `previous=true` without a previous container
+    answers 400 (spec 020 T007).
+- **Workload dependencies:** `spec.dependencies.endpoints[]`, resolved
+  into an address environment variable (`ConnectionsResolved`).
+- **Serendip-made releases (spec 020 T005, verified):** a `ComponentRelease`
+  with `{componentType: {kind, name, spec}, owner, workload}` that
+  Serendip writes is accepted and runs. The embedded `spec` is the
+  `ClusterComponentType`'s, which is exactly what the controller embeds.
+  `workload` takes `container` and `endpoints` only; an `owner` there is
+  refused (strict decoding).
+- **A `DeploymentPipeline` with `promotionPaths: []`** is accepted and
+  Available.
+- **Since spec 020,** Serendip's Components have `autoDeploy: false`.
+  Serendip writes the releases and every binding (`<component>-env-<hash>`,
+  plus `<project>-env-<hash>` project bindings, and `pl-<hash>` pipelines
+  per Project).

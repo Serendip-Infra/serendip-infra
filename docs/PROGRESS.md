@@ -12,9 +12,98 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 ## Current phase
+
+**Spec 020 (OpenChoreo's portal features in Serendip's console):
+COMPLETE** (T001–T017, 2026-10-23).
+- **Commits:** `fd01e8c` … `7ea6a2d`, on local `main`, **not pushed**. By
+  the GitHub pacing rule they go up as a branch, a spec or two at a time.
+- **Records:**
+  - `specs/020-openchoreo-console-features/`: spec, plan, tasks (with
+    "Done as" notes), and `verification.md` for the real cluster;
+  - **ADR 0019:** the environment model, and direct Kubernetes access to
+    OpenChoreo;
+  - `docs/architecture/application-platform.md` ("Environments and
+    Deployments (spec 020)"), `resource-model.md`, `authorization.md` and
+    `ai-operations.md`;
+  - the risk register (RP-028 to RP-037), `build-vs-adopt.md`, and
+    `docs/cli-and-mcp.md`.
+
+**What exists now:**
+- **Environments, Azure-style:** a Project is the subscription and an
+  Environment the resource group.
+  - Applications sit under their Project; migration 0008 moved existing
+    ones up.
+  - A **Deployment** runs one Component in one Environment.
+  - **Promotion** follows the Project's pipeline, which Serendip
+    enforces. Each Environment keeps its own overrides.
+  - **Rollback** is a `PUT` naming a release from `history`.
+  - **Undeploy** goes through an Approval.
+- **The platform side:** Serendip writes every release and binding (the
+  platform's auto-deploy is off), straight through the Kubernetes API.
+- **Runtime view:** objects, events, and logs (recent lines, or followed
+  as NDJSON), all capped. Logs need their own permission (Log Reader).
+- **Configuration:** checked against the platform's schemas, failing
+  closed; the console builds its form from them.
+- **Topology:** declared dependencies within an Application. A
+  Deployment waiting for a Component it calls says which one.
+- **Platform view and packages:** read-only platform; packages are
+  platform-wide `ProviderInstance`s, decided at `/`.
+- **Every surface:**
+  - **the console:** Deploy, Runtime, Builds and Observability tabs,
+    Configure, Topology, Platform, Packages;
+  - **the CLI,** with `--follow`;
+  - **MCP tools,** where an assistant's promotion is immediate and its
+    undeploy waits for a person.
+- **Proven:**
+  - **In process:** T013's acceptance tests.
+  - **On `serendip-t018`:** T015, including Claude Code through
+    `serendip mcp`.
+  - **Footprint:** T014, with no regression against a same-day baseline;
+    `serendipd` idles at 35.6 MiB.
+  - **Reviews:** T016. Four passed with no blockers, and their findings
+    were fixed or recorded.
+
+**Open from spec 020** (risk register):
+- **RP-034:** the console can't state a package's measured cost until
+  the catalogue carries it. That's needed before 022's installer ships.
+- **RP-035:** the first deploy into a new Environment took 70 s on the
+  simulated T470, but 18–24 s on `serendip-t018`.
+- **RP-036:** a brief not-ready flicker after a restart.
+- **RP-037:** no provider declares its RAM and CPU in code.
+- **Also:** RP-028 to RP-033, all accepted.
+- **Deferred:**
+  - a rollout restart (shown "not available yet");
+  - editing dependencies in the console (the API and CLI do it);
+  - remote data planes.
+
+**Next:**
+- **Spec 022: builds.** The workflow-plane package, with its first real
+  installer. Its catalogue entry must carry measured cost (RP-034, and
+  the registry's requirements field, RP-037). Installs must be cheap
+  no-ops on resync (T016 review note).
+- **Then spec 023: observability.**
+- **Also queued:**
+  - the self-service autonomous agents spec;
+  - the `occ` admin escape hatch;
+  - a real browser sign-in for the CLI, still to be shown (from spec
+    021).
+
+**Leftovers on this machine:**
+- **`serendip-t018` is running.** It carries T015's `t020-staging`,
+  `t020-production`, `t020-web` and `t020-api`.
+- **`serendipd` (spec 020) is stopped.** Claude Code reaped its
+  background shell under memory pressure after T015.
+  - **Its scratch:** the T015 store copy, `run.ps1` (API keys `verifier`,
+    Owner, and `t015-reader`, Reader at `t019-agents`), the CLI config,
+    the console driver and the screenshots are in
+    `%TEMP%/claude/D--serendip-infra/5c3ed502-4ff6-4bd9-94ad-ac55cfc89763/scratchpad/t015/`.
+  - **When running it again:** start the keep-awake beside long
+    background jobs.
+
+Previous phase:
 
 **Spec 021 (Serendip's MCP server and CLI): COMPLETE** (T001–T013,
 2026-10-22).
@@ -77,10 +166,8 @@ Last updated: 2026-10-22
   stand-in) is still to be shown. The user can run `serendip login`
   themselves.
 
-**Next:**
-- **Spec 020** (OpenChoreo console features), whose plan is awaiting
-  approval. Its new actions land in the console, CLI and MCP together
-  through `api/catalog`.
+**Next (as of 021):**
+- **Spec 020** (now in progress, above).
 - **Then** 022 (builds) and 023 (observability).
 - **Also queued:** the self-service autonomous agents spec, and the `occ`
   admin escape hatch.
