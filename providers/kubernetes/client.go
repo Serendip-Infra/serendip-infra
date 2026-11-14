@@ -39,6 +39,10 @@ type Object struct {
 	Metadata   ObjectMeta      `json:"metadata"`
 	Spec       json.RawMessage `json:"spec,omitempty"`
 	Status     json.RawMessage `json:"status,omitempty"`
+	// Data is a top-level field some kinds (ConfigMap, Secret) carry
+	// instead of a nested Spec -- left as raw JSON for the same reason
+	// Spec/Status are: this package has no per-kind schema knowledge.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // listResult mirrors a Kubernetes List response's envelope -- the
@@ -71,6 +75,27 @@ func NewClient(cfg Config) (*Client, error) {
 			Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		},
 	}, nil
+}
+
+// HTTPClient returns the Client's already-TLS-configured, already-
+// authenticated http.Client -- for a capability-specific provider that
+// needs to reach something other than the Kubernetes API itself (e.g.
+// a cluster-internal Service via ProxyURL) without reconstructing
+// kubeconfig-derived TLS config independently.
+func (c *Client) HTTPClient() *http.Client {
+	return c.http
+}
+
+// ProxyURL builds the Kubernetes API server's Service proxy subresource
+// path for the named Service in namespace, on port -- a stable, core
+// Kubernetes API feature that forwards requests through the API
+// server to a cluster-internal (e.g. ClusterIP) Service, reusing
+// whichever authenticated connection the caller already has to the API
+// server itself. The returned URL has no trailing slash; append a
+// path like "/v1/sys/health" to reach that path on the proxied
+// Service.
+func (c *Client) ProxyURL(namespace, service string, port int) string {
+	return fmt.Sprintf("%s/api/v1/namespaces/%s/services/%s:%d/proxy", c.baseURL, namespace, service, port)
 }
 
 func buildTLSConfig(cfg Config) (*tls.Config, error) {
