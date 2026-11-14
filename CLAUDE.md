@@ -70,9 +70,11 @@ but with few, paced writes:
     finishes it (`closes #N` in the commit body, or at the checkpoint).
   - **Sub-task:** a sub-issue of a task, only when a task splits (review
     findings carried, a live check's items).
-  - Specs closed before 2026-11-14 keep a task checklist in their epic
-    instead of task issues: back-filling ~270 closed issues is exactly the
-    burst that got the account flagged.
+  - Specs closed before 2026-11-14 get their task issues (about 245,
+    closed) from one slow, resumable background run, never a burst:
+    one write every 90 s, a 6-hour rest after every 200, stopping at
+    the first 403 or 429 (the user's choice, 2026-11-14). Until it
+    finishes, their epics' checklists are the record.
 - **One PR per spec** when it closes: branch `spec-NNN` on the Yasindu007
   fork, opened by Yasindu007, merged by `serendipinfra` with a merge
   commit, its body saying `Closes #<epic>` so the merge closes the epic.

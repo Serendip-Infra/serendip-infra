@@ -172,13 +172,15 @@ is T009 (edge-case tests, with the `test-writer`).**
   - **023's task issues** (T007–T015) come from `setup.sh`, so they
     didn't exist at T007's or T008's commit. Close T007's and T008's at
     the next checkpoint, once they exist.
-  - **`backfill.sh` step 2 conflicts with CLAUDE.md.** It would create
-    about 270 closed task issues for specs 002–022. CLAUDE.md (committed
-    10:11, before the script was written at 10:18) says specs closed
-    before 2026-11-14 keep a checklist instead. It was waiting on
-    `setup.sh` and hadn't written anything at 10:50. Ask the user before
-    it starts: kill it, or keep only step 1 (the Epic type on each
-    epic).
+  - **`backfill.sh` is re-paced (the user wants the back-fill, without
+    being rate-limited):** about 770 writes (35 Epic types, then 245
+    tasks × create, link and close), one every 90 s, with a 6-hour rest
+    after every 200, so about two days. It still waits for `setup.sh`,
+    stops at the first failed write, and resumes from `backfill.state`
+    if re-run (`bash <prs>/backfill.sh`). Its writes are counted in
+    `backfill.count`. A subshell bug that let it carry on after a failed
+    create is fixed. If the laptop sleeps or the shell is reaped, it
+    stops; re-run it, after checking the log's last line.
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or
