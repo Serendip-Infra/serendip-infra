@@ -16,8 +16,33 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T010 done (2026-11-14); next
-is T011 (the console).**
+**Spec 023 (observability package): T001–T011 done (2026-11-14); next
+is T012 (the package's footprint and Requirements, on the simulated
+T470).**
+- **T011 (the console):** `ui/src/screens/Observability.tsx` plus a
+  shared `ui/src/components/MetricChart.tsx`.
+  - **Component screen:** the Observability tab shows CPU and memory
+    charts against request and limit, "not available" items, a stored-log
+    search with "Show older lines", and traces and alerts as "Not
+    available yet".
+  - **Application screen:** a log search per Environment, with the
+    `omitted` notice.
+  - **Packages page:** the disk line (`requirements.disk`) and disk in
+    use (`usage`).
+  - **Charts** follow the dataviz skill: the `--chart-series` token
+    passes the validator and `check-contrast.mjs`, and the charts were
+    rendered in headless Edge in both themes at 360 and 560 px. The live
+    screenshot is still T013's.
+  - **`apiFetch`** takes a timeout: 25 s for these queries, which the
+    server gives 20 s.
+  - **Checks:** 150 UI tests pass, and the build is 103.9 KiB gz
+    (tasks.md T011).
+- **GitHub runs (background, previous session's scratchpad
+  `a80ea285-.../scratchpad/prs/`):** the PR run is done (#26–#45). The
+  epic run (`track.sh`) is creating closed epics 2 minutes apart, up to
+  spec 016 (#57) at 11:22. `setup.sh`, then `backfill.sh`, wait on it.
+  `setup.sh` closes each spec 023 task already ticked in tasks.md
+  (T011 now included).
 - **T010 (CLI and MCP tests):** `cmd/serendip/observability_test.go`
   (via a new `newWorldWith`): the three commands' requests and usage
   errors, real calls, and the MCP metrics tool on a 24-hour range
