@@ -55,3 +55,32 @@ costs nothing.
   are found, not only in a spec's plan.md or a benchmark summary.
 - What Serendip builds itself, adopts, or considered and rejected goes in
   `docs/build-vs-adopt.md` whenever a spec makes such a choice.
+
+## GitHub tracking (board: Serendip-Infra project 2, "Serendip Infra Roadmap")
+
+GitHub flagged this account once for bulk API writes. Track everything,
+but with few, paced writes:
+
+- **Epic → Task → Sub-task**, as GitHub issue types and sub-issues
+  (`.github/ISSUE_TEMPLATE/`):
+  - **Epic:** one per spec (label `epic`), opened when its spec is
+    approved.
+  - **Task:** one per `T###`, a sub-issue of its epic, opened when
+    `tasks.md` is approved (as one paced batch), closed in the commit that
+    finishes it (`closes #N` in the commit body, or at the checkpoint).
+  - **Sub-task:** a sub-issue of a task, only when a task splits (review
+    findings carried, a live check's items).
+  - Specs closed before 2026-11-14 keep a task checklist in their epic
+    instead of task issues: back-filling ~270 closed issues is exactly the
+    burst that got the account flagged.
+- **One PR per spec** when it closes: branch `spec-NNN` on the Yasindu007
+  fork, opened by Yasindu007, merged by `serendipinfra` with a merge
+  commit, its body saying `Closes #<epic>` so the merge closes the epic.
+- **Bugs:** a `bug` issue only for what isn't fixed on the spot (upstream
+  defects, flaky tests, user reports).
+- **Roadmap:** planned specs are epics in the "v1 GA" milestone. The
+  board's own workflows add and move items, and its Insights chart is
+  the dashboard. Neither needs API calls.
+- **Pacing:** at most about one write a minute. Anything over ~10 writes
+  runs as a background script that stops at the first 403, 429 or
+  rate-limit answer. Never two such runs at once.
