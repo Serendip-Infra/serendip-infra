@@ -40,7 +40,9 @@ type kubeWiring struct {
 	authn            *lazyAuthenticator
 	login            *lazyLogin
 	directory        *lazyDirectory
-	plan             setupPlan
+	// issuer is the human issuer once identity is set up, or "".
+	issuer func() string
+	plan   setupPlan
 	// adminSubject is the identity provider's bootstrap administrator,
 	// made Owner at "/" on first start (spec 017).
 	adminSubject string
@@ -226,10 +228,12 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 			// Keys come through the Service proxy; the issuer check is still
 			// against the public issuer URL tokens carry (plan.md decision 9).
 			v, err := oidc.NewVerifier(oidc.Config{
-				Issuer:     issuer,
-				Audience:   thunderid.ClientID,
-				JWKSURL:    thunderid.JWKSProxyURL(client),
-				HTTPClient: client.HTTPClient(),
+				Issuer:   issuer,
+				Audience: thunderid.ClientID,
+				// A person's AI assistant, through token exchange (spec 021).
+				DelegateClients: []string{thunderid.DelegateClientID},
+				JWKSURL:         thunderid.JWKSProxyURL(client),
+				HTTPClient:      client.HTTPClient(),
 			})
 			if err != nil {
 				return err
@@ -285,7 +289,13 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 		},
 		reensureEvery: reensureEvery,
 	}
-	return &kubeWiring{secretReconciler: secretReconciler, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject}, nil
+	issuer := func() string {
+		if v := verifier.Load(); v != nil {
+			return v.Issuer()
+		}
+		return ""
+	}
+	return &kubeWiring{secretReconciler: secretReconciler, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer}, nil
 }
 
 // ensureGatewayReady ensures the shared gateway and treats "not programmed

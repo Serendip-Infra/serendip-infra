@@ -9,11 +9,88 @@ current picture.
 Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 `docs/constitution.md` (non-negotiable rules, changes almost never),
 `docs/risk-register.md` (known risks, performance costs and trade-offs,
-with when to revisit each).
+with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
+builds, adopts or rejected, and why).
 
-Last updated: 2026-10-20
+Last updated: 2026-10-22
 
 ## Current phase
+
+**Spec 021 (Serendip's MCP server and CLI): COMPLETE** (T001–T013,
+2026-10-22).
+- **Records:** spec, plan (with "Spike findings" and "As built" notes) and
+  tasks are in `specs/021-mcp-and-cli/`, and the live evidence is in
+  `verification.md`.
+- **ADRs:** 0017 (the official MCP Go SDK, confined to `mcp/`) and 0018 (a
+  person's AI acts through token exchange; `/mcp` inside serendipd).
+- **Reference:** `docs/cli-and-mcp.md`, with its tables generated from
+  `api/catalog` and checked by a test.
+
+**What exists now:**
+- **`api/catalog`:** one list of every API action. A test fails if a
+  route has neither a CLI command nor an MCP tool, or a reason it's left
+  off.
+- **`cmd/serendip`, the CLI:**
+  - **Sign-in:** PKCE on loopback 8250 or paste-back. The identity
+    provider is found through serendipd's RFC 9728 document, and the first
+    sign-in to a server is confirmed.
+  - **Credentials:** an owner-only folder (a protected ACL on Windows), a
+    nonce refresh lock, logout that revokes, and a sign-in only ever sent
+    to its own server.
+  - **Commands:** every catalogue command, with exit codes, a dry run,
+    hidden Secret values, and `--reason` to file a delete's approval
+    request.
+- **`serendip mcp`:** stdio MCP for a person's AI assistant, acting as the
+  person through the `serendip-mcp` token exchange (5-minute tokens).
+  - **Policy:** the person's roles, plus agent guardrails
+    (`Principal.guarded()`, `Via`).
+  - **Audit:** `agent:serendip-mcp/<sub>`, with the person as sponsor.
+  - **Approvals:** the person may approve what their assistant asked for;
+    the assistant never decides.
+- **`/mcp` in serendipd:** agents and delegated assistants only, dispatched
+  in process to `/v1`, audited as `mcp`. `X-Serendip-Client` is audited as
+  `cli (declared)` or `mcp (declared)`.
+- **ThunderID's `serendip-mcp` client:** from bootstrap file
+  `71-serendip-mcp-client.yaml`, or the operator tool
+  `cmd/serendip-identity-redirects`. It exists on `serendip-t018`.
+  serendipd gained no write path.
+
+**Proven live on `serendip-t018`** (`verification.md`):
+- **Claude Code 2.1.304 through `serendip mcp`** listed and read; its
+  delete answered "needs approval"; it filed the request. The person
+  approved it from the CLI, and the approval reconciler executed it.
+- **`/mcp`** refused a person's own token and API keys.
+- **Footprint:** serendipd +0.7 MiB idle (rule 4 PASS); `serendip mcp`
+  17.8 MiB idle.
+
+**Open from spec 021** (risk register):
+- **RP-025, medium:** an exchanged token can be re-exchanged after
+  sign-out. The fix is ThunderID's `token_family: inherit`, which its
+  chart doesn't expose.
+- **RP-026, low:** other ThunderID clients' tokens may be exchangeable;
+  confirm DCR needs auth.
+- **RP-027, mitigated:** tokens aren't bound to the server's audience.
+  Confirm-on-first-use is in place; RFC 8707 is the full fix.
+- **RP-022:** the fresh-install bootstrap file is unverified.
+- **Accepted:** RP-019, RP-020, RP-021, RP-023 and RP-024.
+- **A person signing in through a real browser** (not the paste-back
+  stand-in) is still to be shown. The user can run `serendip login`
+  themselves.
+
+**Next:**
+- **Spec 020** (OpenChoreo console features), whose plan is awaiting
+  approval. Its new actions land in the console, CLI and MCP together
+  through `api/catalog`.
+- **Then** 022 (builds) and 023 (observability).
+- **Also queued:** the self-service autonomous agents spec, and the `occ`
+  admin escape hatch.
+
+**Leftovers on this machine:**
+- `serendip-t018` is still running.
+- Spec 021's scratch is under this session's scratchpad: `t011-021` holds
+  the store copy and the CLI config.
+
+Previous phase, kept for context:
 
 **Spec 019 (Approvals): COMPLETE** (T001–T014 plus T007a, 2026-10-20).
 The spec, plan (with an "As built" section) and tasks are in
@@ -90,7 +167,30 @@ Leftovers on this machine (scratch only, all reversible):
   T011 to free the port. `serendip.db*` in the repo root is now
   git-ignored.
 
-**Next:** candidates, none started. Ask the user which.
+**Next: spec 021, Serendip's own MCP server and CLI** (the user,
+2026-10-20). It comes before spec 020. Constitution rule 7 already
+requires both, as clients of the same API, RBAC and approvals, but
+neither exists yet in `cmd/`. MCP is the AI side of "an AI and human
+platform": agents use their spec 018 identities, and destructive tools
+become Approval requests (spec 019).
+
+**Then spec 020, OpenChoreo's portal features in our console** (no
+Backstage). The spec and plan are drafted in
+`specs/020-openchoreo-console-features/`; the plan awaits approval and is
+on hold until 021. It covers:
+- the Azure-style environment model (a Project as the subscription, an
+  Environment as the resource group), with per-environment overrides;
+- direct Kubernetes access to OpenChoreo, not its API;
+- a runtime view, promotion, schema forms, topology and a platform view;
+- an optional-package framework.
+
+Builds are spec 022 and observability (OpenSearch and Prometheus for
+now) is spec 023.
+- **RP-018 is fixed** (`96f285d`): OpenChoreo's API was open to every pod.
+- **Remember, later:** an admin-only escape hatch so OpenChoreo's `occ`
+  works (see memory and plan.md "What we give up").
+
+**On hold** (the user, 2026-10-20), none started:
 - **Small follow-ups from the register:**
   - RP-014: a new Secret's value write can answer 409 after writing;
   - RP-015: show an agent's sponsor by name;
@@ -103,8 +203,11 @@ Leftovers on this machine (scratch only, all reversible):
 - **Other destructive verbs** (scale-to-zero, drain, volume operations)
   once the API has them. `ApprovalVerb` is designed for them.
 - **A real T470 run** (RP-008), before any profile default changes.
-- **Pushing to GitHub:** specs 002–019 are committed locally only, as
-  agreed earlier.
+- **Pushing to GitHub, slowly** (the account was blocked once for bulk
+  issue creation): one branch per spec. Pushed on 2026-10-20: `spec-002`
+  (up to `1533b8a`) and `spec-003` (up to `f13ac45`; it contains 002's
+  commits, since the history is linear). No PRs yet. Specs 004–019 are
+  local only. Push a spec or two at a time, only when the user asks.
 
 **Spec 018 (agent identities, a WSO2 Agent Manager POC, and the
 identity-provider management channel): COMPLETE** (T001–T014,

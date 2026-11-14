@@ -38,6 +38,16 @@ purpose), **Closed** (fixed).
 | RP-015 | The console shows an agent's sponsor as a subject ID | Usability | Open | Spec 019 T011 |
 | RP-016 | Migration 0006 marks old approvals settled without an audit row | Audit | Decided | Spec 019 T012 |
 | RP-017 | The approvals paging cursor can reveal IDs the caller can't read | Data exposure (low) | Open | Spec 019 T012 |
+| RP-018 | OpenChoreo's API answered any pod in the cluster, unauthenticated | Security (high) | Closed | Spec 020 research |
+| RP-019 | A local AI assistant can read its person's CLI sign-in and act as them | Security (medium) | Accepted | Spec 021 T001 |
+| RP-020 | The catalogue's parity test checks routes, not parameter names | Correctness (low) | Accepted | Spec 021 T002 |
+| RP-021 | An AI assistant keeps access up to 5 minutes after its person signs out | Security (low) | Accepted | Spec 021 T004 |
+| RP-022 | A fresh install's `serendip-mcp` bootstrap file isn't verified yet | Correctness | Open | Spec 021 T004 |
+| RP-023 | The MCP protocol and its Go SDK change every month or two | Maintenance | Accepted | Spec 021 (ADR 0017) |
+| RP-024 | Without a configured console origin, the resource metadata names the request's Host | Security (low) | Accepted | Spec 021 T005 review |
+| RP-025 | An exchanged assistant token can be exchanged again after its person signs out | Security (medium) | Open | Spec 021 T012 security review |
+| RP-026 | Tokens other ThunderID clients receive may be exchangeable into Serendip access | Security (low) | Open | Spec 021 T012 security review |
+| RP-027 | Tokens aren't bound to the Serendip server they were issued for | Security (medium) | Mitigated | Spec 021 T012 security review |
 
 ---
 
@@ -279,3 +289,219 @@ purpose), **Closed** (fixed).
 - **Fix when touched:** an opaque cursor (for example the page's last
   `created_at` and a sequence, not an ID), or filtering before cutting
   with a scope-aware query (RP-006's fix).
+
+## RP-018 — OpenChoreo's API answers any pod in the cluster, unauthenticated
+
+- **Kind:** security, high. **Status:** Closed, 2026-10-20 (fixed before
+  spec 020, at the user's request). **Found:** spec 020 research, 2026-10-20 (OpenChoreo 1.3.1,
+  verified from its chart and source). It has existed since spec 010.
+- **What:** spec 010 installs OpenChoreo's control plane with
+  `security.enabled=false`, so `openchoreo-api` accepts requests with no
+  authentication and no authorization. It's a ClusterIP Service on port
+  8080, and the chart ships no NetworkPolicy by default.
+- **Impact:** any pod in the cluster can create, change or delete
+  OpenChoreo resources (projects, components, bindings), and so run
+  workloads or remove them. That includes a user's workload, or a
+  compromised one. It bypasses Serendip's RBAC, approvals and audit
+  entirely. Nothing outside the cluster can reach it.
+- **Why it wasn't caught:** spec 010 set the flag to avoid the chart's
+  placeholder OIDC issuer, and treated the API as unused. Unused isn't the
+  same as unreachable.
+- **Fixed:** the OpenChoreo provider's platform defaults now apply
+  `serendip-deny-openchoreo-api`, a NetworkPolicy denying all ingress to
+  the API's pods (`providers/application/openchoreo/defaults.go`).
+  - **It's restored by the foundations loop** if deleted or edited.
+  - **Verified live on kind** (kindest/node v1.34.0):
+    - Before the fix, an anonymous pod listed projects (HTTP 200).
+    - After `serendipd` applied the policy, the same request got no
+      answer.
+    - The kubelet's probes still pass, and a new Component still deployed
+      Ready in about 16 s.
+  - **Still to verify live:** K3s enforcement, on the first K3s run.
+- **Residual risk:** the policy matches only by the pods' label
+  (`app.kubernetes.io/component=api-server`). A future chart that
+  relabels them would silently re-open the API. `VERSIONS.md` requires a
+  re-check on every OpenChoreo upgrade. A foundations-time check that the
+  selector matches a pod would be stronger, later.
+
+## RP-019 — A local AI assistant can read its person's CLI sign-in
+
+- **Kind:** security, medium. **Status:** Accepted, 2026-10-20.
+  **Found:** spec 021 T001.
+- **What:** `serendip mcp` runs as the person's own OS user and exchanges
+  the person's CLI token for a delegated one, so the AI's calls carry
+  spec 018's agent guardrails. But an AI assistant that can run commands
+  as the same user (Claude Code can) could read the person's token file
+  and call the API as the person, without the guardrails.
+- **Why accepted:** any local design shares this. A separate agent secret
+  on disk would be just as readable, and so is the person's browser
+  session. The guardrails protect against an assistant's mistakes when
+  it uses Serendip's tools, not against a hostile process running as the
+  person.
+- **Mitigations:**
+  - the token file is owner-only (0600 or an owner-only ACL);
+  - exchanged tokens last 5 minutes, and logout ends them;
+  - audit records which calls were delegated.
+- **Revisit:** if Serendip gains an OS-keychain store for the CLI, or when
+  hosted assistants (no local file) become the main path.
+
+## RP-020 — The catalogue's parity test checks routes, not parameters
+
+- **Kind:** correctness, low. **Status:** Accepted, 2026-10-21.
+  **Found:** spec 021 T002 review.
+- **What:** `api/catalog` describes each operation's query parameters and
+  body by hand. The parity test proves every route has a CLI command and
+  an MCP tool (or a reason not to), but not that their parameter names
+  match what the handler reads. Handlers ignore unknown query parameters,
+  so a misspelt filter would silently filter nothing.
+- **Found that way:** the review caught two missing filters
+  (`principalType`/`principalId` on role assignments, `label.*` on lists)
+  and a required `type` on directory search. All three are fixed.
+- **Mitigations:** spec 021 T009's end-to-end tests drive the CLI and MCP
+  against a real `serendipd`, which exercises each operation's request.
+  A new route's catalogue entry is reviewed with its handler.
+- **Revisit:** if a parameter mismatch reaches a user, or when the API
+  gains an OpenAPI description the catalogue could be checked against.
+
+## RP-021 — An AI assistant outlives its person's sign-out by minutes
+
+- **Kind:** security, low. **Status:** Accepted, 2026-10-21.
+  **Found:** spec 021 T004 contract review.
+- **What:** a person's assistant acts with a token exchanged for the
+  `serendip-mcp` client. Signing out revokes the person's refresh token,
+  and ThunderID then refuses further exchanges (spec 021 T001). But an
+  exchanged token already issued is a JWT that `serendipd` verifies
+  locally, so it stays valid until it expires.
+- **Bound:** the client issues 300-second tokens
+  (`thunderid.DelegatedTokenLifetime`), and `serendipd` refuses any
+  delegated token living over 1 hour (`oidc.MaxDelegatedLifetime`),
+  whatever the client is configured to issue. The operator tool never
+  edits an existing `serendip-mcp` client, so an operator who raises its
+  lifetime gets up to that hour.
+- **Why accepted:** the same holds for every JWT access token Serendip
+  verifies, people's included (1 hour). The assistant's window is
+  shorter, and it can never do more than the person, under agent
+  guardrails.
+- **Revisit:** if Serendip gains token introspection or a revocation list,
+  or an incident needs an assistant cut off at once. Until then, removing
+  the person's role assignments cuts it off immediately.
+
+## RP-022 — A fresh install's `serendip-mcp` bootstrap file isn't verified
+
+- **Kind:** correctness. **Status:** Open, 2026-10-21. **Found:** spec 021
+  T004.
+- **What:** fresh installs declare `serendip-mcp` in a second ThunderID
+  bootstrap file, `71-serendip-mcp-client.yaml`. ThunderID imports
+  bootstrap files once, in name order (`VERSIONS.md`). The document's
+  shape was accepted live through the management API, but a fresh install
+  importing it hasn't been run.
+- **Impact if wrong:** a fresh install has no `serendip-mcp` client.
+  `serendip mcp` can't exchange tokens, and says so; nothing else breaks.
+  The operator tool `cmd/serendip-identity-redirects` creates it.
+- **Close:** on the next fresh identity install (a new kind cluster, or the
+  real T470 run), check that ThunderID lists the client.
+
+## RP-023 — The MCP protocol and its Go SDK change often
+
+- **Kind:** maintenance. **Status:** Accepted, 2026-10-22. **Found:**
+  spec 021 (ADR 0017).
+- **What:** MCP's 2026-07-28 revision removed the handshake and sessions,
+  and clients still speak 2025 versions. The official Go SDK
+  (`modelcontextprotocol/go-sdk` v1.8.0) ships a minor version every one
+  to two months, and brings 9 modules.
+- **Why accepted:** the user chose less to maintain (2026-10-20). The SDK
+  tracks protocol revisions; a hand-written layer would make each one
+  ours.
+- **Mitigations:**
+  - **Contained:** the SDK is confined to `mcp/`, and
+    `check-imports.sh` enforces it.
+  - **Pinned:** recorded-exchange tests cover both protocol generations,
+    and Claude Code 2.1.304's actual requests.
+- **Revisit:** if an SDK upgrade breaks a client, the SDK stalls, or its
+  dependencies grow (ADR 0017's "Revisit").
+
+## RP-024 — Resource metadata can reflect the request's Host
+
+- **Kind:** security, low. **Status:** Accepted, 2026-10-22. **Found:**
+  spec 021 T005 review.
+- **What:** `/.well-known/oauth-protected-resource` names the resource,
+  and `/mcp`'s 401 names the document's URL. With a console origin
+  configured (the normal `serendipd` setup), both use it. Without one,
+  they're built from the request's `Host` header.
+- **Impact:** a client sending a forged `Host` gets its own forged value
+  back. The answer is `Cache-Control: no-store`, so a shared cache can't
+  serve it to anyone else. The issuer and client IDs never come from the
+  request.
+- **Revisit:** if `serendipd` runs behind a cache that ignores
+  `no-store`, or without a console origin in production.
+
+## RP-025 — An exchanged token can be exchanged again after sign-out
+
+- **Kind:** security, medium. **Status:** Open, 2026-10-22. **Found:**
+  spec 021 T012 security review; verified live on ThunderID 1.0.1.
+- **What:** after a person signs out (their refresh token is revoked),
+  ThunderID refuses to exchange their access token. But it still accepts
+  an **already-exchanged** `serendip-mcp` token as the subject of a new
+  exchange. Anyone holding a live delegated token can keep minting fresh
+  5-minute tokens after the sign-out, so RP-021's "within 5 minutes" holds
+  only for a holder who doesn't do that.
+- **Bounds:**
+  - **A live delegated token is needed:** one lives only in `serendip
+    mcp`'s memory and on its requests to `serendipd`. `serendip mcp`
+    never chains: it always exchanges the stored sign-in.
+  - **It must be renewed within 5 minutes,** every time, or it dies.
+  - **It's always the person, with agent guardrails:** no access
+    management, every delete through an approval.
+  - **Removing the person's role assignments** stops it immediately.
+- **Fix to pursue:** ThunderID's `oauth.token_exchange.token_family:
+  inherit` puts exchanged tokens in the subject token's family, so a
+  sign-out revokes them. The ThunderID 1.0.1 chart's `deployment.yaml`
+  template doesn't expose that setting. Getting it means an upstream chart
+  change, or overriding the whole configuration file, which is fragile.
+  Until then, Serendip can't tell a chained token from a first one.
+- **Revisit:** when the chart exposes the setting, or when Serendip gains
+  token introspection.
+
+## RP-026 — Other ThunderID clients' tokens may be exchangeable
+
+- **Kind:** security, low. **Status:** Open, 2026-10-22. **Found:**
+  spec 021 T012 security review.
+- **What:** `serendip-mcp` is a public client with the token-exchange
+  grant, and ThunderID decides whose tokens it accepts as subjects. A
+  token ThunderID's own Console received was refused (verified live: it
+  has a resource audience, and an exchange with that resource would carry
+  that audience, which `serendipd` refuses). A token another
+  relying-party app in the same ThunderID received for itself, carrying
+  its own client ID as audience, may be exchangeable. That app, or anyone
+  who compromises it, could then act in Serendip as that person, under
+  agent guardrails.
+- **Today:** Serendip's ThunderID has only the `serendip`, `serendip-mcp`
+  and Console clients. Its dynamic client registration is enabled in the
+  shipped configuration (`oauth.dcr.enabled: true, insecure: false`);
+  whether registering needs authentication is to be confirmed.
+- **Fix to pursue:** confirm the cross-client exchange with a second
+  test app. If it works, restrict which subject tokens `serendip-mcp`
+  accepts, if ThunderID allows it. Otherwise keep Serendip's identity
+  provider free of other relying parties, and confirm DCR requires
+  authentication.
+
+## RP-027 — Tokens aren't bound to the server they were issued for
+
+- **Kind:** security, medium. **Status:** Mitigated, 2026-10-22.
+  **Found:** spec 021 T012 security review.
+- **What:** the CLI learns which identity provider to sign in with from
+  the server it's pointed at. A hostile server could name a real
+  provider. The person signs in on the genuine page, and the CLI then
+  sends the real tokens to the hostile server, which could replay them to
+  the real `serendipd`: the audience is the shared client `serendip`, not
+  the server.
+- **Mitigation (spec 021 T012):**
+  - **The first sign-in to a server is confirmed:** it shows the
+    provider, asks, remembers the answer per server, and asks again if
+    the provider changes. Without anyone to answer, it refuses unless
+    `--yes` is given.
+  - **The server's RFC 9728 `resource` must be the server itself.**
+  - **A stored sign-in is only ever sent to the server it was made for.**
+- **Full fix:** bind tokens to the server with RFC 8707 (`resource=`).
+  ThunderID needs a registered resource server for that (spec 021 T001
+  finding 1); then `serendipd` checks the audience is its own.
