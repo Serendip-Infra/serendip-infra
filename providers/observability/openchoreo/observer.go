@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
@@ -130,6 +131,12 @@ func (a adapters) queryResourceMetrics(ctx context.Context, req metricsRequest) 
 // body, which may echo the query.
 func adapterError(what string, err error) error {
 	var se *kubernetes.StatusError
+	if errors.As(err, &se) && what == "logs" && se.Code == http.StatusInternalServerError {
+		// Seen live (T006): a store no Component has written to yet has
+		// none of the fields a scoped query names, and the adapter answers
+		// a bare 500. Nothing in the answer tells the cases apart.
+		return fmt.Errorf("openchoreo observability: the logs query failed with status 500; soon after an install this can mean no Component has written a line yet, otherwise that the store is unhealthy")
+	}
 	if errors.As(err, &se) {
 		return fmt.Errorf("openchoreo observability: the %s query failed with status %d", what, se.Code)
 	}

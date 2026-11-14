@@ -54,6 +54,26 @@ func TestInstall_EmptyMetricsIsReportedNotRepaired(t *testing.T) {
 	}
 }
 
+// Right after an install, no metrics yet is the first scrape still to
+// come, and said so; after the settle window it's the mismatch warning.
+func TestInstall_NoMetricsBeforeTheFirstScrape(t *testing.T) {
+	e := newTestEnv(t)
+	e.installed(t)
+	e.api.metrics = `{"memoryUsage":[]}`
+	state, err := e.inst.Install(context.Background(), instance(Fingerprint()))
+	if err != nil || state.Ready || !strings.Contains(state.Message, "waiting for the first metrics") {
+		t.Fatalf("just installed: %+v, %v", state, err)
+	}
+	e.now = e.now.Add(settle)
+	state, err = e.inst.Install(context.Background(), instance(Fingerprint()))
+	if err != nil || state.Ready || !strings.Contains(state.Message, "no data for pod") {
+		t.Fatalf("after the settle window: %+v, %v", state, err)
+	}
+	if len(e.helm.calls) != 0 {
+		t.Errorf("helm ran: %v", e.helm.calls)
+	}
+}
+
 // An adapter answering with an error settles, then re-runs only the
 // metrics release.
 func TestInstall_MetricsErrorRepairsTheAdapter(t *testing.T) {

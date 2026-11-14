@@ -234,10 +234,18 @@ delete each before the next. Run the keep-awake beside long runs.
 >   target, cancellation), metrics units and steps, disk use.
 > - **Changes outside the package:** `kubernetes.ObjectMeta.UID`,
 >   `kubernetes.ErrBodyTooLarge`, and a comment on `reconcile.LogPage`.
->   The installer now sets OpenObserve's `ZO_PROMETHEUS_ENABLED=true`.
-> - **New accepted risks:** RP-058 (tied timestamps in paging) and RP-059
->   (a re-created platform object hides earlier logs).
-> - **Not verified live:** the answer shapes, and disk use (T012).
+> - **Checked live on `serendip-t018`** (`live_test.go`; plan "Findings
+>   from T006" 6): install, uninstall and re-install through the real
+>   installer; scopes from real IDs; the answer shapes; the end bound;
+>   paging; metrics units; build-run scope; disk use and its unit.
+>   - **What the live check changed:** disk use goes over a port-forward
+>     to the streams API (the proxy strips the credential, and `/metrics`
+>     has no size gauge); OpenObserve's GeoIP and pricing downloads are
+>     turned off; clearer messages for an empty store and before the
+>     first scrape.
+> - **New accepted risks:** RP-058 (tied timestamps in paging), RP-059
+>   (a re-created platform object hides earlier logs), RP-060 (Fluent
+>   Bit's position file stays on the node) and RP-061 (disk use lags).
 
 - **Do:**
   - the client over decision 4's path (from T001);

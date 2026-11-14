@@ -553,8 +553,10 @@ func TestInstall_MetricsReadiness(t *testing.T) {
 		wantMsg   string
 	}{
 		{"series returned", func(e *testEnv) {}, true, readyMessage},
+		// Inside the settle window, so the first scrape may be still to
+		// come; TestInstall_NoMetricsBeforeTheFirstScrape covers after it.
 		{"empty series (RP-056)", func(e *testEnv) { e.api.metrics = `{"cpuUsage":[],"memoryUsage":[]}` }, false,
-			"metrics queries return no data for pod app-1; Prometheus may not match what the metrics adapter queries (see the package's VERSIONS.md)"},
+			"waiting for the first metrics to arrive; Prometheus scrapes every minute"},
 		{"no memory series", func(e *testEnv) { e.api.metrics = `{}` }, false, ""},
 		{"no Component pod", func(e *testEnv) { e.api.del(appPodPath) }, true, readyUncheckedMessage},
 		{"only a young Component pod", func(e *testEnv) {

@@ -106,6 +106,10 @@ type Installer struct {
 	usage      reconcile.DiskUsage
 	usageErr   error
 	usageErrAt time.Time
+	// logsHTTP, when set, replaces the port-forward to the logs store
+	// (tests). usageMu holds one usage read at a time.
+	logsHTTP *http.Client
+	usageMu  sync.Mutex
 }
 
 var _ reconcile.PackageInstaller = (*Installer)(nil)
@@ -186,6 +190,9 @@ type problem struct {
 	// reportOnly: no repair can fix it (a query that answers but finds no
 	// data, RP-056), so it's reported and nothing is re-applied.
 	reportOnly bool
+	// noDataYet: the reportOnly fault is a metrics query finding nothing,
+	// which is expected before the first scrape.
+	noDataYet bool
 }
 
 // Install brings the package towards installed. With a matching
@@ -210,10 +217,27 @@ func (i *Installer) Install(ctx context.Context, inst resource.ProviderInstance)
 		i.resetRepairs()
 		return reconcile.PackageState{Ready: true, Message: msg, Applied: want}, nil
 	}
-	if p.reportOnly || (p.settling && i.waitOut()) {
+	if p.reportOnly {
+		msg := p.message
+		if p.noDataYet && i.settling() {
+			// Seen live (T006): the first resync after an install comes
+			// before Prometheus' first scrape.
+			msg = "waiting for the first metrics to arrive; Prometheus scrapes every minute"
+		}
+		return reconcile.PackageState{Message: msg, Applied: want}, nil
+	}
+	if p.settling && i.waitOut() {
 		return reconcile.PackageState{Message: p.message, Applied: want}, nil
 	}
 	return i.install(ctx, want, p.release)
+}
+
+// settling reports whether the last install is inside its first settle
+// window, without counting a repair.
+func (i *Installer) settling() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return !i.lastInstall.IsZero() && i.now().Sub(i.lastInstall) < settle
 }
 
 func (i *Installer) resetRepairs() {
@@ -565,7 +589,7 @@ func (i *Installer) checkMetrics(ctx context.Context) (*problem, string, error) 
 	if err := json.Unmarshal(raw, &series); err != nil || !hasPoints(series["memoryUsage"]) {
 		return &problem{message: fmt.Sprintf(
 			"metrics queries return no data for pod %s; Prometheus may not match what the metrics adapter queries (see the package's VERSIONS.md)", pod.name),
-			reportOnly: true}, "", nil
+			reportOnly: true, noDataYet: true}, "", nil
 	}
 	return nil, readyMessage, nil
 }

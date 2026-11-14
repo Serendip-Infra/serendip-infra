@@ -96,10 +96,15 @@ var releases = []release{
 			// On by default: a heartbeat to the vendor every 30 minutes.
 			// Nothing leaves the machine unless asked (T003).
 			"openobserve-standalone.config.ZO_TELEMETRY=false",
-			// Off in the module: its /metrics carries the stored size the
-			// package's disk use is read from (usage.go), with no
-			// credentials needed.
-			"openobserve-standalone.config.ZO_PROMETHEUS_ENABLED=true",
+			// Also on by default, even with telemetry off (seen live in
+			// T006): GeoLite databases from the vendor (60 MB, refreshed
+			// every 30 days) and LLM pricing from GitHub at start.
+			"openobserve-standalone.config.ZO_MMDB_DISABLE_DOWNLOAD=true",
+			// Not a key the chart's config renders, so it goes in as an
+			// extra variable (checked live). extraEnv[0] is claimed; a
+			// second variable takes index 1.
+			"openobserve-standalone.extraEnv[0].name=ZO_MODEL_PRICING_ENABLED",
+			"openobserve-standalone.extraEnv[0].value=false",
 		},
 	},
 	{

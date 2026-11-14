@@ -80,6 +80,8 @@ purpose), **Closed** (fixed).
 | RP-057 | ThunderID's Service-proxy calls drop a kubeconfig's bearer token | Correctness (latent) | Watch | Spec 023 T005 |
 | RP-058 | Stored-log pages rely on the store returning tied timestamps in a stable order; a tie group over 1,000 lines is cut | Correctness | Accepted | Spec 023 T006 |
 | RP-059 | Stored logs are scoped by OpenChoreo object UIDs, so a re-created platform object hides its predecessor's logs | Correctness | Accepted | Spec 023 T006 |
+| RP-060 | Fluent Bit's read-position file stays on the node after the package is removed | Operability | Accepted | Spec 023 T006 |
+| RP-061 | The package's reported disk use lags, and leaves out the logs store's newest data and metadata | Honesty of a reported number | Accepted | Spec 023 T006 |
 
 ---
 
@@ -1390,4 +1392,48 @@ purpose), **Closed** (fixed).
   use, and widening the scope to find them would break the rule that a
   query never reads beyond its targets.
 - **Revisit:** if a repair path that re-creates the objects is added.
+
+## RP-060 — Fluent Bit's read-position file stays on the node
+
+- **Kind:** operability. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006, live on `serendip-t018`.
+- **What:** the logs module's Fluent Bit keeps how far it has read each
+  container log in `/var/lib/fluent-bit/db` on the node (a hostPath).
+  Uninstall deletes the namespace, but not that directory. On
+  `serendip-t018` it dated from T001's install two days earlier.
+  - **On a reinstall,** Fluent Bit resumes where it stopped, so lines
+    written while the package was installed before aren't stored again
+    (the old store went with the namespace), and only new lines arrive.
+  - **On a node that never had the package,** `Read_from_Head` reads
+    every container log there (43,507 records in T001).
+- **Why accepted:** it's a few kilobytes, and removing it needs a
+  privileged pod on each node, which the package shouldn't need.
+  Resuming also spares a reinstalled package re-reading every log on
+  the node.
+- **Revisit:** if a reinstall should bring back earlier logs, or the
+  node agent (`serendip-agent`) gains a clean-up step for packages.
+
+## RP-061 — Reported disk use lags, and leaves out the newest data
+
+- **Kind:** honesty of a reported number. **Status:** Accepted,
+  2026-11-14. **Found:** spec 023 T006, live on `serendip-t018`.
+- **What:** `GET /v1/packages` shows the package's current disk use
+  (`usage.go`). The kubelet doesn't measure local-path volumes (T002),
+  so each store is asked:
+  - **Prometheus** reports its blocks and WAL, which match its volume;
+  - **OpenObserve** reports its streams' stored and index sizes. It
+    updates them every 10 minutes, and they leave out its write-ahead
+    log (the newest minutes of lines) and its metadata database (about
+    5 MiB). On a fresh install with the bench's loggers running, they
+    read 0 for the first 8 minutes; at 13 minutes they read 0.49 MiB,
+    exactly the stored files, while 7.3 MiB was on the volume (5.2 MiB
+    of it the metadata database, 1.4 MiB the write-ahead log).
+- **Why accepted:** the number is a guide next to a stated budget; the
+  volumes' sizes and retention bound the real use. Measuring the volume
+  itself needs a `du` from a privileged pod or an exec into the store,
+  which the product shouldn't need.
+- **Mitigation:** the console (T011) labels it as reported by the
+  stores. T012 compares it with a `du` after 2 hours under load.
+- **Revisit:** if a store exposes its on-disk size, or local-path is
+  replaced by a CSI provisioner whose volumes the kubelet measures.
 

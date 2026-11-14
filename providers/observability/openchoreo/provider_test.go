@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sort"
 	"strings"
@@ -45,6 +47,9 @@ type fakeObserver struct {
 	metrics resourceMetrics
 	// storeMetrics answers each store's /metrics, by Service name.
 	storeMetrics map[string]string
+	// noAdminSecret answers 404 for the logs store's admin Secret, and
+	// emptyAdminSecret answers it with an empty password.
+	noAdminSecret, emptyAdminSecret bool
 
 	logRequests     []map[string]any
 	metricsRequests []map[string]any
@@ -74,6 +79,15 @@ func (f *fakeObserver) handler(t *testing.T) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"metadata": map[string]string{"name": p, "uid": o[0]},
 				"spec":     map[string]any{"owner": map[string]string{"projectName": o[1]}},
+			})
+		case r.Method == http.MethodGet && p == "/api/v1/namespaces/"+PlaneNamespace+"/secrets/"+adminSecretName:
+			if f.noAdminSecret {
+				http.Error(w, `{"kind":"Status","code":404}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"metadata": map[string]string{"name": adminSecretName},
+				"data":     map[string][]byte{"ZO_ROOT_USER_EMAIL": []byte("admin@x"), "ZO_ROOT_USER_PASSWORD": []byte(map[bool]string{false: "pw!1Aa", true: ""}[f.emptyAdminSecret])},
 			})
 		case r.Method == http.MethodPost && strings.HasSuffix(p, "/services/logs-adapter:9098/proxy/api/v1/logs/query"):
 			f.answerLogs(t, w, r)
@@ -529,21 +543,56 @@ func TestMetrics_GoneTargetIsUnavailable(t *testing.T) {
 	}
 }
 
+// fakeStreams is the logs store's streams API, behind the port-forward.
+type fakeStreams struct {
+	mu     sync.Mutex
+	body   string
+	status int
+	auths  []string
+}
+
+func (f *fakeStreams) client(t *testing.T) *http.Client {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		if r.URL.Path != "/api/"+logsStoreOrg+"/streams" || r.URL.Query().Get("type") != "logs" {
+			t.Errorf("streams request %s", r.URL)
+		}
+		if user, pass, ok := r.BasicAuth(); !ok || user != "admin@x" || pass != "pw!1Aa" {
+			http.Error(w, `{"code":401}`, http.StatusUnauthorized)
+			return
+		}
+		if f.status != 0 {
+			http.Error(w, "no", f.status)
+			return
+		}
+		_, _ = io.WriteString(w, f.body)
+	}))
+	t.Cleanup(srv.Close)
+	return &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", srv.Listener.Addr().String())
+	}}}
+}
+
+const streamsBody = `{"list":[` +
+	`{"name":"default","stream_type":"logs","stats":{"doc_num":9,"storage_size":40.5,"compressed_size":3.0,"index_size":0.5}},` +
+	`{"name":"audit_logs","stream_type":"logs","stats":{"doc_num":0,"storage_size":0.0,"compressed_size":0.0,"index_size":0.0}}],"total":2}`
+
 func TestUsage_SumsTheStoresAndCaches(t *testing.T) {
 	f := &fakeObserver{storeMetrics: map[string]string{
-		logsStoreService: "# HELP storage_compressed_bytes x\n# TYPE storage_compressed_bytes gauge\n" +
-			`storage_compressed_bytes{organization="default",stream="a",stream_type="logs"} 1048576` + "\n" +
-			`storage_compressed_bytes{organization="default",stream="b",stream_type="logs"} 2.097152e+06` + "\n" +
-			`storage_original_bytes{organization="default",stream="a",stream_type="logs"} 999999999` + "\n",
 		prometheusService: "prometheus_tsdb_storage_blocks_bytes 3145728\nprometheus_tsdb_wal_storage_size_bytes 1048577\n",
 	}}
+	streams := &fakeStreams{body: streamsBody}
 	now := t0
 	inst := newInstaller(nil, newTestKubeClient(t, f.handler(t)))
 	inst.now = func() time.Time { return now }
+	inst.logsHTTP = streams.client(t)
 	u, err := inst.Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 3.5 MiB of logs and 4 MiB and a byte of metrics.
 	if u.UsedMiB != 8 || u.CapacityMiB != 8192 || !u.ReadAt.Equal(t0) {
 		t.Errorf("usage = %+v, want 8 MiB of 8192", u)
 	}
@@ -557,6 +606,39 @@ func TestUsage_SumsTheStoresAndCaches(t *testing.T) {
 	now = t0.Add(time.Minute)
 	if _, err := inst.Usage(context.Background()); err == nil || !strings.Contains(err.Error(), "prometheus_tsdb_wal_storage_size_bytes") {
 		t.Errorf("a missing metric: %v", err)
+	}
+}
+
+func TestUsage_LogsStoreAnswers(t *testing.T) {
+	cases := []struct {
+		name, body  string
+		status      int
+		noSecret    bool
+		emptySecret bool
+		want        string
+	}{
+		{name: "a renamed field", body: `{"list":[{"name":"default","stats":{"compressed_size":1}}]}`, want: "no compressed_size or index_size"},
+		{name: "an empty Secret value", emptySecret: true, want: "missing a key"},
+		{name: "a negative size", body: `{"list":[{"name":"default","stats":{"compressed_size":-1,"index_size":0}}]}`, want: "a size of -1"},
+		{name: "an error status", status: http.StatusServiceUnavailable, want: "status 503"},
+		{name: "no admin Secret", noSecret: true, want: "credentials"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &fakeObserver{noAdminSecret: c.noSecret, emptyAdminSecret: c.emptySecret}
+			streams := &fakeStreams{body: c.body, status: c.status}
+			inst := newInstaller(nil, newTestKubeClient(t, f.handler(t)))
+			inst.logsHTTP = streams.client(t)
+			for range 2 { // the second answer is the cached one
+				_, err := inst.Usage(context.Background())
+				if err == nil || !strings.Contains(err.Error(), c.want) {
+					t.Errorf("err = %v, want %q", err, c.want)
+				}
+				if err != nil && strings.Contains(err.Error(), "pw!1Aa") {
+					t.Error("the password is in the error")
+				}
+			}
+		})
 	}
 }
 
@@ -841,24 +923,60 @@ func TestSearchLogs_MissingObjectsAreCachedBriefly(t *testing.T) {
 }
 
 func TestUsage_FailureIsCachedToo(t *testing.T) {
-	f := &fakeObserver{storeMetrics: map[string]string{}}
+	f := &fakeObserver{storeMetrics: map[string]string{
+		prometheusService: "prometheus_tsdb_storage_blocks_bytes 0\nprometheus_tsdb_wal_storage_size_bytes 0\n",
+	}}
+	streams := &fakeStreams{body: streamsBody, status: http.StatusServiceUnavailable}
 	now := t0
 	inst := newInstaller(nil, newTestKubeClient(t, f.handler(t)))
 	inst.now = func() time.Time { return now }
+	inst.logsHTTP = streams.client(t)
 	if _, err := inst.Usage(context.Background()); err == nil || !strings.Contains(err.Error(), "status 503") {
 		t.Fatalf("err = %v", err)
 	}
-	f.mu.Lock()
-	f.storeMetrics = map[string]string{
-		logsStoreService:  "storage_compressed_bytes 0\n",
-		prometheusService: "prometheus_tsdb_storage_blocks_bytes 0\nprometheus_tsdb_wal_storage_size_bytes 0\n",
-	}
-	f.mu.Unlock()
+	streams.mu.Lock()
+	streams.status = 0
+	streams.mu.Unlock()
 	if _, err := inst.Usage(context.Background()); err == nil {
 		t.Error("a failed read wasn't kept for 30 s")
 	}
 	now = now.Add(time.Minute)
 	if _, err := inst.Usage(context.Background()); err != nil {
 		t.Errorf("after 30 s: %v", err)
+	}
+}
+
+func TestUsage_EmptyAndStatlessStreams(t *testing.T) {
+	for _, body := range []string{`{"list":[],"total":0}`, `{"list":[{"name":"new"}],"total":1}`} {
+		f := &fakeObserver{storeMetrics: map[string]string{
+			prometheusService: "prometheus_tsdb_storage_blocks_bytes 0\nprometheus_tsdb_wal_storage_size_bytes 0\n",
+		}}
+		inst := newInstaller(nil, newTestKubeClient(t, f.handler(t)))
+		inst.logsHTTP = (&fakeStreams{body: body}).client(t)
+		if u, err := inst.Usage(context.Background()); err != nil || u.UsedMiB != 0 {
+			t.Errorf("%s: %+v, %v", body, u, err)
+		}
+	}
+}
+
+// TestLogsModuleValuesStayOffline pins the settings that keep the logs
+// store from calling out (seen live in T006).
+func TestLogsModuleValuesStayOffline(t *testing.T) {
+	var args []string
+	for _, r := range releases {
+		if r.name == logsRelease {
+			args = r.installArgs()
+		}
+	}
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"openobserve-standalone.config.ZO_TELEMETRY=false",
+		"openobserve-standalone.config.ZO_MMDB_DISABLE_DOWNLOAD=true",
+		"openobserve-standalone.extraEnv[0].name=ZO_MODEL_PRICING_ENABLED",
+		"openobserve-standalone.extraEnv[0].value=false",
+	} {
+		if !strings.Contains(joined, "--set-string "+want) {
+			t.Errorf("the logs module isn't given --set-string %s", want)
+		}
 	}
 }

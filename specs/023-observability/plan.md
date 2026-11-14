@@ -657,21 +657,65 @@ only; the first live queries are T012's.
    gives millicores and MiB. Requests and limits are series too; the
    latest point is used. Step is whole minutes (at least the 1-minute
    scrape), so a range has at most 300 points. `http` is never queried.
-5. **Disk use (decision 8 as amended by T002):** each store's `/metrics`,
-   through the Service proxy, with no credentials:
-   - OpenObserve's `storage_compressed_bytes`, summed over streams. The
-     logs module ships `ZO_PROMETHEUS_ENABLED=false`, so the installer
-     now sets it `true` (a fingerprint change);
-   - Prometheus' `prometheus_tsdb_storage_blocks_bytes` plus
-     `prometheus_tsdb_wal_storage_size_bytes`.
+5. **Disk use (decision 8 as amended by T002), as checked live:**
+   - **OpenObserve:** its streams API (`/api/default/streams?type=logs`),
+     `compressed_size` plus `index_size`, summed over streams. The sizes
+     are **MiB**: on `serendip-t018` the two came to exactly the bytes of
+     the files in `stream/` (515,798), and `compressed_size` alone to
+     exactly its Parquet files (310,281).
+     - **Its `/metrics` has no stored-size gauge** at v0.92.2 (the
+       `storage_*` names are a later version's), and `zo_node_disk_*` is
+       the whole host disk. So the earlier plan, `/metrics` with no
+       credentials, was dropped, with its `ZO_PROMETHEUS_ENABLED=true`.
+     - **The API needs the admin credentials, and kube-apiserver's
+       Service proxy strips an `Authorization` header** (401 through the
+       proxy, 200 direct with the same credentials). So the request goes
+       over a port-forward (`ServiceDialer`) to the store's pod. The
+       credentials are read from the Secret for each read and never kept.
+     - **The stats lag** (synced every 10 minutes) and leave out the
+       write-ahead log and the metadata database (RP-061).
+   - **Prometheus:** `prometheus_tsdb_storage_blocks_bytes` plus
+     `prometheus_tsdb_wal_storage_size_bytes` from its `/metrics` through
+     the Service proxy (checked live; no credentials).
 
-   A metric that's missing is an error, not zero. Read at most once per
-   30 s, and a failed read is kept for the same 30 s. **Not verified live:** that OpenObserve's `/metrics` needs no
-   credentials, and that the sum matches a `du` of the volumes. T012
-   checks both. If it does need credentials, the fallback is the
-   streams API with the admin Secret.
+   A field or metric that's missing is an error, not zero. Read at most
+   once per 30 s, and a failed read is kept for the same 30 s.
 
-6. **Reviews:** `go-reviewer`'s findings are fixed, except one left as
+6. **Checked live on `serendip-t018`** (`live_test.go`, opt-in through
+   `OBS_LIVE_KUBECONFIG`; it installed, removed and re-installed the
+   package through the real installer):
+   - **Install** in under 3 minutes; **Uninstall** in 38 s, leaving no
+     namespace, plane object or Prometheus Operator CRDs.
+   - **Scopes** from real Serendip IDs (spec 022 T014's store): 3 of 3
+     Deployments, UIDs equal to their pods' labels.
+   - **The answer shapes** are the OpenAPI's, `projectUid` included.
+   - **The end bound is exclusive**: a line at exactly `endTime` isn't
+     returned. The query's extra microsecond covers it.
+   - **Paging:** 75 lines paged by 7 equal one 500-line page, line for
+     line (18 after the re-install).
+   - **Metrics units:** a CPU request of 0.1 core came back as 100 m and
+     268435456 bytes as 256 MiB, matching the pod spec; CPU usage
+     appears once Prometheus has 2 minutes of data (a `rate` over 2m).
+   - **Build logs:** a stand-in step pod with the run's namespace and
+     Argo's workflow label gave its 25 lines, with Argo's own line
+     dropped. A real build's pods carry that label (spec 022 T001).
+   - **OpenObserve called out even with telemetry off**: GeoLite
+     databases from `geoip.zinclabs.dev` (60 MB, refreshed every 30
+     days) and LLM pricing from `raw.githubusercontent.com`. The
+     installer now sets `ZO_MMDB_DISABLE_DOWNLOAD=true` (a config key)
+     and `ZO_MODEL_PRICING_ENABLED=false` (not a key the chart renders,
+     so through `extraEnv`). After a fresh install, its log names no
+     outside URL and no `mmdb` folder exists.
+   - **A store no Component has written to** has none of the label
+     fields, so a scoped search answers a bare 500 (OpenObserve: "unknown
+     field"). The error now says what it may mean.
+   - **The first resync after an install** comes before Prometheus'
+     first scrape; inside the settle window it now says it's waiting for
+     the first metrics, rather than warning of a mismatch.
+   - **Fluent Bit's read positions** stay on the node after removal
+     (RP-060).
+
+7. **Reviews:** `go-reviewer`'s findings are fixed, except one left as
    is: scopes are resolved one target after another, since they're cached
    and a first search's GETs (at most 60) stay on the local API server.
    `contract-guardian` passed.
