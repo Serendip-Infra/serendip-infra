@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +44,12 @@ type BuildHandler struct {
 	// logs don't add a second allowance.
 	streams, recent *streamLimiter
 	idle, max       time.Duration
+	// stored reads a finished run's logs once its pods are gone
+	// (specs/023-observability plan decision 10); nil without the
+	// observability package wired.
+	stored reconcile.ObservabilityProvider
+	// storedReady says why stored logs can't be read now.
+	storedReady func() error
 }
 
 func (h *BuildHandler) Register(mux Mux) {
@@ -208,15 +216,26 @@ func (h *BuildHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 // events are kept for an hour after it ends (plan decision 5); the Build
 // keeps its outcome.
 func (h *BuildHandler) run(w http.ResponseWriter, r *http.Request) (resource.Build, bool) {
+	b, gone, ok := h.runOrGone(w, r)
+	if gone {
+		writeExpired(w, r, b)
+		return resource.Build{}, false
+	}
+	return b, ok
+}
+
+// runOrGone is run, except that an expired run is returned with gone set,
+// unanswered, so its stored logs can be read instead.
+func (h *BuildHandler) runOrGone(w http.ResponseWriter, r *http.Request) (resource.Build, bool, bool) {
 	reqID := audit.RequestIDFrom(r.Context())
 	if h.provider == nil {
 		WriteProblem(w, http.StatusServiceUnavailable, "service unavailable", "the builds package isn't installed", reqID)
-		return resource.Build{}, false
+		return resource.Build{}, false, false
 	}
 	b, err := h.builds.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.fail(w, r, err)
-		return resource.Build{}, false
+		return resource.Build{}, false, false
 	}
 	if !b.Status.Started {
 		if b.Status.Phase.Done() {
@@ -224,20 +243,19 @@ func (h *BuildHandler) run(w http.ResponseWriter, r *http.Request) (resource.Bui
 		} else {
 			WriteProblem(w, http.StatusConflict, "conflict", "build "+b.Metadata.Name+" hasn't started yet; retry once it's Running", reqID)
 		}
-		return resource.Build{}, false
+		return resource.Build{}, false, false
 	}
 	// BuildLogs' error for an expired run has no sentinel (a provider's
 	// own), so the observation says whether the run is still there.
 	obs, err := h.provider.ObserveBuild(r.Context(), b)
 	if err != nil {
 		h.buildReadFailed(w, r, err)
-		return resource.Build{}, false
+		return resource.Build{}, false, false
 	}
 	if obs.Gone {
-		writeExpired(w, r, b)
-		return resource.Build{}, false
+		return b, true, false
 	}
-	return b, true
+	return b, false, true
 }
 
 func writeExpired(w http.ResponseWriter, r *http.Request, b resource.Build) {
@@ -308,7 +326,11 @@ func (h *BuildHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, http.StatusBadRequest, "validation failed", err.Error(), audit.RequestIDFrom(r.Context()))
 		return
 	}
-	b, ok := h.run(w, r)
+	b, gone, ok := h.runOrGone(w, r)
+	if gone {
+		h.storedLogs(w, r, b, opts)
+		return
+	}
 	if !ok {
 		return
 	}
@@ -382,3 +404,156 @@ func (s sourceChecker) check(ctx context.Context, c resource.Component, current 
 	}
 	return ctx, nil
 }
+
+// Stored build logs (specs/023-observability plan decision 10).
+const (
+	// storedBuildPages bounds the pages read for one answer.
+	storedBuildPages = 20
+	// storedBuildSlack is how long before the Build was created its run's
+	// lines are looked for, for clock skew between the store and Serendip.
+	storedBuildSlack = time.Minute
+)
+
+// storedLogs answers an expired run's logs from the observability
+// package's store, in the shapes Logs uses: {"lines", "truncated",
+// "stored": true}, oldest first, or with ?follow=true the same lines as
+// NDJSON, then {"end": "ended"} (a finished build has nothing to follow).
+// Without the package ready, it's 410 as before.
+func (h *BuildHandler) storedLogs(w http.ResponseWriter, r *http.Request, b resource.Build, opts reconcile.LogOptions) {
+	if h.stored == nil || (h.storedReady != nil && h.storedReady() != nil) {
+		writeExpired(w, r, b)
+		return
+	}
+	read := func(ctx context.Context) ([]reconcile.LogLine, bool, error) {
+		ctx, cancel := context.WithTimeout(ctx, obsQueryTimeout)
+		defer cancel()
+		return h.readStored(ctx, b, opts)
+	}
+	failed := func(w http.ResponseWriter, r *http.Request, err error) {
+		reqID := audit.RequestIDFrom(r.Context())
+		switch {
+		case r.Context().Err() != nil:
+			return // the client went away
+		case errors.Is(err, reconcile.ErrProviderNotReady):
+			writeExpired(w, r, b)
+			return
+		case errors.Is(err, context.DeadlineExceeded):
+			WriteProblem(w, http.StatusGatewayTimeout, "gateway timeout", "reading the build's stored logs took longer than "+obsQueryTimeout.String()+"; try tailLines or sinceSeconds", reqID)
+			return
+		}
+		log.Printf("api: %s %s: stored build logs read failed (request %s): %v", r.Method, r.URL.Path, reqID, err)
+		WriteProblem(w, http.StatusBadGateway, "bad gateway", "the build's stored logs couldn't be read; retry later, quoting the request ID", reqID)
+	}
+	if opts.Follow {
+		open := func(ctx context.Context) (reconcile.LogStream, error) {
+			lines, _, err := read(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &linesStream{lines: lines}, nil
+		}
+		followLogs(w, r, h.streams, h.idle, h.max, open, failed)
+		return
+	}
+	reqID := audit.RequestIDFrom(r.Context())
+	caller, ok := callerFrom(r.Context())
+	if !ok {
+		WriteProblem(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token", reqID)
+		return
+	}
+	if !h.recent.acquire(caller.ID) {
+		w.Header().Set("Retry-After", "5")
+		WriteProblem(w, http.StatusTooManyRequests, "too many requests",
+			"too many log reads at once: at most "+strconv.Itoa(h.recent.perCaller)+" per caller and "+strconv.Itoa(h.recent.total)+" in all; retry shortly", reqID)
+		return
+	}
+	defer h.recent.release(caller.ID)
+	lines, truncated, err := read(r.Context())
+	if err != nil {
+		failed(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "truncated": truncated, "stored": true})
+}
+
+// readStored reads b's stored lines, newest first page by page, up to
+// ?tailLines (else maxRecentLines) and maxRecentBytes in all, and returns
+// them oldest first.
+// truncated says older lines were left.
+func (h *BuildHandler) readStored(ctx context.Context, b resource.Build, opts reconcile.LogOptions) ([]reconcile.LogLine, bool, error) {
+	want := maxRecentLines
+	if opts.TailLines > 0 {
+		want = opts.TailLines
+	}
+	now := time.Now()
+	// A Build always has its creation time; without one, never scan
+	// further back than the store keeps.
+	q := reconcile.LogQuery{From: later(b.Metadata.CreatedAt.Add(-storedBuildSlack), now.Add(-defaultRetention))}
+	if opts.Since > 0 {
+		q.From = later(q.From, now.Add(-opts.Since))
+	}
+	var lines []reconcile.LogLine
+	truncated, size := false, 0
+	for pages := 0; ; pages++ {
+		if pages == storedBuildPages {
+			truncated = true
+			break
+		}
+		q.Limit = min(reconcile.MaxLogQueryLimit, want-len(lines))
+		page, err := h.stored.BuildLogs(ctx, b, q)
+		if err != nil {
+			return nil, false, err
+		}
+		truncated = truncated || page.Truncated
+		full := false
+		for _, l := range page.Lines {
+			if size += len(l.Line); size > maxRecentBytes {
+				full = true
+				break
+			}
+			lines = append(lines, reconcile.LogLine{Time: l.Time, Instance: cmp.Or(l.Instance, "build"), Line: l.Line})
+		}
+		if full {
+			truncated = true
+			break
+		}
+		if page.Next == "" {
+			break
+		}
+		// Limit stays at least 1: the loop stops once want is reached.
+		if len(lines) >= want {
+			truncated = true
+			break
+		}
+		q.Before = page.Next
+	}
+	// Only for a provider that sends more than Limit.
+	if len(lines) > want {
+		lines, truncated = lines[:want], true
+	}
+	slices.Reverse(lines)
+	return nonNil(lines), truncated, nil
+}
+
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// linesStream yields lines, then io.EOF.
+type linesStream struct {
+	lines []reconcile.LogLine
+}
+
+func (s *linesStream) Next() (reconcile.LogLine, error) {
+	if len(s.lines) == 0 {
+		return reconcile.LogLine{}, io.EOF
+	}
+	l := s.lines[0]
+	s.lines = s.lines[1:]
+	return l, nil
+}
+
+func (s *linesStream) Close() error { return nil }

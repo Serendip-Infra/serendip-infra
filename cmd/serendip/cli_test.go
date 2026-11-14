@@ -834,6 +834,27 @@ func TestPackagesListShowsCost(t *testing.T) {
 	}
 }
 
+// packages list states a data-keeping package's disk cost, and an
+// installed one's current use or why it couldn't be read (spec 023 T008).
+func TestPackagesListShowsDisk(t *testing.T) {
+	body := `{"packages":[
+		{"provider":"obs","capability":"observability","available":true,"installable":true,
+		 "requirements":{"idleMemoryMiB":400,"idleCPUMillicores":50,"peakMemoryMiB":600,"peakCPUMillicores":300,
+		  "measuredOn":"edge-1","results":"r","disk":{"growthMiBPerDay":120,"retentionDays":3,"budgetMiB":5120}},
+		 "usage":{"usedMiB":42,"capacityMiB":8192,"readAt":"2026-11-14T10:00:00Z"}},
+		{"provider":"obs2","capability":"other","available":true,"installable":true,"requirements":null,
+		 "usageError":"its disk use couldn't be read now; it may still be starting"}]}`
+	var out, errOut bytes.Buffer
+	printSuccess(mustOp(t, "packages_list"), response{Status: 200, Header: http.Header{}, Body: []byte(body)}, globals{}, &out, &errOut)
+	got := out.String()
+	for _, want := range []string{"Disk: about 120 MiB a day, kept 3 days, at most 5120 MiB.", "Disk in use: 42 MiB of 8192 MiB.",
+		"Disk in use: its disk use couldn't be read now; it may still be starting."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 // The builds commands come from the catalogue and send the builds API's
 // requests (spec 022 T010).
 func TestBuildsCommands(t *testing.T) {

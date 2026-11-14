@@ -55,6 +55,13 @@
       returned (`approvalView`). Lists page with `limit`/`after` and
       `Serendip-Next-After`, through `sqlite.ListApprovals`; never list
       all approvals.
+  - Stored logs and metrics (`observability_handler.go`, spec 023): scope
+    before the provider is asked; a provider reads only the targets it's
+    given. A search across several Deployments checks
+    `serendip/components/logs/read` on each with `allowedAt`, passes only
+    the allowed ones, and counts the rest in `omitted` without naming
+    them. Never widen a target, and never send a query broader than the
+    caller's Deployments.
   - Directory reads (`directory.go`) are gated like `/principals`
     (`mayListPrincipals`). They read the optional `identity.Directory`
     (`WithDirectory`) under a 10 s deadline, then fall back to the

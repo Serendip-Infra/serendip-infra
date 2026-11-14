@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/serendip-infra/serendip-infra/core/audit"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store"
@@ -18,7 +21,13 @@ import (
 // that names it; removing it is deleting that, through an Approval.
 type PackageHandler struct {
 	catalogue reconcile.Catalogue
+	// instances says which packages are installed, for their disk use.
+	instances store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus]
 }
+
+// usageTimeout bounds reading one package's disk use. The installer caps
+// its own reads (one per 30 s, specs/023-observability plan decision 8).
+const usageTimeout = 5 * time.Second
 
 func (h *PackageHandler) Register(mux Mux) {
 	mux.HandleFunc("GET /v1/packages", h.List)
@@ -35,14 +44,27 @@ type packageView struct {
 	// why not, such as its cost not being measured yet.
 	Installable    bool   `json:"installable"`
 	NotInstallable string `json:"notInstallable,omitempty"`
+	// Usage is an installed package's current disk use, for one that
+	// keeps data; UsageError says it couldn't be read, without the
+	// backend's own words.
+	Usage      *reconcile.DiskUsage `json:"usage,omitempty"`
+	UsageError string               `json:"usageError,omitempty"`
 }
 
 func (h *PackageHandler) List(w http.ResponseWriter, r *http.Request) {
+	installed, err := h.installed(r.Context())
+	if err != nil {
+		writeStoreErr(w, r, err)
+		return
+	}
 	out := []packageView{}
 	for _, p := range h.catalogue {
 		v := packageView{Package: p, Available: p.Installer != nil, Installable: true}
 		if err := p.Installable(); err != nil {
 			v.Installable, v.NotInstallable = false, err.Error()
+		}
+		if u, ok := p.Installer.(reconcile.PackageUsage); ok && installed[p.Provider] {
+			v.Usage, v.UsageError = readUsage(r, p.Provider, u)
 		}
 		out = append(out, v)
 	}
@@ -92,4 +114,33 @@ func packageValidator(c reconcile.Catalogue, s store.Store[resource.ProviderInst
 		}
 		return nil
 	}
+}
+
+// installed is the providers that have a ProviderInstance.
+func (h *PackageHandler) installed(ctx context.Context) (map[string]bool, error) {
+	out := map[string]bool{}
+	if h.instances == nil {
+		return out, nil
+	}
+	all, err := h.instances.List(ctx, store.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range all {
+		out[i.Spec.ProviderID] = true
+	}
+	return out, nil
+}
+
+// readUsage reads one package's disk use. A failure is logged and said in
+// general terms: the error can name the backend's internals.
+func readUsage(r *http.Request, name string, u reconcile.PackageUsage) (*reconcile.DiskUsage, string) {
+	ctx, cancel := context.WithTimeout(r.Context(), usageTimeout)
+	defer cancel()
+	du, err := u.Usage(ctx)
+	if err != nil {
+		log.Printf("api: %s %s: %s's disk use (request %s): %v", r.Method, r.URL.Path, name, audit.RequestIDFrom(r.Context()), err)
+		return nil, "its disk use couldn't be read now; it may still be starting"
+	}
+	return &du, ""
 }

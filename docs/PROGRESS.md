@@ -16,8 +16,26 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T007 done (2026-11-14); next
-is T008 (the API).**
+**Spec 023 (observability package): T001–T008 done (2026-11-14); next
+is T009 (edge-case tests, with the `test-writer`).**
+- **T008 (the API):** `api/observability_handler.go` serves
+  `GET /v1/deployments/{id}/logs/search`,
+  `GET /v1/applications/{id}/logs/search?environment=` and
+  `GET /v1/deployments/{id}/metrics`, wired by `api.WithObservability`.
+  - **Readiness is checked first** (503 with `Retry-After`, saying not
+    installed, installing or not ready). Then come 3 slots per caller
+    and 20 in all, and a 20 s deadline per query.
+  - **An Application's search** reads only the Deployments whose logs
+    the caller may read; `omitted` counts the rest.
+  - **Metrics** come with per-series summaries, and `summary=true` keeps
+    60 points. The MCP tool always sends it (`catalog.Operation.MCPQuery`).
+  - **Expired build logs** come from the store (`"stored": true`).
+  - **`GET /v1/packages`** shows `usage`.
+  - **CLI commands:** `serendip logs search`,
+    `serendip logs search-application` and `serendip metrics`.
+  - **Tests:** `api/spec023_acceptance_test.go` (criteria 3, 5–8 and 11)
+    and `observability_internal_test.go`. go-reviewer's findings are
+    fixed (tasks.md T008).
 - **T007 (wiring in `serendipd`):** the `openchoreo-observability-plane`
   catalogue entry has its installer and decision 13's removal wording.
   `Requirements` stays nil until T012, so the package is offered but
@@ -140,20 +158,27 @@ is T008 (the API).**
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
     Deployments.
-- **Next:** T008, the API: the three routes (decision 11) with
-  decision 6's scoping, the caps (`core` only declares them; the API
-  validates and enforces them), 503 while `kubeWiring.observability`
-  isn't ready, `omitted`, the build-logs fallback (decision 10), package
-  usage in `GET /v1/packages`, the authz rules and the catalogue entries,
-  and `api/spec023_acceptance_test.go`. Remember that a log page can be
-  short or empty with `Next` set.
+- **Next:** T009, table tests with the `test-writer`: cursors across
+  time ranges, an empty ready package, the provider going not ready
+  mid-request, and the per-caller caps. After that, T010 (CLI and MCP;
+  the commands already exist from T008's catalogue entries) and T011
+  (the console).
 - **GitHub (2026-11-14):** four paced background scripts in the previous
   session's scratchpad `prs/` folder, chained: `run.sh` (spec PRs
   003–022, opened by Yasindu007, merged by serendipinfra) → `track.sh`
   (closed epics for 005–022, plus 023's epic in "v1 GA") → `setup.sh` →
   `backfill.sh`. Check their `*.log` files before any other GitHub
-  write. 023's task issues come from that run, so T001–T007 get closed
-  at a checkpoint once they exist.
+  write.
+  - **023's task issues** (T007–T015) come from `setup.sh`, so they
+    didn't exist at T007's or T008's commit. Close T007's and T008's at
+    the next checkpoint, once they exist.
+  - **`backfill.sh` step 2 conflicts with CLAUDE.md.** It would create
+    about 270 closed task issues for specs 002–022. CLAUDE.md (committed
+    10:11, before the script was written at 10:18) says specs closed
+    before 2026-11-14 keep a checklist instead. It was waiting on
+    `setup.sh` and hadn't written anything at 10:50. Ask the user before
+    it starts: kill it, or keep only step 1 (the Epic type on each
+    epic).
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or

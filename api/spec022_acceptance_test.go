@@ -260,6 +260,13 @@ type world022 struct {
 
 func newWorld022(t *testing.T) *world022 {
 	t.Helper()
+	return newWorld022With(t, nil)
+}
+
+// newWorld022With is newWorld022 with obs as the catalogue's observability
+// package, when it's not nil, and opts added to the server's.
+func newWorld022With(t *testing.T, obs *reconcile.Package, opts ...api.ServerOption) *world022 {
+	t.Helper()
 	reg := provider.NewRegistry()
 	b := newBuilder022()
 	p := &platform022{fakePlatform020: newFakePlatform020(), comps: map[string]string{}, envImage: map[string]string{}}
@@ -269,9 +276,13 @@ func newWorld022(t *testing.T) *world022 {
 			Installer: inst, Removal: removal022,
 			Requirements: &provider.Requirements{IdleMemoryMiB: 46, IdleCPUMillicores: 5, PeakMemoryMiB: 900, PeakCPUMillicores: 1800,
 				MeasuredOn: "edge-1 simulated T470", Results: "profiles/edge-1/bench/results/builds"}},
-		"observer": {Provider: "observer", Capability: "observability", Installer: nopInstaller{}}, // in this build, not measured
 	}
-	d := newDeployWorldWith(t, reg, api.WithPackages(cat), api.WithBuilds(b), api.WithRuntime(p))
+	if obs != nil {
+		cat[obs.Provider] = *obs
+	} else {
+		cat["observer"] = reconcile.Package{Provider: "observer", Capability: "observability", Installer: nopInstaller{}} // in this build, not measured
+	}
+	d := newDeployWorldWith(t, reg, append([]api.ServerOption{api.WithPackages(cat), api.WithBuilds(b), api.WithRuntime(p)}, opts...)...)
 	w := &world022{deployWorld: d, registry: reg, builder: b, platform: p, installer: inst, creds: creds022{}, cat: cat,
 		comps:     sqlite.NewStore[resource.ComponentSpec, resource.ComponentStatus](d.db, resource.KindComponent),
 		builds:    sqlite.NewStore[resource.BuildSpec, resource.BuildStatus](d.db, resource.KindBuild),

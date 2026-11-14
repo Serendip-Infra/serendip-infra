@@ -295,7 +295,57 @@ delete each before the next. Run the keep-awake beside long runs.
   test catalogue with requirements installs and reports readiness through
   the handle.
 
-## T008 — The API
+## T008 — The API ✅ 2026-11-14
+
+> **Done as:** `api/observability_handler.go`, with the three routes and
+> their rules in `authz.go`, wired by `WithObservability`.
+> - **Order of checks:** each route checks readiness first (503 naming
+>   the package, saying not installed, installing or not ready, with
+>   `Retry-After`), then the stores, then takes one of 3 slots per
+>   caller (20 in all), then runs the query under a 20 s deadline.
+> - **An Application's search** needs `?environment`. That Environment
+>   gets the same 404 whether it's missing or unreadable. Each Deployment
+>   is checked for `serendip/components/logs/read`, and only allowed
+>   ones become targets. `omitted` counts the rest. It's 403 if none is
+>   allowed, and 422 over 20 targets.
+> - **Search defaults:** the last hour, 100 lines (at most 500), and
+>   `q` up to 256 bytes. Ranges stay within the stated retention.
+> - **Metrics:** at least 15 minutes. Non-finite samples are dropped, and
+>   each series gets a `summary` (min, avg, max, latest).
+>   `?summary=true` keeps at most 60 points.
+> - **Build-logs fallback:** `runOrGone` and `storedLogs`. Once a run is
+>   gone and the package is ready, the lines come from the store, oldest
+>   first, as `{"lines", "truncated", "stored": true}`. With `follow`,
+>   the same lines arrive as NDJSON, then `{"end":"ended"}`. The read is
+>   capped by `tailLines`/5000 lines, 4 MiB and 20 pages. Otherwise the
+>   answer is 410, as before.
+> - **Packages:** `GET /v1/packages` adds `usage` (or a generic
+>   `usageError`) for an installed package whose installer has
+>   `PackageUsage`. `serendip packages list` prints the disk cost and
+>   the current use.
+> - **Catalogue:** `deployments_logs_search` (`serendip logs search`),
+>   `applications_logs_search` (`serendip logs search-application`) and
+>   `deployments_metrics` (`serendip metrics`).
+>   - A new `Operation.MCPQuery` makes the MCP metrics tool always send
+>     `summary=true`. Its `summary` parameter is CLI-only.
+>   - `docs/cli-and-mcp.md` gained a section on stored logs and metrics.
+> - **Reviews:** go-reviewer found no authorization leak. Fixed:
+>   - a nil error passed on when the capability was Ready but not wired;
+>   - readiness checked after a 200, 403 or 422 could already answer;
+>   - client cancellation logged as a 502;
+>   - a deadline in the build fallback answered 502, not 504;
+>   - NaN or Inf breaking the JSON;
+>   - no byte budget on stored build logs;
+>   - a zero creation time scanning without bound;
+>   - `timeRange` naming the wrong parameter.
+>
+>   Regression tests are in `observability_internal_test.go`.
+> - **Verify:** `go test ./...` and `go vet ./...` pass.
+>   `spec023_acceptance_test.go` runs criteria 3, 5–8 and 11 on spec
+>   022's world with a fake provider. The route-table test, a Reader
+>   getting metrics but a 403 on logs, the scoped searches asserted on
+>   the fake's input (a person and an agent with logs on one Deployment
+>   each), `omitted`, and the catalog parity test all pass.
 
 - **Do:**
   - the three routes (decision 11) with decision 6's scoping, caps, 503

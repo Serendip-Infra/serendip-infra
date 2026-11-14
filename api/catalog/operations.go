@@ -74,6 +74,15 @@ var (
 		Description: `A scope: "/" or "Kind/id", such as "Project/0190…"`}
 )
 
+// searchParams are a stored-log search's query.
+var searchParams = []Param{
+	{Name: "q", In: InQuery, Description: "A plain phrase the lines must contain (not a query language)"},
+	{Name: "from", In: InQuery, Description: "Start, an RFC 3339 time (default an hour before to)"},
+	{Name: "to", In: InQuery, Description: "End, an RFC 3339 time (default now)"},
+	{Name: "limit", In: InQuery, Type: Integer, Max: 500, Description: "Lines per page (default 100)"},
+	{Name: "before", In: InQuery, Description: "The next value of the previous page, for the page after it"},
+}
+
 // crud is the five resource operations for one kind, on the CLI, and as
 // MCP tools when the kind is one an AI writes in this spec.
 func crud(k kind) []Operation {
@@ -295,6 +304,27 @@ var operations = func() []Operation {
 				{Name: "follow", In: InQuery, Type: Boolean, Description: "Keep printing new lines as they're written, until the build ends, or the server ends the stream (idle 5 minutes, or 10 in all)",
 					CLIOnly: "an MCP tool answers once; read recent lines instead"}},
 			Hints: Hints{ReadOnly: true}},
+
+		// Stored logs and metrics (spec 023).
+		Operation{Name: "deployments_logs_search", CLI: []string{"logs", "search"}, MCP: true,
+			Summary: "Search a Deployment's stored log lines, newest first, including lines from instances that are gone. One page per call: pass next as before for the next page; only an empty next ends a search (a page can be short). Logs can hold sensitive data, so they need their own permission. Needs the observability package",
+			Method:  "GET", Path: "/v1/deployments/{id}/logs/search",
+			Params: append([]Param{id("Deployment")}, searchParams...), Hints: Hints{ReadOnly: true}},
+		Operation{Name: "applications_logs_search", CLI: []string{"logs", "search-application"}, MCP: true,
+			Summary: "Search the stored log lines of an Application's Components in one Environment, newest first, paged like deployments_logs_search. Only the Deployments whose logs you may read are searched; omitted counts the others. Needs the observability package",
+			Method:  "GET", Path: "/v1/applications/{id}/logs/search",
+			Params: append([]Param{id("Application"), {Name: "environment", In: InQuery, Required: true, Description: "ID of the Environment to search in"}}, searchParams...),
+			Hints:  Hints{ReadOnly: true}},
+		Operation{Name: "deployments_metrics", CLI: []string{"metrics"}, MCP: true,
+			Summary: "A Deployment's CPU (millicores) and memory (MiB) over a time range (the last hour by default, at least 15 minutes), against its requests and limits, with min, average, max and latest per series. What can't be measured is listed as unavailable, with why. Needs the observability package",
+			Method:  "GET", Path: "/v1/deployments/{id}/metrics",
+			Params: []Param{id("Deployment"),
+				{Name: "from", In: InQuery, Description: "Start, an RFC 3339 time (default an hour before to)"},
+				{Name: "to", In: InQuery, Description: "End, an RFC 3339 time (default now)"},
+				{Name: "summary", In: InQuery, Type: Boolean, Description: "At most 60 points a series",
+					CLIOnly: "an MCP tool always gets the summary"}},
+			MCPQuery: map[string]string{"summary": "true"},
+			Hints:    Hints{ReadOnly: true}},
 
 		Operation{Name: "secrets_read_value", CLI: []string{"secrets", "value", "get"}, MCP: true, SecretValue: true,
 			Summary: "Read a Secret's value. Needs the secrets value data permission", Method: "GET", Path: "/v1/secrets/{id}/value",
