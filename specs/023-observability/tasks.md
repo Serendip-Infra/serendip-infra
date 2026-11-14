@@ -218,7 +218,26 @@ delete each before the next. Run the keep-awake beside long runs.
   an unchanged resync makes no Helm call and at most 8 GETs; a deleted
   policy is restored; Uninstall twice is clean. Then `go-reviewer`.
 
-## T006 — The Observer client and the provider
+## T006 — The Observer client and the provider ✅ 2026-11-14
+
+> **Done as:** `observer.go` (the adapters' client), `scope.go` (UIDs
+> from the live objects), `provider.go`, `usage.go`, with
+> `provider_test.go` against an `httptest` API server. See plan.md
+> "Findings from T006".
+> - **Verify items:** two targets merged newest first across pages with
+>   ties (5 tables, page sizes 1 to 100, end bound inclusive and
+>   exclusive), no duplicates; queries only for the given targets, with
+>   foreign lines dropped; a long line cut on a rune boundary; request
+>   metrics reported unavailable and never queried.
+> - **Also:** paging edges (tie groups over one answer, filtered full
+>   answers, sub-microsecond times, an oversized answer, a failing
+>   target, cancellation), metrics units and steps, disk use.
+> - **Changes outside the package:** `kubernetes.ObjectMeta.UID`,
+>   `kubernetes.ErrBodyTooLarge`, and a comment on `reconcile.LogPage`.
+>   The installer now sets OpenObserve's `ZO_PROMETHEUS_ENABLED=true`.
+> - **New accepted risks:** RP-058 (tied timestamps in paging) and RP-059
+>   (a re-created platform object hides earlier logs).
+> - **Not verified live:** the answer shapes, and disk use (T012).
 
 - **Do:**
   - the client over decision 4's path (from T001);

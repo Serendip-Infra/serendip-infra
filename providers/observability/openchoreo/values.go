@@ -96,6 +96,10 @@ var releases = []release{
 			// On by default: a heartbeat to the vendor every 30 minutes.
 			// Nothing leaves the machine unless asked (T003).
 			"openobserve-standalone.config.ZO_TELEMETRY=false",
+			// Off in the module: its /metrics carries the stored size the
+			// package's disk use is read from (usage.go), with no
+			// credentials needed.
+			"openobserve-standalone.config.ZO_PROMETHEUS_ENABLED=true",
 		},
 	},
 	{

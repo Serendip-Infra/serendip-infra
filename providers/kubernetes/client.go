@@ -19,6 +19,10 @@ import (
 // mirroring core/store.ErrNotFound's existing sentinel-error pattern.
 var ErrNotFound = errors.New("kubernetes: object not found")
 
+// ErrBodyTooLarge is GetRaw's and PostRaw's answer to a body over their
+// limit, so a caller can ask for less.
+var ErrBodyTooLarge = errors.New("kubernetes: answer too large")
+
 // ObjectMeta is the subset of Kubernetes' metadata every object shares,
 // enough to address, create, and identify one.
 type ObjectMeta struct {
@@ -27,6 +31,9 @@ type ObjectMeta struct {
 	Labels          map[string]string `json:"labels,omitempty"`
 	Annotations     map[string]string `json:"annotations,omitempty"`
 	ResourceVersion string            `json:"resourceVersion,omitempty"`
+	// UID is server-set and read-only: the object's identity for its whole
+	// life, which a re-created object of the same name doesn't share.
+	UID string `json:"uid,omitempty"`
 	// Generation is server-set and read-only; sending it on create is
 	// harmless (ignored), and it's what status.observedGeneration is
 	// compared against.
@@ -340,7 +347,7 @@ func (c *Client) GetRaw(ctx context.Context, path string) (json.RawMessage, erro
 		return nil, fmt.Errorf("kubernetes: read GET %s response: %w", path, err)
 	}
 	if len(body) > maxRawBody {
-		return nil, fmt.Errorf("kubernetes: GET %s answered more than %d bytes", path, maxRawBody)
+		return nil, fmt.Errorf("%w: GET %s answered more than %d bytes", ErrBodyTooLarge, path, maxRawBody)
 	}
 	return body, nil
 }
@@ -367,7 +374,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 		return nil, fmt.Errorf("kubernetes: read POST %s response: %w", path, err)
 	}
 	if len(out) > maxRawBody {
-		return nil, fmt.Errorf("kubernetes: POST %s answered more than %d bytes", path, maxRawBody)
+		return nil, fmt.Errorf("%w: POST %s answered more than %d bytes", ErrBodyTooLarge, path, maxRawBody)
 	}
 	return out, nil
 }

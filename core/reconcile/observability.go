@@ -64,8 +64,9 @@ type StoredLogLine struct {
 }
 
 // LogPage is one page of stored lines, newest first. Next is the cursor
-// for the next, older page, empty when there's none. Truncated says a
-// line was cut or a cap was reached.
+// for the next, older page, empty when there's none: a page can be short,
+// even empty, with Next set, so only an empty Next ends a search.
+// Truncated says a line was cut or a cap was reached.
 type LogPage struct {
 	Lines     []StoredLogLine `json:"lines"`
 	Next      string          `json:"next,omitempty"`

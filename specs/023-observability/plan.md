@@ -609,6 +609,73 @@ the decisions above:
     sends requests through the client's own credentials, including a
     bearer token. `HTTPClient()` alone doesn't add the token (RP-057).
 
+## Findings from T006 (2026-11-14): the client and the provider
+
+The adapters' OpenAPI at v1.3.1 and the community modules' adapter code
+were read through the `oss-researcher`. Tested on an `httptest` fake
+only; the first live queries are T012's.
+
+1. **The scope is resolved from the live objects.** The provider repeats
+   the application provider's name derivation (`cmp-`, `env-` and the
+   Component's `spec.owner.projectName`) and reads each object's
+   `metadata.uid`. `kubernetes.ObjectMeta` gained `UID`. Resolved UIDs
+   are cached for a minute, and missing objects for 5 s, so a 20-target
+   search doesn't cost 60 GETs every time.
+   - **A target must hang together:** the Deployment runs the Component
+     and is owned by the Environment, or the search is refused. A target
+     given twice is read once.
+   - **Returned lines are checked** against all three UIDs (component,
+     environment and project).
+   - **A target whose objects are gone is skipped,** never widened. For
+     metrics it's reported unavailable.
+   - **A re-created object hides its predecessor's logs** (RP-059).
+2. **The two scopes are told apart by `workflowRunName`.** The schema's
+   `oneOf` has no discriminator; the adapter treats a request as a build
+   run's when that field is set. A build's scope sends the OpenChoreo
+   namespace (`serendip-builds`); the adapter adds `workflows-` itself.
+   A build-run line carries only its time and text, so `Instance` is
+   empty. Argo's own lines are dropped, as the build provider does.
+3. **Paging** (decision 5's cursor, RP-058):
+   - the adapters accept at most 1000 lines (not enforced by the
+     OpenObserve adapter, so enforced here), sort with no tiebreak, and
+     keep microseconds;
+   - whether the end bound is inclusive isn't known, so the query asks
+     for a microsecond more and drops anything newer;
+   - each round asks every target for the rest of the page, plus the
+     lines the cursor skips, plus one. A target that answered in full
+     isn't trusted below its oldest line, so the next round starts
+     there (at most 4 rounds a page). A target that answered less has
+     sent everything and isn't asked again. Ties keep the targets' order;
+   - a page can be short, even empty, with `Next` set (noted on
+     `LogPage`), so only an empty `Next` ends a search;
+   - lines are cut to 16 KiB as they're read. An answer over the
+     client's 8 MiB cap is asked again for half as many lines
+     (`kubernetes.ErrBodyTooLarge`);
+   - a future `To` is clamped to now. One failing target fails the page,
+     and stops the others' queries.
+4. **Metrics units:** the adapter answers cores and bytes; the provider
+   gives millicores and MiB. Requests and limits are series too; the
+   latest point is used. Step is whole minutes (at least the 1-minute
+   scrape), so a range has at most 300 points. `http` is never queried.
+5. **Disk use (decision 8 as amended by T002):** each store's `/metrics`,
+   through the Service proxy, with no credentials:
+   - OpenObserve's `storage_compressed_bytes`, summed over streams. The
+     logs module ships `ZO_PROMETHEUS_ENABLED=false`, so the installer
+     now sets it `true` (a fingerprint change);
+   - Prometheus' `prometheus_tsdb_storage_blocks_bytes` plus
+     `prometheus_tsdb_wal_storage_size_bytes`.
+
+   A metric that's missing is an error, not zero. Read at most once per
+   30 s, and a failed read is kept for the same 30 s. **Not verified live:** that OpenObserve's `/metrics` needs no
+   credentials, and that the sum matches a `du` of the volumes. T012
+   checks both. If it does need credentials, the fallback is the
+   streams API with the admin Secret.
+
+6. **Reviews:** `go-reviewer`'s findings are fixed, except one left as
+   is: scopes are resolved one target after another, since they're cached
+   and a first search's GETs (at most 60) stay on the local API server.
+   `contract-guardian` passed.
+
 ## Interfaces and types (sketch; settled in T002)
 
 - **`core/provider`:** `Requirements.Disk *DiskRequirements{GrowthMiBPerDay,

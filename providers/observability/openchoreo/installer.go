@@ -101,6 +101,11 @@ type Installer struct {
 	repairs     int
 	// probe is the pod the metrics check last used (probePod).
 	probe *probePod
+	// usage is the last disk use read, and usageErr the last read's
+	// error, at usageErrAt (usage.go).
+	usage      reconcile.DiskUsage
+	usageErr   error
+	usageErrAt time.Time
 }
 
 var _ reconcile.PackageInstaller = (*Installer)(nil)

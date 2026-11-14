@@ -78,6 +78,8 @@ purpose), **Closed** (fixed).
 | RP-055 | OpenObserve's log search slows as stored logs grow (0.24 s to 0.53 s mean, 3.1 s worst, in 2.5 h) | Performance | Accepted | Spec 023 T003 |
 | RP-056 | Serendip's plain Prometheus must keep matching what the metrics module's adapter queries | Operability, correctness | Accepted | Spec 023 T003 |
 | RP-057 | ThunderID's Service-proxy calls drop a kubeconfig's bearer token | Correctness (latent) | Watch | Spec 023 T005 |
+| RP-058 | Stored-log pages rely on the store returning tied timestamps in a stable order; a tie group over 1,000 lines is cut | Correctness | Accepted | Spec 023 T006 |
+| RP-059 | Stored logs are scoped by OpenChoreo object UIDs, so a re-created platform object hides its predecessor's logs | Correctness | Accepted | Spec 023 T006 |
 
 ---
 
@@ -1344,3 +1346,48 @@ purpose), **Closed** (fixed).
   cluster, a service-account kubeconfig), or the next time ThunderID's
   provider is touched. The fix is to move those calls onto the client's
   own request path.
+
+## RP-058 — Stored-log pages and tied timestamps
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006.
+- **What:** stored-log searches page by time
+  (`providers/observability/openchoreo/provider.go`, `search`). The cursor
+  holds a time and how many lines at that time were already returned.
+  The logs adapter sorts by timestamp with no tiebreak, and the stores
+  keep microseconds.
+  - **Lines that share a microsecond** are counted in the order the store
+    returns them. If the store returns tied lines in a different order
+    on the next query, a page boundary inside the tie can repeat one line
+    and skip another.
+  - **A tie group larger than one answer (1,000 lines)** is passed on as
+    far as it fits, then skipped, and the page says `truncated`.
+- **Why accepted:** a page boundary has to fall inside a tie for either
+  to matter, and a thousand lines in one microsecond from one Deployment
+  doesn't happen with ordinary logging. Lines from different targets are
+  never confused: ties keep the targets' order.
+- **Mitigation:** a source that answered in full is never trusted below
+  its oldest line; the next round starts there. Tests cover ties across
+  targets and page sizes from 1 up, with the end bound inclusive and
+  exclusive.
+- **Revisit:** if the adapter gains a tiebreak or a cursor of its own
+  (T001 found none), use it.
+
+## RP-059 — A re-created platform object hides its predecessor's logs
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006.
+- **What:** the adapters scope by the UIDs of the OpenChoreo Component,
+  Project and Environment (spike finding 5). Serendip resolves them from
+  the live objects (`scope.go`). If one is deleted and re-created under
+  the same name, by hand or by a reconciler repairing it, it gets a new
+  UID, and lines stored under the old one aren't found any more. They
+  age out with retention (3 days).
+  - **For up to a minute after a re-creation,** resolved UIDs are
+    cached, so searches still use the old UID and miss the new object's
+    lines. That's narrower, never wider.
+- **Why accepted:** Serendip never re-creates these objects in normal
+  use, and widening the scope to find them would break the rule that a
+  query never reads beyond its targets.
+- **Revisit:** if a repair path that re-creates the objects is added.
+
