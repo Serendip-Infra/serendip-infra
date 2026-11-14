@@ -13,6 +13,85 @@ Last updated: 2026-10-18
 
 ## Current phase
 
+**Spec 017 (Authorization, Azure-RBAC style) — COMPLETE** (T001-T012,
+2026-10-18). Model and enforcement: `docs/architecture/authorization.md`,
+ADR 0014. Evidence: `specs/017-authorization/verification.md`. Next is
+spec 018 (WSO2 Agent Manager POC), which must also settle the identity
+provider management channel (the note below).
+(Resolved: the user allowed removing role assignments in the console,
+since RBAC guards it; it's the one written exception to "no delete".) Plan, decisions and
+accepted risks: `specs/017-authorization/plan.md`; task status:
+`tasks.md`. Committed so far:
+- `0d82624` T001 spike: ThunderID subjects and groups.
+- `43fb525` T002 role definition and assignment resources, scope ancestry.
+- `cf5aeaf` T003 `core/policy`: built-in roles, evaluation (~4 µs per
+  decision), delegation, last-Owner guard, `LockAssignments`.
+- `a0ba669` T004 subject and groups on the principal, audit
+  `actor_subject`, known-principals registry, ThunderID `groups` token
+  attribute (`UpdateClient`, operator tool now optional `--public-url`).
+- `7d96f00` T005 enforcement on every `/v1` route: route table +
+  authorizing mux (panics on an unmapped route), list/graph filtering,
+  403 shape, `policy_decision` and denied-mutation audit, API keys that
+  never had an assignment become Owner at `/`.
+  - Reviews caught and we fixed: an unreadable-body bypass, cascade
+    deletes and owner removal escaping checks, revoked keys regranted.
+- `0272efd` T006 `/v1/authorization`: role definitions (custom create
+  and delete), role assignments (list with inherited, create, delete),
+  `permissions?scope=`, `principals` (gated on assigning somewhere).
+  Reviews closed a delegation escalation (decision 10's "no minting wider
+  administrators") and client-chosen IDs.
+- `9053421` T007 bootstrap administrator (Owner + Secrets Officer at
+  `/`, per role, only if never held; `thunderid.AdminSubject`),
+  removed-key cleanup (keeps the last Owner), `serendipd break-glass
+  grant-owner`. Decision 7's bootstrap condition was amended (plan.md).
+- `40e245a` T008 console: `/access?scope=` page (assignments with
+  inherited labelled, add assignment, Check access), permission-aware
+  controls via `Guarded`; then "Access control (IAM)" laid out like
+  Azure's blade, with confirmed removal of assignments made at the scope.
+- `39b14e4` T009: the first benchmark failed the list target (+8.8 ms);
+  fixed with an ownership cache in `core/policy`. Now +74 µs p99 per
+  request and +0.72 ms per 100-item list (Linux), +0.7 MiB idle.
+  p99 is measured via a `GOOS=linux` test binary run in WSL Ubuntu
+  (no Go install needed there).
+- `5f86a2e`, `8fe7120` T010 on kind `serendip-t017` (simulated T470):
+  every AC observed or explicitly test-only, in
+  `specs/017-authorization/verification.md`; T009's T470 run: serendipd
+  36.3 MiB idle, PASS. Three console polish fixes from the real browser.
+- `1e42bc6` T011 final reviews. `/security-review` found a HIGH issue:
+  Secret path aliasing across scopes. It's fixed with per-Secret value
+  storage (Secret ID + path), path validation, immutable paths,
+  server-chosen Secret IDs, and plain-token IDs for every kind.
+  **Upgrade note:** Secret values written before this must be written
+  again. Also: T470 latency measured (PASS), the last-Owner refusal
+  audited, and 5xx responses no longer carry internal error text.
+- Then T008 console Access control, T009 benchmarks, T010 real cluster,
+  T011 reviews, T012 docs/ADR 0014. After 017: spec 018 (WSO2 Agent
+  Manager POC, beside Serendip, may reuse our ThunderID/OpenChoreo on a
+  throwaway cluster), then 019 approvals (draft in `specs/019-approvals/`,
+  uncommitted, on hold).
+- **Added to spec 018's scope (user, 2026-10-18): live identity-provider
+  lookups.** Today `serendipd` can't call ThunderID's management API
+  (the Service proxy strips `Authorization`), so Check access shows a
+  person's groups as of their last sign-in, the principal picker only
+  knows people who have signed in, and console URIs on an existing
+  install need the operator tool (spec 016's option B). 018 decides how
+  `serendipd` reaches the management API, since the Agent Manager POC
+  needs it too:
+  - option A: an in-process port-forward tunnel;
+  - a small in-cluster helper holding the admin credential;
+  - a cluster-internal route;
+  - Azure's pattern: act as the signed-in person. `serendipd` calls the
+    management API with a token issued to that admin for the management
+    scope, rather than holding a standing admin credential (as the Azure
+    portal calls Microsoft Graph as you).
+  It weighs privilege, code size and dependencies (rule 4 / ADR). It
+  should be settled once as the channel for every later
+  identity-provider feature (agent identities, Serendip-managed groups,
+  automatic console URIs, credential cleanup), so none of them stays
+  manual. Only ThunderID's management API has this problem: OpenBao's
+  header passes the proxy, and the rest is driven through the
+  Kubernetes API.
+
 **Spec 001 (Foundation) merged to Serendip-Infra/serendip-infra:main via
 PR #24.** Specs 002-016 are committed locally only — decided explicitly
 with the user to keep working locally and push everything together at
@@ -785,7 +864,7 @@ top of spec 008's foundation, 9 tasks, all complete and committed
   auth method / workload-identity integration, `Application`/
   `Component` secret injection (needs OpenChoreo, doesn't exist yet),
   UI/CLI/MCP surfaces, a policy engine gating secret access
-  (`core/policy` doesn't exist yet), and auditing value reads (needs a
+  (since done: spec 017's `serendip/secrets/value/*` data actions), and auditing value reads (needs a
   `core/audit` extension nothing in this codebase has today).
 
 ## Spec 006 — what actually got built
@@ -1078,9 +1157,7 @@ T010. Still satisfies "Go 1.22+" as a floor (ADR 0003 addendum).
      client (UI, MCP) may offer delete until this exists.
    - **An audit read API.** Audit rows are written, but no API returns
      them, so the console can't show activity.
-   - **RBAC / policy** (`core/policy`). Today every identity-provider
-     account is effectively an admin. The user accepted shipping the
-     console without it.
+   - **RBAC / policy** (`core/policy`): done in spec 017 (ADR 0014).
 2. **HTTPS:** cert-manager (already installed) issuing certificates for an
    HTTPS listener on the existing gateway. It needs a decision on where
    trusted names come from on an edge-1 laptop with no public DNS. It's

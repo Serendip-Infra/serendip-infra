@@ -37,6 +37,12 @@ const (
 	AdminSecretName = "serendip-identity-admin"
 	AdminSecretKey  = "password"
 
+	// AdminSubject is the bootstrap administrator's subject ("sub") in
+	// access tokens: the fixed user ID in the shipped bootstrap resources,
+	// the same on every install (specs/017-authorization T001 finding 1).
+	// serendipd makes it Owner at "/" on first start.
+	AdminSubject = "01900000-0000-7000-8000-000000000030"
+
 	// The default organization unit and authentication flow the shipped
 	// bootstrap resources create (01-default-resources.yaml, 1.0.1).
 	defaultOUID       = "01900000-0000-7000-8000-000000000001"
@@ -52,9 +58,11 @@ const (
 	bootstrapFile = "70-serendip-client.yaml"
 )
 
-// tokenAttributes are the user attributes copied into tokens:
-// "username" becomes the audit actor (decision 8).
-var tokenAttributes = []string{"username", "email", "name"}
+// tokenAttributes are the user attributes copied into access tokens:
+// "username" becomes the audit actor (decision 8); "groups" lists the
+// person's group names for authorization (spec 017 plan.md decision 9).
+// UpdateClient adds any of them missing on an existing install.
+var tokenAttributes = []string{"username", "email", "name", "groups"}
 
 // ConsoleRedirects are the web console's login callback and post-logout
 // page (specs/016-ui-mvp plan.md decision 7). Empty fields are left out.

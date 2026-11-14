@@ -41,6 +41,9 @@ type Graph interface {
 	// backward from ref across all edge types (owns, runs-on, depends-on,
 	// provided-by) -- what would be affected if ref became unavailable.
 	BlastRadius(ctx context.Context, ref ResourceRef) ([]ResourceRef, error)
+	// Ancestors returns ref's owners transitively, nearest first -- the
+	// chain authorization scopes inherit through.
+	Ancestors(ctx context.Context, ref ResourceRef) ([]ResourceRef, error)
 }
 
 // SQLiteGraph is the default Graph implementation, backed by the edges
@@ -65,4 +68,18 @@ func (g *SQLiteGraph) Dependents(ctx context.Context, ref ResourceRef) ([]Resour
 
 func (g *SQLiteGraph) BlastRadius(ctx context.Context, ref ResourceRef) ([]ResourceRef, error) {
 	return BlastRadius(ctx, g.db, ref)
+}
+
+func (g *SQLiteGraph) Ancestors(ctx context.Context, ref ResourceRef) ([]ResourceRef, error) {
+	return Ancestors(ctx, g.db, ref)
+}
+
+// Owners returns ref's direct owners.
+func (g *SQLiteGraph) Owners(ctx context.Context, ref ResourceRef) ([]ResourceRef, error) {
+	return Owners(ctx, g.db, ref)
+}
+
+// Descendants returns everything ref owns, at any depth.
+func (g *SQLiteGraph) Descendants(ctx context.Context, ref ResourceRef) ([]ResourceRef, error) {
+	return Descendants(ctx, g.db, ref)
 }

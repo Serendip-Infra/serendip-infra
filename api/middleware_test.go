@@ -8,15 +8,33 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/serendip-infra/serendip-infra/api"
 	"github.com/serendip-infra/serendip-infra/core/audit"
+	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/identity"
+	"github.com/serendip-infra/serendip-infra/core/policy"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
 )
+
+// grant assigns role to a principal at scope, straight into db. Call it
+// before api.NewServer, whose policy index loads on first use.
+func grant(t testing.TB, db *sql.DB, pt resource.PrincipalType, id, role string, scope resource.Scope) string {
+	t.Helper()
+	s := sqlite.NewStore[resource.RoleAssignmentSpec, resource.RoleAssignmentStatus](db, resource.KindRoleAssignment)
+	created, err := s.Create(context.Background(), resource.RoleAssignment{
+		Metadata: resource.Metadata{Name: "test-grant"},
+		Spec:     resource.RoleAssignmentSpec{Principal: resource.PrincipalRef{Type: pt, ID: id}, RoleDefinitionID: role, Scope: scope},
+	})
+	if err != nil {
+		t.Fatalf("grant %s %s: %v", pt, id, err)
+	}
+	return created.Metadata.ID
+}
 
 func newTestDB(t testing.TB) *sql.DB {
 	t.Helper()
@@ -95,11 +113,11 @@ func TestRequestIDFromContext_EmptyWhenNotSet(t *testing.T) {
 type fakeAuthn struct {
 	tokens   map[string]identity.Principal
 	notReady bool
-	calls    int
+	calls    atomic.Int32
 }
 
 func (f *fakeAuthn) Authenticate(_ context.Context, token string) (identity.Principal, error) {
-	f.calls++
+	f.calls.Add(1)
 	if f.notReady {
 		return identity.Principal{}, reconcile.ErrProviderNotReady
 	}
@@ -177,9 +195,66 @@ func TestAuthMiddleware(t *testing.T) {
 					t.Errorf("problem body leaks the verifier's reason: %s", w.Body.String())
 				}
 			}
-			if tt.wantAuthn >= 0 && tt.authn != nil && tt.authn.calls != tt.wantAuthn {
-				t.Errorf("Authenticate calls = %d, want %d", tt.authn.calls, tt.wantAuthn)
+			if tt.wantAuthn >= 0 && tt.authn != nil && int(tt.authn.calls.Load()) != tt.wantAuthn {
+				t.Errorf("Authenticate calls = %d, want %d", tt.authn.calls.Load(), tt.wantAuthn)
 			}
 		})
+	}
+}
+
+// TestAuth_RecordsSubjectAndPrincipals: a person's mutation carries their
+// subject into the audit row; an API key's carries none. Both callers, and
+// the person's groups, land in the known-principals registry
+// (specs/017-authorization T004).
+func TestAuth_RecordsSubjectAndPrincipals(t *testing.T) {
+	db := newTestDB(t)
+	authn := &fakeAuthn{tokens: map[string]identity.Principal{
+		"tok-carol": {Subject: "sub-carol", Name: "carol", Groups: []string{"platform"}},
+	}}
+	grant(t, db, resource.PrincipalPerson, "sub-carol", policy.OwnerRoleID, resource.RootScope)
+	h := api.NewServer(db, event.NewInProcessBus(), map[string]string{"key-ci": "ci"}, authn, nil, nil, nil).Handler
+	create := func(token, name string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/organizations", strings.NewReader(`{"metadata":{"name":"`+name+`"},"spec":{}}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	create("tok-carol", "by-carol")
+	create("key-ci", "by-ci")
+
+	rows, err := db.Query(`SELECT actor, COALESCE(actor_subject, '') FROM audit_log WHERE kind = 'Organization' ORDER BY at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := map[string]string{}
+	for rows.Next() {
+		var actor, subject string
+		if err := rows.Scan(&actor, &subject); err != nil {
+			t.Fatal(err)
+		}
+		got[actor] = subject
+	}
+	if got["person:carol"] != "sub-carol" || got["ci"] != "" || len(got) != 2 {
+		t.Errorf("audit actor -> subject = %v", got)
+	}
+
+	known, err := sqlite.NewPrincipalRegistry(db).List(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, p := range known {
+		seen[string(p.Type)+"/"+p.ID] = true
+	}
+	for _, want := range []string{"person/sub-carol", "group/platform", "apiKey/ci"} {
+		if !seen[want] {
+			t.Errorf("registry lacks %s: %+v", want, known)
+		}
 	}
 }
