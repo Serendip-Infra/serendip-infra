@@ -39,8 +39,9 @@ type Effect string
 const (
 	Allow Effect = "allow"
 	Deny  Effect = "deny"
-	// NeedsApproval is reserved for the approvals spec (019); nothing in
-	// this spec returns it.
+	// NeedsApproval means a role allows the action, but it may only happen
+	// through an approval. Today only an agent's delete gets it (spec 018);
+	// spec 019 adds approvals themselves.
 	NeedsApproval Effect = "needsApproval"
 )
 
@@ -53,10 +54,14 @@ type Evidence struct {
 	Scope            resource.Scope
 }
 
-// Decision is the answer to "may this principal do this here?".
+// Decision is the answer to "may this principal do this here?". Evidence
+// names the allowing assignment for Allow, and for NeedsApproval the one
+// that would have allowed it. Reason, when set, says why a role's answer
+// was overridden.
 type Decision struct {
 	Effect   Effect
 	Evidence *Evidence
+	Reason   string
 }
 
 // String renders the decision for the audit log: "allow: Owner (<id>) at
@@ -64,14 +69,25 @@ type Decision struct {
 func (d Decision) String() string { return d.describe("", resource.RootScope) }
 
 func (d Decision) describe(action string, target resource.Scope) string {
-	if d.Effect == Allow && d.Evidence != nil {
+	switch {
+	case d.Effect == Allow && d.Evidence != nil:
 		return fmt.Sprintf("allow: %s (%s) at %s", d.Evidence.RoleName, d.Evidence.AssignmentID, d.Evidence.Scope)
-	}
-	if action == "" {
+	case d.Effect == NeedsApproval && d.Evidence != nil:
+		return fmt.Sprintf("needsApproval: %s at %s, allowed by %s (%s) at %s: %s",
+			action, target, d.Evidence.RoleName, d.Evidence.AssignmentID, d.Evidence.Scope, d.Reason)
+	case action == "":
 		return string(d.Effect)
+	case d.Reason != "":
+		return fmt.Sprintf("%s: %s at %s: %s", d.Effect, action, target, d.Reason)
 	}
 	return fmt.Sprintf("%s: missing %s at %s", d.Effect, action, target)
 }
+
+// Reasons recorded with the agent guardrails' decisions.
+const (
+	reasonAgentManagesAccess = "an agent can't change role assignments or role definitions"
+	reasonAgentDelete        = "an agent's delete needs an approval"
+)
 
 // Describe renders the decision with the action and target, for audit rows
 // and 403 responses.
@@ -114,6 +130,9 @@ type Engine struct {
 	mu        sync.RWMutex
 	byID      map[string]resource.RoleAssignment
 	customDef map[string]resource.RoleDefinition
+	// sponsors maps each agent to the sponsor of its assignment with the
+	// lowest ID; CheckAssign keeps them all the same (spec 018).
+	sponsors map[string]resource.PrincipalRef
 
 	// mutateMu serialises "check, then write" for role assignments, so two
 	// concurrent removals of different root Owners can't both pass the
@@ -207,15 +226,24 @@ func (e *Engine) refresh(ctx context.Context) error {
 		return fmt.Errorf("policy: load role definitions: %w", err)
 	}
 	byID := make(map[string]resource.RoleAssignment, len(as))
+	sponsors := map[string]resource.PrincipalRef{}
+	sponsorFrom := map[string]string{} // agent -> assignment ID it came from
 	for _, a := range as {
 		byID[a.Metadata.ID] = a
+		p := a.Spec.Principal
+		if p.Type != resource.PrincipalAgent || p.Sponsor == nil {
+			continue
+		}
+		if from, seen := sponsorFrom[p.ID]; !seen || a.Metadata.ID < from {
+			sponsors[p.ID], sponsorFrom[p.ID] = *p.Sponsor, a.Metadata.ID
+		}
 	}
 	defs := make(map[string]resource.RoleDefinition, len(ds))
 	for _, d := range ds {
 		defs[d.Metadata.ID] = d
 	}
 	e.mu.Lock()
-	e.byID, e.customDef = byID, defs
+	e.byID, e.customDef, e.sponsors = byID, defs, sponsors
 	e.mu.Unlock()
 	return nil
 }
@@ -331,8 +359,13 @@ func (e *Engine) applicable(ctx context.Context, p Principal, target resource.Sc
 
 // Decide answers whether p may perform a on target. It is Azure's
 // evaluation: allowed when any applicable role's permission block grants
-// the action; the evidence is the nearest such assignment.
+// the action; the evidence is the nearest such assignment. An agent then
+// meets the guardrails: access-management actions are denied whatever its
+// roles say, and a delete its roles allow needs an approval.
 func (e *Engine) Decide(ctx context.Context, p Principal, a Action, target resource.Scope) (Decision, error) {
+	if p.Type == resource.PrincipalAgent && managesAccess(a) {
+		return Decision{Effect: Deny, Reason: reasonAgentManagesAccess}, nil
+	}
 	cands, err := e.applicable(ctx, p, target)
 	if err != nil {
 		return Decision{Effect: Deny}, err
@@ -340,9 +373,13 @@ func (e *Engine) Decide(ctx context.Context, p Principal, a Action, target resou
 	for _, c := range cands {
 		for _, perm := range c.role.Permissions {
 			if grants(perm, a) {
-				return Decision{Effect: Allow, Evidence: &Evidence{
+				ev := &Evidence{
 					AssignmentID: c.id, RoleDefinitionID: c.spec.RoleDefinitionID, RoleName: c.role.RoleName, Scope: c.spec.Scope,
-				}}, nil
+				}
+				if p.Type == resource.PrincipalAgent && isDelete(a) {
+					return Decision{Effect: NeedsApproval, Evidence: ev, Reason: reasonAgentDelete}, nil
+				}
+				return Decision{Effect: Allow, Evidence: ev}, nil
 			}
 		}
 	}
@@ -359,7 +396,15 @@ func (e *Engine) EffectivePermissions(ctx context.Context, p Principal, target r
 	}
 	var out []resource.Permission
 	for _, c := range cands {
-		out = append(out, c.role.Permissions...)
+		for _, perm := range c.role.Permissions {
+			if p.Type == resource.PrincipalAgent {
+				// What Decide will answer: an agent never manages access.
+				// (Its deletes still need an approval, which the refusal's
+				// problem type tells a client.)
+				perm.NotActions = append(slices.Clone(perm.NotActions), accessManagementActions...)
+			}
+			out = append(out, perm)
+		}
 	}
 	return out, nil
 }
@@ -374,8 +419,8 @@ func Allows(perms []resource.Permission, a Action) bool {
 	return false
 }
 
-// CheckAssign decides whether caller may create assignment spec (plan.md
-// decision 10). The caller needs roleAssignments/write at the assignment's
+// CheckAssign decides whether caller may create assignment spec
+// (specs/017-authorization plan.md decision 10). The caller needs roleAssignments/write at the assignment's
 // scope. If every assignment granting that carries a delegation, the role
 // and principal type must be on one of those delegations' allow-lists, and
 // the caller may not assign to themselves. The role must exist and, for a
@@ -393,7 +438,12 @@ func (e *Engine) CheckAssign(ctx context.Context, caller Principal, spec resourc
 			return err
 		}
 	}
-	return e.checkDelegated(ctx, caller, Action{Name: ActionRoleAssignmentsWrite}, spec, &role)
+	// Authority first: a caller who may not make this assignment learns
+	// nothing about the agent it names.
+	if err := e.checkDelegated(ctx, caller, Action{Name: ActionRoleAssignmentsWrite}, spec, &role); err != nil {
+		return err
+	}
+	return e.checkAgentAssignment(ctx, spec, role)
 }
 
 // CheckUnassign decides whether caller may delete the assignment with id:
@@ -435,6 +485,9 @@ func isSelf(p resource.PrincipalRef, caller Principal) bool {
 // checkDelegated checks caller's right to perform a on spec. newRole is the
 // role being granted when creating an assignment, nil when removing one.
 func (e *Engine) checkDelegated(ctx context.Context, caller Principal, a Action, spec resource.RoleAssignmentSpec, newRole *resource.RoleDefinitionSpec) error {
+	if caller.Type == resource.PrincipalAgent {
+		return fmt.Errorf("%w: %s", ErrForbidden, reasonAgentManagesAccess)
+	}
 	creating := newRole != nil
 	// A role that can itself assign roles, granted through a delegation,
 	// must carry a delegation no wider than the granter's own. Otherwise a
@@ -546,6 +599,9 @@ func (e *Engine) RoleInUse(ctx context.Context, roleID string) (bool, error) {
 // GrantedAnywhere reports whether some assignment that applies to p, at any
 // scope, grants a: whether p can do it somewhere, such as assign roles.
 func (e *Engine) GrantedAnywhere(ctx context.Context, p Principal, a Action) (bool, error) {
+	if p.Type == resource.PrincipalAgent && managesAccess(a) {
+		return false, nil
+	}
 	if err := e.refresh(ctx); err != nil {
 		return false, err
 	}
@@ -568,6 +624,20 @@ func (e *Engine) GrantedAnywhere(ctx context.Context, p Principal, a Action) (bo
 		}
 	}
 	return false, nil
+}
+
+// SponsorOf returns the person accountable for agentID: the sponsor its
+// role assignments name (every one names the same sponsor, CheckAssign;
+// were they ever to differ, the lowest assignment ID's wins). ok is false
+// when the agent has no assignment.
+func (e *Engine) SponsorOf(ctx context.Context, agentID string) (sponsor resource.PrincipalRef, ok bool, err error) {
+	if err := e.refresh(ctx); err != nil {
+		return resource.PrincipalRef{}, false, err
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	sponsor, ok = e.sponsors[agentID]
+	return sponsor, ok, nil
 }
 
 // HasAssignment reports whether any assignment names p as its principal.

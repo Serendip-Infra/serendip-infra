@@ -133,6 +133,9 @@ func routeTable() map[string]rule {
 		"DELETE /v1/authorization/roleAssignments/{id}": {action: authzAction("roleAssignments", "delete"), target: targetAssignment, kind: resource.KindRoleAssignment},
 		"GET /v1/authorization/permissions":             {authOnly: true},
 		"GET /v1/authorization/principals":              {authOnly: true},
+		// Directory data, gated in the handler like the list above.
+		"GET /v1/authorization/principals/person/{id}/groups": {authOnly: true},
+		"GET /v1/authorization/directory":                     {authOnly: true},
 
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
@@ -517,7 +520,15 @@ func (a *authorizer) deny(w http.ResponseWriter, r *http.Request, ru rule, c che
 			log.Printf("api: audit a refused %s %s (request %s): %v", r.Method, r.URL.Path, reqID, err)
 		}
 	}
-	WriteProblem(w, http.StatusForbidden, "forbidden", fmt.Sprintf("missing %s at %s", act.Name, target), reqID)
+	switch {
+	case d.Effect == policy.NeedsApproval:
+		writeProblemType(w, ProblemNeedsApproval, http.StatusForbidden, "approval required",
+			fmt.Sprintf("%s at %s needs an approval (%s); approvals aren't available yet, so nothing was changed", act.Name, target, d.Reason), reqID)
+	case d.Reason != "":
+		WriteProblem(w, http.StatusForbidden, "forbidden", fmt.Sprintf("%s at %s: %s", act.Name, target, d.Reason), reqID)
+	default:
+		WriteProblem(w, http.StatusForbidden, "forbidden", fmt.Sprintf("missing %s at %s", act.Name, target), reqID)
+	}
 }
 
 func (a *authorizer) fail(w http.ResponseWriter, r *http.Request, err error) {

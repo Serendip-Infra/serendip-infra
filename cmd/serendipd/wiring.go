@@ -38,6 +38,7 @@ type kubeWiring struct {
 	secretReconciler *reconcile.SecretReconciler
 	authn            *lazyAuthenticator
 	login            *lazyLogin
+	directory        *lazyDirectory
 	plan             setupPlan
 	// adminSubject is the identity provider's bootstrap administrator,
 	// made Owner at "/" on first start (spec 017).
@@ -66,7 +67,7 @@ type consoleURIs struct {
 // -- instead of stopping it. The Lookup + type-assert pattern from earlier
 // specs is gone: each setup step hands its concrete provider to the
 // matching lazy handle directly, and registers it for completeness.
-func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.DB, bus event.Bus, engine *reconcile.Engine, console consoleURIs) (*kubeWiring, error) {
+func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.DB, bus event.Bus, engine *reconcile.Engine, console consoleURIs, isAgentIssuer func(string) bool) (*kubeWiring, error) {
 	if kubeconfigPath == "" {
 		log.Print("serendipd: SERENDIP_KUBECONFIG not set, no Kubernetes-facing providers active")
 		return nil, nil
@@ -115,6 +116,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	credentialsPath := envOr("SERENDIP_OPENBAO_CREDENTIALS_PATH", defaultOpenBaoCredentialsPath)
 
 	storage, secrets, platform, authn := &lazyStorage{}, &lazySecrets{}, &lazyPlatform{}, &lazyAuthenticator{}
+	directory := &lazyDirectory{}
 	login := &lazyLogin{}
 	// verifier is the identity setup's token verifier, shared with the
 	// console's relying party (one key cache).
@@ -206,6 +208,11 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 			if err != nil {
 				return err
 			}
+			// A human issuer that is also an agent issuer would let people's
+			// tokens be routed as agents, or the reverse.
+			if isAgentIssuer != nil && isAgentIssuer(issuer) {
+				return fmt.Errorf("identity issuer %s is also listed in SERENDIP_AGENT_ISSUERS; an issuer is for people or for agents, not both", issuer)
+			}
 			if err := identityDeployer.Ensure(ctx, issuer); err != nil {
 				return fmt.Errorf("deploy: %w", err)
 			}
@@ -233,6 +240,21 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 			authn.set(v)
 			verifier.Store(v)
 			ensureConsoleLogin(ctx, issuer)
+			// The directory is optional: if a read fails, lookups fall back to
+			// principals seen at sign-in, and later calls retry. One read in
+			// the background reports whether it works, without holding up
+			// setup.
+			dir := thunderid.NewDirectory(client, issuer)
+			directory.set(dir)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+				defer cancel()
+				if groups, err := dir.Groups(ctx, ""); err != nil {
+					log.Printf("serendipd: identity directory not reachable yet (lookups fall back to signed-in principals): %v", err)
+				} else {
+					log.Printf("serendipd: identity directory reachable through the API server's port-forward (%d groups)", len(groups.Items))
+				}
+			}()
 			log.Printf("serendipd: kubernetes: identity provider (thunderid) active, issuer %s, client %q; admin user %q, password in Secret %s/%s",
 				issuer, thunderid.ClientID, thunderid.AdminUsername, thunderid.Namespace, thunderid.AdminSecretName)
 			return nil
@@ -262,7 +284,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 		},
 		reensureEvery: reensureEvery,
 	}
-	return &kubeWiring{secretReconciler: secretReconciler, authn: authn, login: login, plan: plan, adminSubject: thunderid.AdminSubject}, nil
+	return &kubeWiring{secretReconciler: secretReconciler, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject}, nil
 }
 
 // ensureGatewayReady ensures the shared gateway and treats "not programmed

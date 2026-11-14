@@ -65,11 +65,15 @@ import (
 // rule in api/authz.go's route table, and decides each request against the
 // role assignments. Each API key with no assignment yet is made Owner at
 // "/", so existing keys keep their full access (plan.md decision 7).
-func NewServer(db *sql.DB, bus event.Bus, apiKeys map[string]string, authn identity.Authenticator, secretReconciler *reconcile.SecretReconciler, providers *provider.Registry, console *Console) *http.Server {
+func NewServer(db *sql.DB, bus event.Bus, apiKeys map[string]string, authn identity.Authenticator, secretReconciler *reconcile.SecretReconciler, providers *provider.Registry, console *Console, opts ...ServerOption) *http.Server {
+	var o serverOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	engine, stopPolicy := newPolicyEngine(db, bus)
 	migrateAPIKeys(engine, db, bus, apiKeys)
 	apiMux := &authzMux{mux: http.NewServeMux(), a: newAuthorizer(engine, graph.NewSQLiteGraph(db), recordDeniedIn(db))}
-	registerAPI(apiMux, db, bus, engine, secretReconciler, providers, console)
+	registerAPI(apiMux, db, bus, engine, secretReconciler, providers, console, o)
 
 	topMux := http.NewServeMux()
 	topMux.HandleFunc("GET /healthz", healthzHandler)
@@ -77,7 +81,7 @@ func NewServer(db *sql.DB, bus event.Bus, apiKeys map[string]string, authn ident
 	// go through AuthMiddleware at all -- it's mounted directly on
 	// topMux, not apiMux, so there's no bypass logic to get wrong inside
 	// a shared handler.
-	topMux.Handle("/v1/", apiHardening(authMiddleware(apiKeys, authn, console, sqlite.NewPrincipalRegistry(db))(apiMux.mux)))
+	topMux.Handle("/v1/", apiHardening(authMiddleware(apiKeys, authn, console, sqlite.NewPrincipalRegistry(db), sponsorLookup(engine))(apiMux.mux)))
 	if console != nil {
 		// The console shell, its assets and /auth/* need no credential:
 		// after the cross-site return from login the browser withholds the
@@ -200,9 +204,37 @@ func removeStaleKeyAssignments(ctx context.Context, engine *policy.Engine, assig
 	}
 }
 
+// sponsorLookup names an agent's sponsor for its audit records: the
+// sponsor's subject, or "" when the agent has none (no assignment, so no
+// access either). A failed lookup is an error: the request is refused
+// rather than audited without its sponsor.
+func sponsorLookup(engine *policy.Engine) func(ctx context.Context, agentID string) (string, error) {
+	return func(ctx context.Context, agentID string) (string, error) {
+		s, ok, err := engine.SponsorOf(ctx, agentID)
+		if err != nil || !ok {
+			return "", err
+		}
+		return s.ID, nil
+	}
+}
+
+// ServerOption sets an optional part of NewServer.
+type ServerOption func(*serverOptions)
+
+type serverOptions struct {
+	directory identity.Directory
+}
+
+// WithDirectory lets the authorization routes read the identity provider's
+// directory live (specs/018-agent-manager-poc plan.md decision 5). Without
+// it they answer from the principals seen at sign-in.
+func WithDirectory(d identity.Directory) ServerOption {
+	return func(o *serverOptions) { o.directory = d }
+}
+
 // registerAPI registers every /v1 route on mux. NewServer passes its
 // authorizing mux; the fail-closed test passes a recorder to enumerate them.
-func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, secretReconciler *reconcile.SecretReconciler, providers *provider.Registry, console *Console) {
+func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, secretReconciler *reconcile.SecretReconciler, providers *provider.Registry, console *Console, opts serverOptions) {
 	// 14 explicit instantiations, deliberately not abstracted further
 	// (specs/002-http-api/plan.md Risks: "each line is trivial and
 	// independently readable" -- a loop over a slice of type-erased
@@ -246,6 +278,7 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, s
 		assignments:  sqlite.NewStore[resource.RoleAssignmentSpec, resource.RoleAssignmentStatus](db, resource.KindRoleAssignment).SetBus(bus),
 		definitions:  sqlite.NewStore[resource.RoleDefinitionSpec, resource.RoleDefinitionStatus](db, resource.KindRoleDefinition).SetBus(bus),
 		principals:   sqlite.NewPrincipalRegistry(db),
+		directory:    opts.directory,
 		recordDenied: recordDeniedIn(db),
 		exists: func(ctx context.Context, kind resource.Kind, id string) (bool, error) {
 			return sqlite.ResourceExists(ctx, db, kind, id)
