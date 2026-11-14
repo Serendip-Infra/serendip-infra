@@ -16,8 +16,32 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T004 done (2026-11-14); next
-is T005 (the installer).**
+**Spec 023 (observability package): T001–T005 done (2026-11-14); next
+is T006 (the Observer client and the provider).**
+- **T005 (the installer):** `providers/observability/openchoreo/`
+  (`installer.go`, `values.go`, `policies.go`, `doc.go`, embedded
+  `prometheus-values.yaml`), plus `kubernetes.Client.PostRaw` and
+  `ServiceProxyPath`. Tested on fakes only; the first live install is
+  T012's.
+  - **Install order** follows ADR 0021: the plane chart, the node rule,
+    the logs module, plain Prometheus, the adapter, then the
+    ObservabilityPlane.
+  - **An unchanged resync** is 6 GETs and one metrics query, with no Helm
+    run.
+  - **Repairs** run Helm only for the release at fault. A query that
+    returns no data is reported, not repaired.
+  - **Uninstall** is idempotent and waits for the plane object, then the
+    namespace.
+  - **Records:** plan.md "Findings from T005" (10 items), VERSIONS.md
+    (the selectors the checks use), and **RP-057**: ThunderID's proxy
+    calls drop a bearer token. That's latent, since K3s and kind use
+    client certificates.
+  - **Reviews:** `go-reviewer`'s "should" findings are fixed;
+    `contract-guardian` passed.
+  - **T006 notes:** the metrics answer's point shape is still unknown.
+    The readiness check only requires `memoryUsage` to be a list with a
+    non-null point; T006 settles the shape. `Usage` asks the stores
+    (plan "Finding from T002").
 - **T004 (`1ebe9d8`):**
   - `provider.Requirements.Disk`;
   - `core/reconcile/observability.go`: the types, the caps as
@@ -77,9 +101,10 @@ is T005 (the installer).**
   - **`serendip-t018` is stopped.** Start it with `docker start
     serendip-t018-control-plane`; its node IP may change (the node rule
     handles that).
-- **Next:** T005, the installer, in ADR 0021's order, with a readiness
-  check that runs a real metrics query. The API layer (T008) validates
-  and caps queries; `core` only declares the caps.
+- **Next:** T006, the Observer client (the adapters through the
+  Service proxy, using `PostRaw`), `SearchLogs`, `BuildLogs`, `Metrics`
+  and `usage.go`, tested against an `httptest` adapter. The API layer
+  (T008) validates and caps queries; `core` only declares the caps.
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or
