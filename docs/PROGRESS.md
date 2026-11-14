@@ -21,7 +21,11 @@ is T007 (wiring in serendipd).**
 - **T006 (the client and the provider):** `providers/observability/openchoreo/`
   `observer.go` (the adapters through the Service proxy), `scope.go`,
   `provider.go` (`SearchLogs`, `BuildLogs`, `Metrics`) and `usage.go`,
-  tested against an `httptest` API server. Not run live yet (T012).
+  tested against an `httptest` API server, then **checked live on
+  `serendip-t018`** with the opt-in `live_test.go` (`OBS_LIVE_KUBECONFIG`,
+  `OBS_LIVE_DB`, `OBS_LIVE_BUILD`). That run installed, removed and
+  re-installed the package through the real installer, and confirmed
+  scopes, answer shapes, paging, units, build-run scope and disk use.
   - **Scopes** are UIDs read from the live OpenChoreo objects (names
     repeated from the application and build providers), cached for a
     minute. A target must hang together, and a gone one is skipped,
@@ -33,15 +37,23 @@ is T007 (wiring in serendipd).**
     empty.
   - **Metrics:** millicores and MiB, whole-minute steps, at most 300
     points; request metrics always "not available".
-  - **Disk use** comes from the stores' `/metrics`. The installer now sets
-    OpenObserve's `ZO_PROMETHEUS_ENABLED=true` (a fingerprint change).
-    **T012 must check** that this needs no credentials and matches a
-    `du`; the fallback is the streams API with the admin Secret.
+  - **Disk use:** OpenObserve's streams API (sizes in MiB, matched to
+    the byte) over a **port-forward** with the admin Secret, because the
+    API server's Service proxy strips `Authorization`; Prometheus'
+    `/metrics` through the proxy. OpenObserve's stats lag and leave out
+    its WAL and metadata (RP-061).
+  - **The live check found and fixed:** OpenObserve downloading GeoIP
+    databases and LLM pricing even with telemetry off (now
+    `ZO_MMDB_DISABLE_DOWNLOAD`, and `ZO_MODEL_PRICING_ENABLED` through
+    `extraEnv`); a bare 500 from an empty store (clearer error); an
+    alarming message before Prometheus' first scrape; the end bound is
+    exclusive (already covered). Fluent Bit's position file stays on
+    the node after removal (RP-060).
   - **Outside the package:** `kubernetes.ObjectMeta.UID` and
     `kubernetes.ErrBodyTooLarge`.
   - **Records:** plan.md "Findings from T006", VERSIONS.md (query shapes,
     disk-use metrics), **RP-058** (tied timestamps) and **RP-059** (a
-    re-created object hides earlier logs).
+    re-created object hides earlier logs), **RP-060** and **RP-061**.
   - **Reviews:** `go-reviewer`'s findings are fixed, except sequential
     scope resolution (cached; left as is). `contract-guardian` passed.
 - **T005 (the installer, `eacba73`):** `installer.go`, `values.go`,
@@ -108,9 +120,16 @@ is T007 (wiring in serendipd).**
   - **`bench-t470`** (kind, simulated T470) still exists, with the
     edge-1 platform and no observability installs. Delete it, or keep it
     to verify the caches.
-  - **`serendip-t018` is stopped.** Start it with `docker start
-    serendip-t018-control-plane`; its node IP may change (the node rule
-    handles that).
+  - **`serendip-t018` is running, with the observability package
+    installed** (by `TestLiveInstall`, outside any `serendipd`, so no
+    Serendip store records it). Remove it with `TestLiveUninstall`, or
+    keep it for T007–T013. The test objects (the loggers' namespace, the
+    stand-in build pod) are deleted. Its node IP may change after a
+    restart (the node rule handles that).
+  - **Spec 022 T014's store** (the Serendip IDs for `serendip-t018`'s
+    T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
+    a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
+    Deployments.
 - **Next:** T007, wiring in `serendipd`:
   - the catalogue entry (installer, `Removal`, `Requirements` still nil);
   - the lazy `observability` handle over `NewProvider`;
