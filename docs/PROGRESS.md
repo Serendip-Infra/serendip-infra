@@ -7,11 +7,104 @@ history has the detail if you need archaeology; this file is only ever the
 current picture.
 
 Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
-`docs/constitution.md` (non-negotiable rules, changes almost never).
+`docs/constitution.md` (non-negotiable rules, changes almost never),
+`docs/risk-register.md` (known risks, performance costs and trade-offs,
+with when to revisit each).
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 
 ## Current phase
+
+**Spec 019 (Approvals): COMPLETE** (T001–T014 plus T007a, 2026-10-20).
+The spec, plan (with an "As built" section) and tasks are in
+`specs/019-approvals/`, and the live record is `verification.md`. ADR 0016
+records the decision; `docs/architecture/approvals.md` is the model.
+Accepted trade-offs live in the new `docs/risk-register.md` (RP-001 to
+RP-017), which CLAUDE.md now asks every spec to keep current.
+
+What it built:
+- **Every delete records an Approval** in the delete's own transaction.
+  - The authorizer attaches an approval intent to every DELETE route,
+    the response names it (`Serendip-Approval-Id`), and its audit rows
+    say `approved: <approval> by policy (…)`.
+  - **The store fails closed** (`store.ErrNoApproval`, no bypass), so a
+    delete path that forgets its Approval can't delete.
+  - **Policy approves instantly** when roles allow. Only `NeedsApproval`
+    (agents' deletes) waits for a person.
+- **`/v1/approvals`:** request, list (indexed, paged with
+  `limit`/`after`/`Serendip-Next-After`), get, approve, reject.
+  - Deciders need the delete themselves. `policy.MayDecide` refuses
+    agents, `system:` actors and the requester.
+- **The approval reconciler:**
+  - expires requests after 24 h;
+  - executes them through the store's stale checks (target version and
+    the exact blast radius);
+  - erases deleted Secrets' values from the record, retrying until done;
+  - verifies, then marks the approval `settled`.
+
+  This replaced Secret delete's erase-first order and fixed cascades
+  that left Secret values in OpenBao for good.
+- **Migrations 0006 and 0007:** approvals-only partial indexes, pinned by
+  query-plan tests, so no read scans every approval. Timestamps are now
+  written fixed-width.
+- **The console:**
+  - Delete with blast radius on the Application, Component and Secret
+    pages;
+  - a Secrets page (metadata only, never values);
+  - an Approvals page with the waiting count in the rail.
+- **Measured:**
+  - Approval reads with 20,000 approvals: at most 22 ms p99.
+  - A DELETE costs +0.6 ms mean and +3 ms p99 of commit I/O (accepted;
+    `synchronous` stays `FULL`, RP-001 and RP-002).
+  - The simulated-T470 harness: the edge-1 stack idles at 1.29 GiB and
+    `serendipd` at 27.4 MiB, every group within tolerance of spec 018.
+- **Live on kind with the real Agent Manager agent** (T011): Secret
+  erasure on delete, on cascade, and across an OpenBao outage and a
+  restart; an agent's delete approved in the console; reject; stale
+  target; the full audit trail.
+- **Reviews (T012):** contract-guardian, go-reviewer and
+  `/security-review` (nothing at confidence 8 or above) passed, with
+  their findings fixed. One process slip: `a85a659` (T012 fixes, touching
+  `core/`) was committed before its contract-guardian run, which ran
+  post-hoc and passed.
+
+Leftovers on this machine (scratch only, all reversible):
+- **`serendip-t018` (kind) is running.** Its OpenBao unseal file is
+  spec 018 T001's scratch `openbao-init.json`. Pass it with
+  `SERENDIP_OPENBAO_CREDENTIALS_PATH` when running `serendipd` against
+  this cluster.
+- **Agent Manager (`amp-local`) is stopped.** `k3d` isn't installed on
+  the host, and plain `docker start` gives the server a new IP, which
+  makes K3s crash-loop ("failed to find interface with specified node
+  ip"). To restart it, first free host port 8080 (`serendipd` must use
+  another port, e.g. `:8088`), then:
+  `docker network disconnect k3d-amp-local k3d-amp-local-server-0`
+  (and the same for `-serverlb`), then
+  `docker network connect --ip 172.27.0.3 k3d-amp-local k3d-amp-local-server-0`
+  and `docker network connect --ip 172.27.0.2 k3d-amp-local k3d-amp-local-serverlb`,
+  then start the server first and the load balancer about 20 s later.
+- **The `serendip-ext` agent's client secret was regenerated** in T011.
+  The old one no longer works, and the new one is only in session
+  scratch.
+- **The user's own `go run ./cmd/serendipd` on :8080 was stopped** in
+  T011 to free the port. `serendip.db*` in the repo root is now
+  git-ignored.
+
+**Next:** candidates, none started. Ask the user which.
+- **Small follow-ups from the register:**
+  - RP-014: a new Secret's value write can answer 409 after writing;
+  - RP-015: show an agent's sponsor by name;
+  - RP-017: an opaque paging cursor.
+- **A retention spec for approvals** (RP-003). The audit log already
+  keeps every snapshot.
+- **Approval policies for people,** e.g. "deletes in production need a
+  second person" or "not the sponsor" (RP-007). The engine's
+  `NeedsApproval` is the hook.
+- **Other destructive verbs** (scale-to-zero, drain, volume operations)
+  once the API has them. `ApprovalVerb` is designed for them.
+- **A real T470 run** (RP-008), before any profile default changes.
+- **Pushing to GitHub:** specs 002–019 are committed locally only, as
+  agreed earlier.
 
 **Spec 018 (agent identities, a WSO2 Agent Manager POC, and the
 identity-provider management channel): COMPLETE** (T001–T014,
@@ -78,15 +171,6 @@ ADR 0014. Evidence: `specs/017-authorization/verification.md`. Upgrade
 note from T011: Secret values written before the per-Secret value
 storage fix must be written again.
 
-**Next: spec 019 (Approvals),** drafted earlier in `specs/019-approvals/`
-(uncommitted, on hold until 017 and 018 were done). Rework it on top of
-017's roles and 018's `NeedsApproval`:
-- roles decide, and an approval is the exception;
-- an agent can never approve its own request;
-- every destructive action still produces an Approval object
-  (constitution 5).
-
-The user's direction is in memory (`authorization_model_direction`).
 Other candidates are in "Next up" below.
 
 **Spec 001 (Foundation) merged to Serendip-Infra/serendip-infra:main via

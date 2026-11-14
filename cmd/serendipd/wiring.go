@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -335,6 +336,43 @@ func registerKubernetesReconcilers(db *sql.DB, bus event.Bus, engine *reconcile.
 	engine.Register(resource.KindComponent, reconcile.NewComponentReconciler(components, apps, platform), lister(components, resource.KindComponent))
 
 	return secretReconciler
+}
+
+// registerApprovals wires the approval reconciler (spec 019): it executes
+// approved deletes through any kind's store, erases a deleted Secret's
+// value from the approval's record, and verifies. secrets is nil without a
+// cluster; a Secret's clean-up then waits, honestly not ready, until one is
+// configured. Must run before engine.Run.
+func registerApprovals(db *sql.DB, bus event.Bus, engine *reconcile.Engine, secrets *reconcile.SecretReconciler) {
+	approvals := sqlite.NewStore[resource.ApprovalSpec, resource.ApprovalStatus](db, resource.KindApproval).SetBus(bus)
+	// The store's delete is kind-agnostic below its type parameters, so one
+	// raw store per call serves every kind.
+	del := func(ctx context.Context, kind resource.Kind, id string, cascade bool) error {
+		return sqlite.NewStore[json.RawMessage, json.RawMessage](db, kind).SetBus(bus).Delete(ctx, id, cascade)
+	}
+	eraseSecret := func(ctx context.Context, ref resource.ApprovalRef) error {
+		if secrets == nil {
+			return reconcile.ErrProviderNotReady
+		}
+		return secrets.EraseValue(ctx, ref)
+	}
+	exists := func(ctx context.Context, kind resource.Kind, id string) (bool, error) {
+		return sqlite.ResourceExists(ctx, db, kind, id)
+	}
+	r := reconcile.NewApprovalReconciler(approvals, del, map[resource.Kind]reconcile.CleanupFunc{resource.KindSecret: eraseSecret}, exists, time.Now)
+	// Resync revisits only unsettled approvals, by their index: approvals
+	// only grow, so listing them all every resync would too.
+	engine.Register(resource.KindApproval, r, func(ctx context.Context) ([]graph.ResourceRef, error) {
+		open, err := sqlite.ListApprovals(ctx, db, sqlite.ApprovalQuery{Unsettled: true})
+		if err != nil {
+			return nil, err
+		}
+		refs := make([]graph.ResourceRef, len(open))
+		for i, a := range open {
+			refs[i] = graph.ResourceRef{Kind: resource.KindApproval, ID: a.Metadata.ID}
+		}
+		return refs, nil
+	})
 }
 
 // lister returns the engine's resync lister for one kind's store.
