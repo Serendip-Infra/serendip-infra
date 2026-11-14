@@ -172,12 +172,13 @@ func (s *Store[S, St]) Create(ctx context.Context, r resource.Resource[S, St]) (
 	if err := writeAudit(ctx, tx, audit.Record{
 		ID:         id.New(),
 		Actor:      actor,
-		Interface:  "core",
+		Interface:  audit.InterfaceFrom(ctx),
 		Kind:       string(s.kind),
 		ResourceID: r.Metadata.ID,
 		Before:     nil, // nothing existed before a Create
 		After:      afterJSON,
 		At:         now,
+		RequestID:  audit.RequestIDFrom(ctx),
 	}); err != nil {
 		return resource.Resource[S, St]{}, err
 	}
@@ -270,12 +271,13 @@ func (s *Store[S, St]) Update(ctx context.Context, r resource.Resource[S, St]) (
 	if err := writeAudit(ctx, tx, audit.Record{
 		ID:         id.New(),
 		Actor:      actor,
-		Interface:  "core",
+		Interface:  audit.InterfaceFrom(ctx),
 		Kind:       string(s.kind),
 		ResourceID: r.Metadata.ID,
 		Before:     beforeJSON,
 		After:      afterJSON,
 		At:         now,
+		RequestID:  audit.RequestIDFrom(ctx),
 	}); err != nil {
 		return resource.Resource[S, St]{}, err
 	}
@@ -344,12 +346,13 @@ func (s *Store[S, St]) Delete(ctx context.Context, resourceID string, cascade bo
 	if err := writeAudit(ctx, tx, audit.Record{
 		ID:         id.New(),
 		Actor:      actor,
-		Interface:  "core",
+		Interface:  audit.InterfaceFrom(ctx),
 		Kind:       string(s.kind),
 		ResourceID: resourceID,
 		Before:     beforeJSON,
 		After:      nil, // nothing exists after a Delete
 		At:         now,
+		RequestID:  audit.RequestIDFrom(ctx),
 	}); err != nil {
 		return err
 	}
@@ -409,50 +412,74 @@ func cascadeDeleteChild(ctx context.Context, tx *sql.Tx, ref graph.ResourceRef, 
 	return writeAudit(ctx, tx, audit.Record{
 		ID:         id.New(),
 		Actor:      actor,
-		Interface:  "core",
+		Interface:  audit.InterfaceFrom(ctx),
 		Kind:       string(ref.Kind),
 		ResourceID: ref.ID,
 		Before:     beforeJSON,
 		After:      nil,
 		At:         time.Now().UTC(),
+		RequestID:  audit.RequestIDFrom(ctx),
 	})
 }
 
 // rawSnapshotJSON marshals a resources row into an audit "before"
-// snapshot without needing the row's Spec/Status Go types -- the JSON
-// columns are re-wrapped verbatim via json.RawMessage rather than
-// unmarshaled into a concrete struct, so this works for any kind
-// (needed by cascadeDeleteChild, which encounters kinds this Store[S, St]
-// instance was never constructed for).
+// snapshot without needing the row's Spec/Status Go types -- Spec/Status
+// are re-wrapped verbatim via json.RawMessage (their shape is unknown
+// here, that's the whole point), but Labels/OwnerRefs/Relationships are
+// unmarshaled into their real typed values (map/slice), not RawMessage --
+// wrapping raw DB column text (which is the literal 4-byte string "null"
+// for an empty map/slice) defeats omitempty, since RawMessage("null") has
+// len()==4 and never counts as empty. Matches what scanResource already
+// does for exactly this reason (needed by cascadeDeleteChild, which
+// encounters kinds this Store[S, St] instance was never constructed for).
+//
+// Shape and key casing deliberately mirror resource.Resource[S, St]'s own
+// marshaled form ({"metadata": {...}, "spec": ..., "status": ...},
+// lowerCamelCase per core/resource's json tags, T005-T010) -- a cascaded
+// child's audit snapshot must look like any other resource's, not a
+// different ad hoc shape, or the audit trail would be inconsistent
+// depending on whether a deletion happened to cascade (constitution
+// rule 8: audit records' "what" should be uniform).
 func rawSnapshotJSON(ctx context.Context, tx *sql.Tx, ref graph.ResourceRef) (json.RawMessage, error) {
 	var snap struct {
-		ID              string          `json:"ID"`
-		Name            string          `json:"Name"`
-		Labels          json.RawMessage `json:"Labels"`
-		OwnerRefs       json.RawMessage `json:"OwnerRefs"`
-		Relationships   json.RawMessage `json:"Relationships"`
-		Spec            json.RawMessage `json:"Spec"`
-		Status          json.RawMessage `json:"Status"`
-		ResourceVersion int64           `json:"ResourceVersion"`
-		CreatedAt       string          `json:"CreatedAt"`
-		UpdatedAt       string          `json:"UpdatedAt"`
+		Metadata struct {
+			ID              string                  `json:"id"`
+			Name            string                  `json:"name"`
+			Kind            string                  `json:"kind"`
+			Labels          map[string]string       `json:"labels,omitempty"`
+			OwnerRefs       []resource.OwnerRef     `json:"ownerRefs,omitempty"`
+			Relationships   []resource.Relationship `json:"relationships,omitempty"`
+			CreatedAt       string                  `json:"createdAt"`
+			UpdatedAt       string                  `json:"updatedAt"`
+			ResourceVersion int64                   `json:"resourceVersion"`
+		} `json:"metadata"`
+		Spec   json.RawMessage `json:"spec"`
+		Status json.RawMessage `json:"status"`
 	}
-	var labels, ownerRefs, relationships, spec, status string
+	snap.Metadata.Kind = string(ref.Kind)
+
+	var labelsJSON, ownerRefsJSON, relationshipsJSON, spec, status string
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, name, labels, owner_refs, relationships, spec, status,
 		       resource_version, created_at, updated_at
 		FROM resources WHERE id = ? AND kind = ?`, ref.ID, string(ref.Kind),
-	).Scan(&snap.ID, &snap.Name, &labels, &ownerRefs, &relationships, &spec, &status,
-		&snap.ResourceVersion, &snap.CreatedAt, &snap.UpdatedAt)
+	).Scan(&snap.Metadata.ID, &snap.Metadata.Name, &labelsJSON, &ownerRefsJSON, &relationshipsJSON, &spec, &status,
+		&snap.Metadata.ResourceVersion, &snap.Metadata.CreatedAt, &snap.Metadata.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: raw snapshot %s %s: %w", ref.Kind, ref.ID, err)
 	}
-	snap.Labels = json.RawMessage(labels)
-	snap.OwnerRefs = json.RawMessage(ownerRefs)
-	snap.Relationships = json.RawMessage(relationships)
+	if err := json.Unmarshal([]byte(labelsJSON), &snap.Metadata.Labels); err != nil {
+		return nil, fmt.Errorf("sqlite: unmarshal raw snapshot labels: %w", err)
+	}
+	if err := json.Unmarshal([]byte(ownerRefsJSON), &snap.Metadata.OwnerRefs); err != nil {
+		return nil, fmt.Errorf("sqlite: unmarshal raw snapshot owner_refs: %w", err)
+	}
+	if err := json.Unmarshal([]byte(relationshipsJSON), &snap.Metadata.Relationships); err != nil {
+		return nil, fmt.Errorf("sqlite: unmarshal raw snapshot relationships: %w", err)
+	}
 	snap.Spec = json.RawMessage(spec)
 	snap.Status = json.RawMessage(status)
 
@@ -489,10 +516,11 @@ func writeAudit(ctx context.Context, tx *sql.Tx, rec audit.Record) error {
 		policyDecision = *rec.PolicyDecision
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO audit_log (id, actor, interface, kind, resource_id, before, after, at, policy_decision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO audit_log (id, actor, interface, kind, resource_id, before, after, at, policy_decision, request_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID, rec.Actor, rec.Interface, rec.Kind, rec.ResourceID,
-		nullableJSON(rec.Before), nullableJSON(rec.After), rec.At.Format(timeLayout), policyDecision)
+		nullableJSON(rec.Before), nullableJSON(rec.After), rec.At.Format(timeLayout), policyDecision,
+		nullableString(rec.RequestID))
 	if err != nil {
 		return fmt.Errorf("sqlite: write audit record: %w", err)
 	}
@@ -504,6 +532,16 @@ func nullableJSON(b json.RawMessage) any {
 		return nil
 	}
 	return string(b)
+}
+
+// nullableString maps an empty string to SQL NULL -- used for RequestID,
+// which is empty for any mutation not made through an HTTP request
+// (audit.RequestIDFrom's documented zero value).
+func nullableString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 type marshaledColumns struct {
