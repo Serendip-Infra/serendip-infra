@@ -141,6 +141,18 @@ cost.
   from the same store, make it worth looking at again for a multi-node
   install with memory to spare (`build-vs-adopt.md`).
 
+### 4. Scope: the lowest-resource install
+
+- **These choices are edge-1's,** sized for the 16 GB T470. Its trade-offs
+  are accepted because memory is the constraint (RP-055, RP-056).
+- **A larger profile may choose differently:**
+  - **The metrics module as shipped** (the operator, and later its
+    alerts): no change to Serendip's query path, since it sits behind
+    the same adapter.
+  - **SigNoz:** it would need a SigNoz adapter in Serendip (decision 3).
+- **The full test pass comes after v1** (all features in), on real
+  hardware, including upgrades and long runs. Per-spec checks until then.
+
 ## Consequences
 
 - **The package's observability footprint,** at node level and idle,
