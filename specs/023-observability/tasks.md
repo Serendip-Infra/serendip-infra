@@ -131,7 +131,27 @@ delete each before the next. Run the keep-awake beside long runs.
   disk numbers; ADR 0021 cites them; `kubectl get ns` shows the scratch
   installs removed.
 
-## T004 — Core types
+## T004 — Core types ✅ 2026-11-14
+
+> **Done as:**
+> - **`core/provider`:** `Requirements.Disk *DiskRequirements`
+>   (`GrowthMiBPerDay`, `RetentionDays`, `BudgetMiB`). If it's set, all
+>   three must be positive; table cases cover each part missing.
+> - **`core/reconcile/observability.go`:** decision 5's types and
+>   `ObservabilityProvider`, plus the caps as constants (500 lines a page,
+>   20 targets, 16 KiB a line, 300 points). `LogCursor` holds a time and
+>   how many lines at that time were already seen. It's encoded as
+>   versioned base64url, and an empty cursor means the first page. `Seen`
+>   has no upper bound, because many lines can share one timestamp across
+>   pages.
+> - **`providerinstance.go`:** the optional `PackageUsage` interface and
+>   `DiskUsage`.
+> - **`core/policy`:** `ActionObservabilityRead`. The role test checks
+>   that Reader and Log Reader get it through `*/read` and Secrets User
+>   doesn't.
+> - **The Verify grep** finds only two older comments that use
+>   "observer" as an ordinary English word (`volume.go`, "a passive
+>   observer"). No product names.
 
 - **Do:**
   - `provider.Requirements.Disk` and its validation;

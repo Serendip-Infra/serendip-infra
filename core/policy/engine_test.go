@@ -417,17 +417,18 @@ func TestBuiltInRolesAreValid(t *testing.T) {
 
 // Logs are their own action (spec 020 plan decision 9): the read-only and
 // access-management roles don't get them, Log Reader adds them, and the
-// roles that change things keep them.
+// roles that change things keep them. Stored metrics (spec 023) are an
+// ordinary read.
 func TestLogsAreTheirOwnRead(t *testing.T) {
 	roles := policy.BuiltInRoles()
 	want := map[string]map[string]bool{
-		policy.ReaderRoleID:                  {policy.ActionComponentLogsRead: false, policy.ActionComponentRuntimeRead: true, policy.ActionPlatformRead: true, "serendip/deployments/read": true},
-		policy.LogReaderRoleID:               {policy.ActionComponentLogsRead: true, policy.ActionComponentRuntimeRead: true, policy.ActionPlatformRead: true, "serendip/deployments/write": false},
-		policy.UserAccessAdministratorRoleID: {policy.ActionComponentLogsRead: false, policy.ActionComponentRuntimeRead: true},
-		policy.RBACAdministratorRoleID:       {policy.ActionComponentLogsRead: false},
-		policy.ContributorRoleID:             {policy.ActionComponentLogsRead: true, "serendip/deployments/write": true, "serendip/deployments/delete": true},
-		policy.OwnerRoleID:                   {policy.ActionComponentLogsRead: true},
-		policy.SecretsUserRoleID:             {policy.ActionComponentLogsRead: false},
+		policy.ReaderRoleID:                  {policy.ActionComponentLogsRead: false, policy.ActionComponentRuntimeRead: true, policy.ActionPlatformRead: true, policy.ActionObservabilityRead: true, "serendip/deployments/read": true},
+		policy.LogReaderRoleID:               {policy.ActionComponentLogsRead: true, policy.ActionComponentRuntimeRead: true, policy.ActionPlatformRead: true, policy.ActionObservabilityRead: true, "serendip/deployments/write": false},
+		policy.UserAccessAdministratorRoleID: {policy.ActionComponentLogsRead: false, policy.ActionComponentRuntimeRead: true, policy.ActionObservabilityRead: true},
+		policy.RBACAdministratorRoleID:       {policy.ActionComponentLogsRead: false, policy.ActionObservabilityRead: true},
+		policy.ContributorRoleID:             {policy.ActionComponentLogsRead: true, "serendip/deployments/write": true, "serendip/deployments/delete": true, policy.ActionObservabilityRead: true},
+		policy.OwnerRoleID:                   {policy.ActionComponentLogsRead: true, policy.ActionObservabilityRead: true},
+		policy.SecretsUserRoleID:             {policy.ActionComponentLogsRead: false, policy.ActionObservabilityRead: false},
 	}
 	for id, actions := range want {
 		for a, ok := range actions {

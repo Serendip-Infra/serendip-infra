@@ -20,6 +20,33 @@ func TestRequirementsValidate(t *testing.T) {
 		{"peak below idle", func(r *provider.Requirements) { r.PeakMemoryMiB = 10 }, false},
 		{"no place", func(r *provider.Requirements) { r.MeasuredOn = "" }, false},
 		{"no results", func(r *provider.Requirements) { r.Results = "" }, false},
+		{"disk stated", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: 3, BudgetMiB: 8192}
+		}, true},
+		{"disk empty", func(r *provider.Requirements) { r.Disk = &provider.DiskRequirements{} }, false},
+		{"disk without growth", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{RetentionDays: 3, BudgetMiB: 8192}
+		}, false},
+		{"disk without retention", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 120, BudgetMiB: 8192}
+		}, false},
+		{"disk without budget", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: 3}
+		}, false},
+		{"disk negative growth", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: -1, RetentionDays: 3, BudgetMiB: 8192}
+		}, false},
+		{"disk negative retention", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: -3, BudgetMiB: 8192}
+		}, false},
+		{"disk negative budget", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: 3, BudgetMiB: -1}
+		}, false},
+		// A size limit can stop data before its retention ends, so a budget
+		// below growth times retention is allowed (plan 023 decision 8).
+		{"disk budget below growth times retention", func(r *provider.Requirements) {
+			r.Disk = &provider.DiskRequirements{GrowthMiBPerDay: 1000, RetentionDays: 3, BudgetMiB: 2048}
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := ok

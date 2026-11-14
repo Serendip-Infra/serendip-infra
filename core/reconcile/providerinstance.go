@@ -54,6 +54,22 @@ type PackageInstaller interface {
 	Uninstall(ctx context.Context, instanceID string) error
 }
 
+// DiskUsage is how much of its volumes an installed package uses now
+// (specs/023-observability plan decision 8). CapacityMiB zero means the
+// capacity isn't known; UsedMiB can exceed it on volumes that don't
+// enforce their size.
+type DiskUsage struct {
+	UsedMiB     int       `json:"usedMiB"`
+	CapacityMiB int       `json:"capacityMiB"`
+	ReadAt      time.Time `json:"readAt"`
+}
+
+// PackageUsage is optional on a PackageInstaller whose package keeps
+// data: it reads the package's current disk use.
+type PackageUsage interface {
+	Usage(ctx context.Context) (DiskUsage, error)
+}
+
 // Package is one installable package: the provider that offers an
 // optional capability.
 type Package struct {
