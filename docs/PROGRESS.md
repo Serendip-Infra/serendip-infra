@@ -16,8 +16,11 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T008 done (2026-11-14); next
-is T009 (edge-case tests, with the `test-writer`).**
+**Spec 023 (observability package): T001–T009 done (2026-11-14); next
+is T010 (CLI and MCP), then T011 (the console).**
+- **T009 (edge-case tests):** cursors across ranges, an empty ready
+  package, not ready mid-request, and the query caps. No bug found;
+  `begin`'s release is now idempotent (tasks.md T009).
 - **T008 (the API):** `api/observability_handler.go` serves
   `GET /v1/deployments/{id}/logs/search`,
   `GET /v1/applications/{id}/logs/search?environment=` and
@@ -158,11 +161,10 @@ is T009 (edge-case tests, with the `test-writer`).**
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
     Deployments.
-- **Next:** T009, table tests with the `test-writer`: cursors across
-  time ranges, an empty ready package, the provider going not ready
-  mid-request, and the per-caller caps. After that, T010 (CLI and MCP;
-  the commands already exist from T008's catalogue entries) and T011
-  (the console).
+- **Next:** T010, CLI and MCP. The catalogue entries and commands came
+  with T008, so T010 is mostly checking the MCP tools' summaries and
+  the CLI's output against tasks.md. Then T011, the console's
+  Observability tab and the Packages page's disk line.
 - **GitHub (2026-11-14):** four paced background scripts in the previous
   session's scratchpad `prs/` folder, chained: `run.sh` (spec PRs
   003–022, opened by Yasindu007, merged by serendipinfra) → `track.sh`
