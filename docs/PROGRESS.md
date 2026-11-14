@@ -16,8 +16,13 @@ Last updated: 2026-11-14
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T009 done (2026-11-14); next
-is T010 (CLI and MCP), then T011 (the console).**
+**Spec 023 (observability package): T001–T010 done (2026-11-14); next
+is T011 (the console).**
+- **T010 (CLI and MCP tests):** `cmd/serendip/observability_test.go`
+  (via a new `newWorldWith`): the three commands' requests and usage
+  errors, real calls, and the MCP metrics tool on a 24-hour range
+  giving at most 60 points a series plus a summary over all 288. An
+  assistant's `summary: false` is refused (tasks.md T010).
 - **T009 (edge-case tests):** cursors across ranges, an empty ready
   package, not ready mid-request, and the query caps. No bug found;
   `begin`'s release is now idempotent (tasks.md T009).
@@ -161,19 +166,21 @@ is T010 (CLI and MCP), then T011 (the console).**
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
     Deployments.
-- **Next:** T010, CLI and MCP. The catalogue entries and commands came
-  with T008, so T010 is mostly checking the MCP tools' summaries and
-  the CLI's output against tasks.md. Then T011, the console's
-  Observability tab and the Packages page's disk line.
+- **Next:** T011, the console's Observability tab and the Packages
+  page's disk line.
 - **GitHub (2026-11-14):** four paced background scripts in the previous
   session's scratchpad `prs/` folder, chained: `run.sh` (spec PRs
   003–022, opened by Yasindu007, merged by serendipinfra) → `track.sh`
   (closed epics for 005–022, plus 023's epic in "v1 GA") → `setup.sh` →
   `backfill.sh`. Check their `*.log` files before any other GitHub
   write.
-  - **023's task issues** (T007–T015) come from `setup.sh`, so they
-    didn't exist at T007's or T008's commit. Close T007's and T008's at
-    the next checkpoint, once they exist.
+  - **023's task issues** (T007–T015) come from `setup.sh`, opened
+    from a fixed list, so they didn't exist at T007–T010's commits.
+    Close T007's to T010's at the next checkpoint, once they exist (one
+    write a minute). Don't edit `setup.sh` while it runs.
+  - **At 11:11 local on 2026-11-14:** `track.sh` had made 9 of the 18
+    closed epics (#46–#54, specs 005–013), no failures; `setup.sh` and
+    `backfill.sh` were waiting, as designed.
   - **`backfill.sh` is re-paced (the user wants the back-fill, without
     being rate-limited):** about 770 writes (35 Epic types, then 245
     tasks × create, link and close), one every 90 s, with a 6-hour rest
