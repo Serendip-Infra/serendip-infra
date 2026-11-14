@@ -554,6 +554,58 @@ The measurements and the choice are in ADR 0021. What the installer
    B, 1 hour for A and C. So every config had at least 70 minutes under
    load.
 
+## Findings from T005 (2026-11-14): the installer
+
+The charts were rendered with `helm template` at the pinned versions, and
+the digests match `VERSIONS.md`. What the installer does differently from
+the decisions above:
+
+1. **The nodes' addresses aren't in the fingerprint** (decision 12). They
+   change without any install. So the fingerprint stays static, and the
+   check compares the live rule with the current `Node` addresses. A
+   change is repaired by re-applying the rule, with no Helm run. IPv6
+   addresses get `/128`.
+2. **"The policies match"** means:
+   - the plane chart's `observability-plane-ingress` exists (if not, the
+     plane chart is re-run);
+   - Serendip's rule exists with the current addresses;
+   - a ready pod matches the rule's selector. The logs store's readiness
+     check uses the same selector.
+3. **The readiness query's "known pod"** is the longest-running ready pod
+   carrying all four OpenChoreo scope labels (namespace, project,
+   component and environment UIDs), started at least 5 minutes ago. The
+   query asks the adapter for the last 10 minutes through the Service
+   proxy.
+   - **With no such pod,** the package is Ready, and its message says
+     metrics are checked once a Component has run that long.
+   - **Empty series** are reported and not repaired, because re-running
+     Helm can't fix a mismatch (RP-056).
+   - **An error answer** settles, then re-runs only the metrics module.
+   - **Cost:** the pod list is cluster-wide, filtered by label and phase.
+     On edge-1 that's a handful of pods.
+4. **The agent's connection isn't checked.** Unlike the workflow plane,
+   `ObservabilityPlane`'s status shape wasn't recorded in T001. Nothing
+   Serendip queries goes through the agent, so the object only has to
+   exist. T013 records its status.
+5. **After a restart,** the first resync that finds the package applied
+   starts one settle window, so a rebooted node's pods coming up are
+   waited out rather than met with a 15-minute Helm run.
+6. **Uninstall waits for `ObservabilityPlane/default` to be gone** before
+   removing the plane's controller, so a finalizer can't leave it stuck
+   in `openchoreo-control-plane`.
+7. **The admin Secret** is created once and never replaced. An existing
+   one missing a key stops the install with a message, since the store's
+   data was written under the credentials it had.
+8. **The logs module renders an `HTTPRoute`** for remote Fluent Bit,
+   attached to `gateway-default` in the plane's namespace. With the
+   plane's gateway off, that gateway doesn't exist, so the route attaches
+   to nothing.
+9. **The Prometheus values are embedded** (`prometheus-values.yaml`), and
+   a test keeps them identical to the bench's file.
+10. **Proxy requests carry the bearer token.** `kubernetes.Client.PostRaw`
+    sends requests through the client's own credentials, including a
+    bearer token. `HTTPClient()` alone doesn't add the token (RP-057).
+
 ## Interfaces and types (sketch; settled in T002)
 
 - **`core/provider`:** `Requirements.Disk *DiskRequirements{GrowthMiBPerDay,

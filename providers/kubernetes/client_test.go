@@ -422,3 +422,39 @@ func TestClient_Apply_Errors(t *testing.T) {
 		t.Errorf("409: err = %v, want an unexpected-status error", err)
 	}
 }
+
+func TestClient_PostRaw(t *testing.T) {
+	var gotAuth, gotType, gotPath, gotBody string
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotType, gotPath = r.Header.Get("Authorization"), r.Header.Get("Content-Type"), r.URL.Path
+		var b map[string]string
+		json.NewDecoder(r.Body).Decode(&b)
+		gotBody = b["metric"]
+		switch r.URL.Path {
+		case "/missing":
+			http.NotFound(w, r)
+		case "/broken":
+			http.Error(w, "boom", http.StatusBadGateway)
+		default:
+			w.Write([]byte(`{"ok":true}`))
+		}
+	})
+	client.token = "secret-token"
+	path := ServiceProxyPath("ns", "svc", 9099) + "/api/v1/metrics/query"
+
+	out, err := client.PostRaw(context.Background(), path, map[string]string{"metric": "resource"})
+	if err != nil || string(out) != `{"ok":true}` {
+		t.Fatalf("PostRaw() = %s, %v", out, err)
+	}
+	if gotPath != "/api/v1/namespaces/ns/services/svc:9099/proxy/api/v1/metrics/query" ||
+		gotAuth != "Bearer secret-token" || gotType != "application/json" || gotBody != "resource" {
+		t.Errorf("request = %s %q %q %q", gotPath, gotAuth, gotType, gotBody)
+	}
+	if _, err := client.PostRaw(context.Background(), "/missing", nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("404: err = %v, want ErrNotFound", err)
+	}
+	var se *StatusError
+	if _, err := client.PostRaw(context.Background(), "/broken", nil); !errors.As(err, &se) || se.Code != http.StatusBadGateway {
+		t.Errorf("502: err = %v", err)
+	}
+}

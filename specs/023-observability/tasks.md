@@ -167,7 +167,34 @@ delete each before the next. Run the keep-awake beside long runs.
   "openobserve|opensearch|prometheus|observer" core/` finds nothing; a table
   test shows `Disk` refused when half-stated.
 
-## T005 — The installer
+## T005 — The installer ✅ 2026-11-14
+
+> **Done as:** `providers/observability/openchoreo/` (`installer.go`,
+> `values.go`, `policies.go`, `doc.go`, embedded `prometheus-values.yaml`)
+> and `kubernetes.Client.PostRaw`. See plan.md "Findings from T005".
+> - **Order:**
+>   1. the namespace, the CA copy, the placeholder and admin Secrets;
+>   2. the plane chart;
+>   3. the node rule;
+>   4. the logs module, then plain Prometheus, then the adapter;
+>   5. `ObservabilityPlane/default`.
+>
+>   A test asserts it.
+> - **An unchanged resync:** 6 GETs and one metrics query, with no Helm
+>   run and no applies.
+> - **Repairs** run Helm only for the release at fault. A changed node
+>   address, a deleted rule or a deleted plane object is re-applied with
+>   no Helm run. A query that returns no data is reported, not repaired
+>   (RP-056).
+> - **Uninstall** waits for the plane object, removes the releases in
+>   reverse order, then the namespace. Running it twice is clean, and it
+>   resumes after a failed step.
+> - **Reviews:** `go-reviewer`'s "should" findings are fixed: errors no
+>   longer swallowed, IPv6 `/128`, one settle window after a restart,
+>   waiting for the plane object, admin Secret keys checked.
+>   `contract-guardian` passed.
+> - **Not done here:** the Observer client and `Usage` (T006);
+>   `Requirements` (T012). A live install is T012's run.
 
 - **Do:** `providers/observability/openchoreo`:
   - Install, in decision 1's order as amended by T003 (ADR 0021):

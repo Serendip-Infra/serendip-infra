@@ -77,6 +77,7 @@ purpose), **Closed** (fixed).
 | RP-054 | The observability adapters answer unauthenticated queries; only NetworkPolicies close them | Security (medium) | Open | Spec 023 T001 |
 | RP-055 | OpenObserve's log search slows as stored logs grow (0.24 s to 0.53 s mean, 3.1 s worst, in 2.5 h) | Performance | Accepted | Spec 023 T003 |
 | RP-056 | Serendip's plain Prometheus must keep matching what the metrics module's adapter queries | Operability, correctness | Accepted | Spec 023 T003 |
+| RP-057 | ThunderID's Service-proxy calls drop a kubeconfig's bearer token | Correctness (latent) | Watch | Spec 023 T005 |
 
 ---
 
@@ -1323,3 +1324,23 @@ purpose), **Closed** (fixed).
     known pod and fails if its series are empty (T005).
 - **Revisit:** on every metrics module upgrade, or if a later alerts spec
   needs the operator anyway.
+
+## RP-057 — ThunderID's Service-proxy calls drop a kubeconfig's bearer token
+
+- **Kind:** correctness (latent). **Status:** Watch, 2026-11-14.
+  **Found:** spec 023 T005.
+- **What:** `kubernetes.Client.HTTPClient()` returns the client's
+  TLS-configured `http.Client`, but the bearer token is added per request
+  inside the client's own calls. `providers/identity/thunderid`
+  (`ready.go`, `clients.go`) sends Service-proxy requests through
+  `HTTPClient()` directly, so with a token-based kubeconfig they would
+  answer 401.
+- **Why it holds today:** K3s and kind kubeconfigs authenticate with
+  client certificates, which the transport carries.
+- **Mitigation:** new proxy callers use `Client.PostRaw` or the other
+  path-taking calls, which send the token (the observability installer
+  does).
+- **Revisit:** before supporting a token-based kubeconfig (a managed
+  cluster, a service-account kubeconfig), or the next time ThunderID's
+  provider is touched. The fix is to move those calls onto the client's
+  own request path.

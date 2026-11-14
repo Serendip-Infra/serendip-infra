@@ -2,7 +2,7 @@
 
 Upstream version assumptions for the observability package (spec 023).
 Update this file and the constants named below together. The "Defined in"
-column names files T005 and T006 create. Verified in T001
+column names the files that pin each item (`observer.go` is T006's). Verified in T001
 (2026-11-12, `serendip-t018`) unless marked otherwise.
 
 | Item | Version / value | Defined in |
@@ -11,9 +11,10 @@ column names files T005 and T006 create. Verified in T001
 | Logs module (config B) | `observability-logs-openobserve` 0.8.0, `oci://cr.openchoreo.dev/openchoreo/helm-charts/` (digest `sha256:4f99feb62be138db3558e6690ad708d41f23b2fd42728bf31824a028daa02a24`); OpenObserve `v0.92.2`, Fluent Bit `5.1.5` | `values.go` |
 | Logs module (config A, T003 only; rejected, ADR 0021) | `observability-logs-opensearch` 0.8.1 (digest `sha256:e85b36e9d0be995977afcc16af9af210f3a8a902cf9355efb06399e6b27c27e0`) | n/a |
 | Metrics module | `observability-metrics-prometheus` 0.9.3 (digest `sha256:ed4245d732518d283f30fb1f7879f0e512e31b497e0cabfbac13c123090d11fd`); installed for its **adapter only**, `kube-prometheus-stack.enabled=false` (ADR 0021; as shipped it brings kube-prometheus-stack with 10 `monitoring.coreos.com` CRDs) | `values.go` |
-| Metrics store | `prometheus-community/prometheus` 29.47.2, `oci://ghcr.io/prometheus-community/charts/prometheus`; images pinned to the module's: Prometheus `v3.15.1-distroless`, config reloader `v0.94.2`, kube-state-metrics `v2.20.0` (subchart 9.0.1). Values: `profiles/edge-1/bench/observability-load/prometheus-plain-values.yaml` (T003) | `values.go` |
+| Metrics store | `prometheus-community/prometheus` 29.47.2, `oci://ghcr.io/prometheus-community/charts/prometheus`; images pinned to the module's: Prometheus `v3.15.1-distroless`, config reloader `v0.94.2`, kube-state-metrics `v2.20.0` (subchart 9.0.1). Values: `prometheus-values.yaml` here, embedded, which a test keeps identical to the bench's `profiles/edge-1/bench/observability-load/prometheus-plain-values.yaml` (T003) | `values.go`, `prometheus-values.yaml` |
 | Query API | the adapters' `POST /api/v1/logs/query` (`logs-adapter:9098`) and `POST /api/v1/metrics/query` (`metrics-adapter:9099`), from `openapi/observability-{logs,metrics}-adapter*.yaml` at v1.3.1 | `observer.go` |
 | Plane object | `ObservabilityPlane/default` in `openchoreo-control-plane` (namespaced; a namespaced `DataPlane` falls back to it by name) | `installer.go` |
+| Workload selectors the checks use | the charts' own pod selectors at these versions (rendered with `helm template`, T005): `app.kubernetes.io/component` `observer`, `cluster-agent`, `controller-manager` (plane); `app.kubernetes.io/name=openobserve-standalone`, `app=logs-adapter-openobserve`, DaemonSet `fluent-bit` (logs); `app.kubernetes.io/name` `prometheus` + `component=server`, `kube-state-metrics` (Prometheus); `app=metrics-adapter-prometheus` (metrics); the chart's policy `observability-plane-ingress` | `installer.go`, `policies.go` |
 | Verification cluster | `kindest/node:v1.34.0` (kindnet enforces NetworkPolicy) | n/a |
 
 Notes (T001):

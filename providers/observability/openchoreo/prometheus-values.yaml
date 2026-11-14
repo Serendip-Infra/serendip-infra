@@ -1,0 +1,105 @@
+# Plain Prometheus for the observability plane, in place of the metrics
+# module's kube-prometheus-stack (plan 023 decision 3's fallback, tried in
+# T003). Chart: prometheus-community/prometheus 29.47.2. No operator, so
+# no monitoring.coreos.com CRDs.
+#
+# It stands in for kube-prometheus-stack as far as the module's metrics
+# adapter can tell:
+#   - the Service name and port the adapter's PROMETHEUS_ADDRESS fixes
+#     (openchoreo-observability-prometheus:9091);
+#   - the same two sources, with kube-prometheus-stack's job names: the
+#     kubelet's cAdvisor endpoint (job "kubelet") and kube-state-metrics
+#     limited to the module's pod metrics and openchoreo.dev labels.
+# Images are pinned to the ones the module uses.
+
+server:
+  fullnameOverride: openchoreo-observability-prometheus
+  image:
+    tag: v3.15.1-distroless
+  service:
+    servicePort: 9091
+  retention: 3d
+  retentionSize: 2GB
+  persistentVolume:
+    size: 3Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+configmapReload:
+  prometheus:
+    image:
+      tag: v0.94.2
+
+alertmanager:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+
+kube-state-metrics:
+  enabled: true
+  fullnameOverride: kube-state-metrics
+  image:
+    tag: v2.20.0
+  collectors:
+    - pods
+  metricAllowlist:
+    - kube_pod_completion_time
+    - kube_pod_container_resource_limits
+    - kube_pod_container_resource_requests
+    - kube_pod_info
+    - kube_pod_init_container_resource_limits
+    - kube_pod_init_container_resource_requests
+    - kube_pod_labels
+    - kube_pod_start_time
+    - kube_pod_status_phase
+  metricLabelsAllowlist:
+    - pods=[openchoreo.dev/component-uid,openchoreo.dev/project-uid,openchoreo.dev/environment-uid,openchoreo.dev/release-line-uid,openchoreo.dev/release-line-component-uid,openchoreo.dev/namespace,openchoreo.dev/component,openchoreo.dev/project,openchoreo.dev/environment]
+
+# Only the two sources the adapter reads; the chart's other defaults
+# (pods, services, endpoints, API server, nodes) would scrape far more.
+scrapeConfigs:
+  prometheus:
+    enabled: false
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-nodes:
+    enabled: false
+  kubernetes-nodes-cadvisor:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
+  kubelet:
+    job_name: kubelet
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - target_label: metrics_path
+        replacement: /metrics/cadvisor
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+  kube-state-metrics:
+    job_name: kube-state-metrics
+    honor_labels: true
+    static_configs:
+      - targets:
+          - kube-state-metrics:8080

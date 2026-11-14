@@ -345,6 +345,39 @@ func (c *Client) GetRaw(ctx context.Context, path string) (json.RawMessage, erro
 	return body, nil
 }
 
+// PostRaw POSTs body as JSON to path and returns the answer as it came,
+// with GetRaw's limits. It's for a Service reached through the API
+// server's proxy (a path under ProxyURL's, without the host), so the
+// request carries this client's credentials, bearer token included, which
+// HTTPClient alone doesn't add. Returns ErrNotFound on a 404.
+func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	resp, err := c.do(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, unexpectedStatus(resp)
+	}
+	out, err := io.ReadAll(io.LimitReader(resp.Body, maxRawBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: read POST %s response: %w", path, err)
+	}
+	if len(out) > maxRawBody {
+		return nil, fmt.Errorf("kubernetes: POST %s answered more than %d bytes", path, maxRawBody)
+	}
+	return out, nil
+}
+
+// ServiceProxyPath is ProxyURL's path without the API server's address,
+// for PostRaw and the other path-taking calls.
+func ServiceProxyPath(namespace, service string, port int) string {
+	return fmt.Sprintf("/api/v1/namespaces/%s/services/%s:%d/proxy", namespace, service, port)
+}
+
 // Stream GETs path and returns the open body for the caller to read and
 // close, for answers that keep coming (pod logs with follow=true). The
 // client sets no deadline of its own: the stream lasts until ctx ends,

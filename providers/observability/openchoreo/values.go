@@ -1,0 +1,144 @@
+package openchoreo
+
+import (
+	_ "embed"
+	"fmt"
+)
+
+// The charts this package installs, pinned in VERSIONS.md, in plan
+// decision 1's install order (as amended by ADR 0021).
+const (
+	ocCharts  = "oci://ghcr.io/openchoreo/helm-charts"
+	modCharts = "oci://cr.openchoreo.dev/openchoreo/helm-charts"
+
+	// PlaneNamespace holds every release and the stores' volumes.
+	PlaneNamespace = "openchoreo-observability-plane"
+
+	planeRelease      = "openchoreo-observability-plane"
+	logsRelease       = "observability-logs-openobserve"
+	prometheusRelease = "prometheus"
+	metricsRelease    = "observability-metrics-prometheus"
+
+	helmInstallTimeout   = "15m" // the first start pulls every image (T003 finding 3)
+	helmUninstallTimeout = "5m"
+
+	// The logs store's admin user. Its password is generated once and
+	// kept only in adminSecretName (plan decision 1.2).
+	adminSecretName = "openobserve-admin-credentials"
+	adminEmail      = "admin@serendip.local"
+	// observerSecretName holds the placeholder the plane chart requires
+	// even with security off (spike finding 2).
+	observerSecretName = "observer-secret"
+
+	// Retention and volume sizes (plan decision 8). The logs module's
+	// own default retention is 3650 days, so it's always set.
+	logRetentionDays = 3
+	logVolumeSize    = "5Gi"
+
+	// fluentBitInstance names this cluster in Fluent Bit's records.
+	fluentBitInstance = "serendip"
+)
+
+// prometheusValues is plain Prometheus' values (ADR 0021), shaped so the
+// metrics module's adapter reads it as it would kube-prometheus-stack
+// (RP-056). It's the bench's prometheus-plain-values.yaml, kept identical
+// by a test, so a measured footprint and the product use the same values.
+//
+//go:embed prometheus-values.yaml
+var prometheusValues []byte
+
+// valuesFileArg stands in Helm's arguments for the file prometheusValues
+// is written to at run time, so the arguments (and the fingerprint) don't
+// depend on a temporary path.
+const valuesFileArg = "<prometheus-values.yaml>"
+
+// release is one Helm release this package installs.
+type release struct {
+	name, chart, version string
+	// what names it in messages for people.
+	what string
+	// sets are --set flags; strings are --set-string flags.
+	sets, strings []string
+	// valuesFile passes prometheusValues with -f.
+	valuesFile bool
+}
+
+// releases are installed in this order and removed in the reverse.
+var releases = []release{
+	{
+		name: planeRelease, chart: ocCharts + "/openchoreo-observability-plane", version: "1.3.1",
+		what: "the observability plane",
+		sets: []string{
+			// The Observer's own auth stays off; NetworkPolicies close the
+			// plane, and Serendip's RBAC is the gate (plan decision 4).
+			"security.enabled=false",
+			// edge-1 has its own gateway, and nothing outside the cluster
+			// reaches the plane.
+			"gateway.enabled=false",
+			"observer.controlPlaneApiUrl=http://openchoreo-api.openchoreo-control-plane:8080",
+			"observer.secretName=" + observerSecretName,
+			// The chart refuses its default .invalid URL (spike finding 2).
+			"observer.extraEnvs[0].name=OBSERVER_BASE_URL",
+			"observer.extraEnvs[0].value=" + observerURL,
+			"observer.extraEnvs[1].name=AUTHZ_TIMEOUT",
+			"observer.extraEnvs[1].value=30s",
+		},
+	},
+	{
+		name: logsRelease, chart: modCharts + "/observability-logs-openobserve", version: "0.8.0",
+		what: "the logs store",
+		sets: []string{
+			"fluentBitCustomizations.clusterInstance=" + fluentBitInstance,
+			"openobserve-standalone.persistence.size=" + logVolumeSize,
+		},
+		strings: []string{
+			fmt.Sprintf("openobserve-standalone.config.ZO_COMPACT_DATA_RETENTION_DAYS=%d", logRetentionDays),
+			// On by default: a heartbeat to the vendor every 30 minutes.
+			// Nothing leaves the machine unless asked (T003).
+			"openobserve-standalone.config.ZO_TELEMETRY=false",
+		},
+	},
+	{
+		name: prometheusRelease, chart: "oci://ghcr.io/prometheus-community/charts/prometheus", version: "29.47.2",
+		what: "the metrics store", valuesFile: true,
+	},
+	{
+		name: metricsRelease, chart: modCharts + "/observability-metrics-prometheus", version: "0.9.3",
+		what: "the metrics adapter",
+		// Only its adapter: Prometheus is the release above, so no
+		// Prometheus Operator and none of its CRDs (ADR 0021).
+		sets: []string{"kube-prometheus-stack.enabled=false"},
+	},
+}
+
+// observerURL is the Observer's in-cluster address, which the plane
+// object and the Observer itself are given.
+const observerURL = "http://observer." + PlaneNamespace + ":8080"
+
+// installArgs is the Helm command that installs or upgrades r, with
+// valuesFileArg where the values file goes.
+func (r release) installArgs() []string {
+	args := []string{
+		"upgrade", "--install", r.name, r.chart, "--version", r.version,
+		"--namespace", PlaneNamespace, "--create-namespace",
+	}
+	if r.valuesFile {
+		args = append(args, "-f", valuesFileArg)
+	}
+	for _, s := range r.sets {
+		args = append(args, "--set", s)
+	}
+	for _, s := range r.strings {
+		args = append(args, "--set-string", s)
+	}
+	return append(args, "--wait", "--timeout", helmInstallTimeout)
+}
+
+func releaseNamed(name string) (release, bool) {
+	for _, r := range releases {
+		if r.name == name {
+			return r, true
+		}
+	}
+	return release{}, false
+}
