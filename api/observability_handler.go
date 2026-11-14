@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -209,7 +210,8 @@ func (h *ObservabilityHandler) begin(w http.ResponseWriter, r *http.Request) (ct
 		return nil, nil, false
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), obsQueryTimeout)
-	return ctx, func() { cancel(); h.limit.release(caller.ID) }, true
+	var once sync.Once
+	return ctx, func() { once.Do(func() { cancel(); h.limit.release(caller.ID) }) }, true
 }
 
 // timeRange reads ?from and ?to (RFC 3339), defaulting to the last

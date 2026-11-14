@@ -3,6 +3,8 @@ package reconcile_test
 import (
 	"encoding/base64"
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +35,45 @@ func TestLogCursorRoundTrip(t *testing.T) {
 				t.Errorf("decoded time in %v, want UTC", got.Time.Location())
 			}
 		})
+	}
+}
+
+// The cursor is a function of the instant and the count only, so the same
+// place in a search is the same cursor, whatever zone or clock reading made
+// it, and it can ride in a URL as it is.
+func TestLogCursorEncodingIsCanonicalAndURLSafe(t *testing.T) {
+	at := time.Date(2026, 11, 14, 10, 30, 0, 123456000, time.UTC)
+	want := reconcile.LogCursor{Time: at, Seen: 2}.Encode()
+	for name, c := range map[string]reconcile.LogCursor{
+		"another zone":     {Time: at.In(time.FixedZone("x", -7*3600)), Seen: 2},
+		"the monotonic":    {Time: time.Unix(0, at.UnixNano()), Seen: 2},
+		"the same instant": {Time: at.Add(0), Seen: 2},
+	} {
+		if got := c.Encode(); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+	for _, other := range []reconcile.LogCursor{{Time: at, Seen: 3}, {Time: at.Add(time.Nanosecond), Seen: 2}, {Time: at.Add(-time.Microsecond), Seen: 2}} {
+		if other.Encode() == want {
+			t.Errorf("%+v encodes like %+v", other, want)
+		}
+	}
+	if q := url.QueryEscape(want); q != want || strings.ContainsAny(want, "=+/") {
+		t.Errorf("%q isn't URL-safe as it is (%q)", want, q)
+	}
+}
+
+// Seen is bounded so a forged cursor can't ask for an endless skip; the
+// bound itself is allowed.
+func TestDecodeLogCursorSeenBound(t *testing.T) {
+	enc := func(seen int) string {
+		return reconcile.LogCursor{Time: time.Unix(1763116200, 0), Seen: seen}.Encode()
+	}
+	if c, err := reconcile.DecodeLogCursor(enc(1 << 20)); err != nil || c.Seen != 1<<20 {
+		t.Errorf("at the bound: %+v, %v", c, err)
+	}
+	if _, err := reconcile.DecodeLogCursor(enc(1<<20 + 1)); !errors.Is(err, reconcile.ErrBadCursor) {
+		t.Errorf("past the bound: %v", err)
 	}
 }
 

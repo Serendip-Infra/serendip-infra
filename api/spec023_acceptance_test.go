@@ -173,14 +173,25 @@ type world023 struct {
 
 func newWorld023(t *testing.T) *world023 {
 	t.Helper()
+	return newWorld023Wrapped(t, nil)
+}
+
+// newWorld023Wrapped is newWorld023 with the server given wrap(obs023) as its
+// observability capability, when wrap isn't nil (T009's fault injection).
+func newWorld023Wrapped(t *testing.T, wrap func(*obs023) reconcile.ObservabilityProvider) *world023 {
+	t.Helper()
 	f := newObs023()
+	var served reconcile.ObservabilityProvider = f
+	if wrap != nil {
+		served = wrap(f)
+	}
 	inst := &installer023{}
 	pkg := &reconcile.Package{Provider: obsPackage, Capability: "observability", Description: "Stored logs and metrics",
 		Installer: inst, Removal: removal023,
 		Requirements: &provider.Requirements{IdleMemoryMiB: 400, IdleCPUMillicores: 50, PeakMemoryMiB: 600, PeakCPUMillicores: 300,
 			MeasuredOn: "edge-1 simulated T470", Results: "profiles/edge-1/bench/results/obs",
 			Disk: &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: 3, BudgetMiB: 5120}}}
-	w := &world023{world022: newWorld022With(t, pkg, api.WithObservability(f)), obs: f, obsInst: inst}
+	w := &world023{world022: newWorld022With(t, pkg, api.WithObservability(served)), obs: f, obsInst: inst}
 	ctx := context.Background()
 
 	var comp resource.Component

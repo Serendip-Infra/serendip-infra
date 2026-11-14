@@ -365,7 +365,31 @@ delete each before the next. Run the keep-awake beside long runs.
   - the application search reports `omitted`;
   - the catalog parity test.
 
-## T009 [P][A] — Tests: edge cases and fakes
+## T009 [P][A] — Tests: edge cases and fakes ✅ 2026-11-14
+
+> **Done as** (by the `test-writer`):
+> - **Files:** `api/observability_handler_test.go` (a fault-injecting
+>   `ctl023` in front of `obs023`, through `newWorld023Wrapped`),
+>   `api/observability_caps_internal_test.go`,
+>   `providers/observability/openchoreo/edges_test.go`, and two tests in
+>   `core/reconcile/observability_test.go`.
+> - **Cursors across ranges:** a narrowed `from` and `to`, cursors at
+>   and beyond the edges, ties across pages, and the encoding's limits.
+> - **An empty, ready package:** `"lines": []` (never null) and no
+>   `next`; `omitted: 0`, without a provider call when the Environment
+>   is empty; and empty metrics with an empty summary.
+> - **Not ready mid-request:** 503 with `Retry-After` (never 502) on all
+>   three routes. For build logs, it's 410, followed or not.
+> - **Caps:** 3 per caller and 20 in all; 429 with `Retry-After`; slots
+>   released after success, errors, cancellation and validation
+>   failures. The tests use channels, not sleeps, and check for leaked
+>   goroutines.
+> - **No bug found.** Its one observation, that `begin`'s `done` would
+>   release twice if called twice, is fixed with a `sync.Once`.
+> - **Verify:** `go test ./...` and `go vet ./...` are clean, and
+>   `go test -count=3` passes on the touched packages (the
+>   `test-writer` also ran `-race -count=3`).
+
 
 - **Do:** with the `test-writer`, table tests for:
   - cursors across time ranges;
