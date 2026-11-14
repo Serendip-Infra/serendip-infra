@@ -181,6 +181,10 @@ is T009 (edge-case tests, with the `test-writer`).**
     `backfill.count`. A subshell bug that let it carry on after a failed
     create is fixed. If the laptop sleeps or the shell is reaped, it
     stops; re-run it, after checking the log's last line.
+    The user set the lid action to "do nothing" and idle sleep to never
+    (AC and battery) for this run. When it finishes, remind them to
+    restore sleep: `powercfg /change standby-timeout-ac 15` and
+    `standby-timeout-dc 3` (prefix `MSYS_NO_PATHCONV=1` in Git Bash).
 - **Maybe, to do (not scheduled):**
   - **Hardware tiers.** Propose how the user's low, medium, high and
     custom spec installs fit with the topology profiles, as a spec or
