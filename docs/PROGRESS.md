@@ -16,9 +16,29 @@ Last updated: 2026-11-14 (after spec 023 T012)
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T012 done (2026-11-14); next
-is T013 (real-cluster verification on `serendip-t018`, `verification.md`),
-then T014 (reviews) and T015 (docs and close).**
+**Spec 023 (observability package): T001–T013 done (2026-11-14); next
+is T014 (reviews: go-reviewer and contract-guardian over the whole spec,
+plus `security-review`), then T015 (docs and close: the epic body, the
+spec PR, `docs/architecture/` for the `Removing` readiness reason).**
+- **T013 (`d4c7a9e`, closes #88):** `specs/023-observability/verification.md`
+  has evidence for criteria 1, 3–11 and 13 on `serendip-t018`, through
+  the console (headless Chrome), CLI and MCP (CLI signed in as `admin`).
+  - **Fixed:**
+    - F1: log times UTC beside local-time charts;
+    - F2: a finished build whose pods were gone gave no lines, not its
+      stored ones;
+    - F3: Argo executor lines in stored build logs;
+    - F4: policy Approvals' `decision.at` was year 1 (spec 019's bug);
+    - F5: new readiness reason `Removing` during the uninstall.
+  - **RP-064:** Fluent Bit's `:2020` answers counters to any pod.
+  - **Tooling, kept outside the repo** in `C:/Users/malit/.serendip-t018/`:
+    `cdp.mjs` (headless Chrome driver, signs in on ThunderID), `t023-*.sh`
+    (start script, API helper), `t023api.py`, `t023-mcp.py`, the keys
+    file (`t023-keys.env`), the store (`t023.db`) and `t023-evidence/`.
+  - **The ThunderID admin password showed once in a screenshot** (the
+    first script clicked "show password"). The image was deleted.
+    Rotating it is offered to the user, not done.
+  - **Commits not pushed;** #87 and #88 close when spec 023's PR merges.
 - **T012 (`3024f1c`, closes #87):** `providers/observability/openchoreo/requirements.go`
   from `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`
   (README there): idle 608 MiB / 21 mcores, peak 967 MiB / 372 mcores,
@@ -189,19 +209,18 @@ then T014 (reviews) and T015 (docs and close).**
   - `load.sh` now passes the driver's env inside `--overrides`.
   - `registry-cache.sh`: local pull-through image caches, wired into
     new kind clusters by `kind-t470-setup.sh`. **Verified** by T012's
-    two fresh-cluster runs. 7 `kind-cache-*` containers are running;
-    keep them through T013, then `registry-cache.sh down` (`--purge`
-    frees the disk).
+    two fresh-cluster runs. **Stopped after T013** (`down`, volumes
+    kept; `down --purge` frees the disk).
 - **Clusters:**
-  - **`bench-t470`** (kind, simulated T470) is running, with T012's
-    package run's stack and the observability package installed
-    (kubeconfig in session `d193d427-...`'s scratchpad). Delete it with
-    `kind-t470-setup.sh down bench-t470` once T013 no longer needs it.
-  - **`serendip-t018` is stopped** (`docker start
-    serendip-t018-control-plane`; its node IP may change, the node rule
-    handles that). It still has the observability package installed (by
-    `TestLiveInstall`, outside any `serendipd`), from before the SSRF
-    fix: its destination already existed, so it never hit it.
+  - **`bench-t470`** (kind, simulated T470) is **stopped** (its
+    container), with T012's stack and the observability package. Delete
+    it with `kind-t470-setup.sh down bench-t470`; nothing needs it now.
+  - **`serendip-t018` is running,** with the builds package and **without
+    the observability package** (T013 removed it last). `serendipd` from
+    T013's last build runs on `127.0.0.1:8088` against
+    `C:/Users/malit/.serendip-t018/t023.db`
+    (`t023-start.sh <binary>`). It was started by this session, so it
+    stops when the session's shell does.
   - **Spec 022 T014's store** (the Serendip IDs for `serendip-t018`'s
     T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
     a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
@@ -209,7 +228,7 @@ then T014 (reviews) and T015 (docs and close).**
   - **The console isn't served by Docker:** after `docker start`, the UI
     needs `serendipd` running on the host, and login needs ThunderID via
     `identity.localhost:30080`. The user will look at it later.
-- **Next:** T013 on `serendip-t018`.
+- **Next:** T014 (reviews), then T015.
 - **GitHub (2026-11-14):** paced background scripts in the previous
   session's scratchpad `prs/` folder, plus `epics/` in session
   `d193d427-...`'s scratchpad. Check their `*.log` files before any
@@ -225,8 +244,8 @@ then T014 (reviews) and T015 (docs and close).**
   - **Running: `backfill.sh`**, started 2026-11-14 09:17 UTC: about 770
     writes (35 Epic types, then 245 older tasks × create, link and
     close), one every 90 s, with a 6-hour rest after every 200, ending
-    around early Monday. At 10:24 UTC it was at task #93 (spec 002
-    T003). It stops at the first failed write and resumes from
+    around early Monday. At 14:21 UTC it reached 200 writes and began
+    its first 6-hour rest, as designed. It stops at the first failed write and resumes from
     `backfill.state` if re-run (`bash <prs>/backfill.sh`), after
     checking the log's last line. A keep-awake process runs beside it.
     The user set the lid action to "do nothing" and idle sleep to never
