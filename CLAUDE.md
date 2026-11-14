@@ -64,7 +64,13 @@ but with few, paced writes:
 - **Epic → Task → Sub-task**, as GitHub issue types and sub-issues
   (`.github/ISSUE_TEMPLATE/`):
   - **Epic:** one per spec (label `epic`), opened when its spec is
-    approved.
+    approved, in epic #1's layout: a status line ("Status: IN
+    PROGRESS", then "Status: DONE. All N tasks … Delivered in #PR"),
+    links to spec/plan/tasks (and `verification.md`), `## Scope` (one
+    paragraph), `## What got built` (bullets), and `## Tasks` (the
+    checklist, with the sub-issues below). The body is rewritten when
+    the spec closes. Milestone: the roadmap phase it belongs to
+    (planned specs: "v1 GA").
   - **Task:** one per `T###`, a sub-issue of its epic, opened when
     `tasks.md` is approved (as one paced batch), closed in the commit that
     finishes it (`closes #N` in the commit body, or at the checkpoint).
