@@ -115,6 +115,22 @@ done and committed on local branch `spec-024`.** Nothing pushed.
   T013's task issues as one paced batch. Epic #65 → "Spec 024: Alert rules and notification channels" and
 #66 → "Spec 025: Networking: Cilium, Hubble and traces" (two paced
 writes, done or pending: check the epics).
+  - **Then link the finished tasks' commits (the user, 2026-11-15:
+    "neat and tidy").** They were committed before their issues existed,
+    so none says `Closes #N`. `spec-024` isn't pushed, so before its
+    first push, rewrite only `main..spec-024` to append `Closes #<T00N's
+    issue>` to the body of each task's commit. Match each commit by
+    `T00N` in its subject:
+    - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1` (hashes change
+      after the rewrite);
+    - non-interactively: `git filter-branch --msg-filter` over
+      `main..spec-024`, or `git rebase --exec`.
+
+    Check `git log main..spec-024` afterwards: every task commit should
+    carry its line, and the tree should match the pre-rewrite tip
+    (`git diff <old-tip> spec-024` is empty). The PR merge then closes
+    each issue. Later tasks put `Closes #N` in their own commit as usual.
 - **Traces moved to spec 025** (the user agreed, 2026-11-15), with
   trace-based alert conditions. The research for them is in spec 024's
   plan, "Carried to spec 025"; the earlier draft with full trace
