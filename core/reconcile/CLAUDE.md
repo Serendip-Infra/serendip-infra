@@ -13,6 +13,10 @@
     because Helm outlives the 10 s reconcile (spec 022 T013, RP-045).
     Dispatch itself stays sequential; the goroutine only runs the
     installer.
+  - The second: the alert evaluator (`alerts.go`, spec 024) runs its
+    condition queries 2 at a time (plan decision 2), because 200 rules a
+    minute at up to 460 ms each won't fit one at a time. It's an ops loop
+    beside the engine, not reconcile dispatch.
 - Reuse `core/graph.ResourceRef` (Kind, ID) as the kind-agnostic resource
   identifier — do not invent a second one.
 - No vendor product names in identifiers/comments-as-behavior (constitution

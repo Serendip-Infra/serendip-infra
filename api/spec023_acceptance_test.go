@@ -119,6 +119,11 @@ func (f *obs023) BuildLogs(_ context.Context, b resource.Build, q reconcile.LogQ
 
 // Metrics answers a minute's samples over the range, with a load placed
 // on it 20 minutes ago (CPU 900m for 5 minutes).
+
+func (*obs023) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{}, reconcile.ErrNoData
+}
+
 func (f *obs023) Metrics(_ context.Context, t reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

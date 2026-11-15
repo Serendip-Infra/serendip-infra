@@ -208,7 +208,50 @@ Dependency sketch:
   - SMTP refusing plain auth;
   - no token or URL path in any returned error.
 
-## T005 — The evaluator and delivery loop
+## T005 — The evaluator and delivery loop ✅ 2026-11-15
+
+> **Done as:** `core/reconcile/alerts.go` (the evaluator) and `delivery.go`
+> (the delivery loop), sharing an `alertWriter` that serialises Alert
+> read-modify-writes; wired in `cmd/serendipd/alerts.go` when a cluster is
+> configured, and shutdown waits for both loops before the store closes.
+> `ObservabilityProvider.EvaluateCondition` returns a `ConditionValue`
+> (`Value` compared, `Current` shown) or `ErrNoData`; the provider answers
+> "not evaluated yet" until T006, so rules read `QueryFailed` meanwhile.
+> Retention is `sqlite.PurgeResolvedAlerts` (RP-071): **it records an
+> Approval** (one per rule per pass, by policy, Executed, naming the
+> removed Alerts; contract-guardian blocked the plan's "no Approval" under
+> constitution 5, plan amended), and catches up in batches. Choices:
+> - a rule naming no channels goes to its Project's default channels,
+>   else the platform's (and a built-in rule to the platform's);
+> - **disabling a rule resolves its firing Alerts** (`ruleDisabled`, a new
+>   reason), and a rule with nothing deployed reads `NotDeployed`;
+> - digests are for chat channels (Telegram, email); a webhook gets one
+>   `serendip.alert.v1` body per Alert, one a second;
+> - 5 attempts, with 10 s, 30 s, 1 min and 5 min between them;
+> - a rule's value is flushed once a minute when it changed, and its
+>   `lastEvaluated` alone every 10 minutes, so steady rules write nothing
+>   (1,000 evaluations, 0 writes in the test);
+> - a channel's Secret is read as its `value` key, or its only key.
+>
+> **Review fixes** (go-reviewer): a send is recorded even as serendipd
+> stops (`WithoutCancel`), so it isn't re-sent; a resolution waits for its
+> firing to the same channel; a rule that can't be read holds its
+> deliveries rather than send past a silence; rates and backoff run from
+> the end of the send; transitions are timed when the answers are in; a
+> failed packageRemoved resolve is retried; resolved Alerts past the
+> reopen window are forgotten; held values are flushed on a clean stop;
+> every shutdown path waits (30 s at most) for the loops. By design: a
+> digest doesn't thread (its resolution can't reply to it); duplicate
+> channel IDs are refused by validation, so deliveries match by channel,
+> event and time.
+>
+> **Azure analogues:** Azure Monitor's stateful alerts (one alert fires
+> and resolves itself when the condition clears; Serendip's fingerprint
+> and reopen window), action groups' rate limits (per channel here),
+> alert processing rules that suppress notifications (silences), and
+> fired alerts kept for 30 days (retention). Departs from Azure: digests
+> (Azure sends each), and default channels (Azure has none).
+
 
 - **Do:** `core/reconcile/alerts.go` and `delivery.go` (plan decisions 2,
   7 and 11):
@@ -245,7 +288,11 @@ Dependency sketch:
   - the Prometheus query client;
   - the built-in disk rule's lifecycle (decision 4) in
     `providerinstance.go`;
-  - pin the queries' API versions in `VERSIONS.md`.
+  - pin the queries' API versions in `VERSIONS.md`;
+  - replace `conditions.go`'s T005 stub of `EvaluateCondition`;
+  - give `core/notify`'s Checker the cluster's pod and Service ranges and
+    the nodes' addresses (`SetClusterRanges`), refreshed with the
+    cluster: nothing sets them yet (found in T005).
 - **Files:** `providers/observability/openchoreo/conditions.go`,
   `prometheus.go`, tests, `VERSIONS.md`, and
   `core/reconcile/providerinstance.go`.

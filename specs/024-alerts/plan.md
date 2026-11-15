@@ -541,9 +541,11 @@ release's.
 11. **Alert retention** (open question 4).
     - **What:** `serendipd` removes resolved Alerts older than 30 days, at
       most 500 rows a pass.
-    - **No Approval:** this is system retention, not a person's delete.
-      Each pass writes one audit row, with the count, under the system
-      actor.
+    - **An Approval by policy** (amended in T005, contract-guardian:
+      constitution 5 has no exception): this is system retention, not a
+      person's delete, so nobody waits, but each pass records one
+      Executed Approval per rule naming the removed Alerts, and each
+      removed Alert an audit row naming it, under the system actor.
     - **Why it's recorded:** spec 019's RP-003 left retention of
       operational records unsettled, so RP-071 records this choice.
     - **Growth:** about 2 KiB per Alert, with deliveries capped at 20. A
@@ -859,7 +861,7 @@ decisions.
   the values and a console link, but never log lines (decision 9). The
   console says so on the channel form.
 - **RP-071:** resolved Alerts are removed after 30 days by system
-  retention, with no Approval.
+  retention, through policy-decided Approvals.
 - **RP-072:** evaluation polls, so:
   - a condition shorter than the interval can be missed;
   - a firing is seen up to one interval late (1 minute at best).

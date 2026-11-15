@@ -12,14 +12,23 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T004 done)
+Last updated: 2026-11-15 (spec 024: T001–T005 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
-(authorization) and T004 (`core/notify`) done and committed on local
-branch `spec-024`.** Nothing pushed.
+(authorization), T004 (`core/notify`) and T005 (evaluator and delivery
+loop) done and committed on local branch `spec-024`.** Nothing pushed.
+- **T005:** `core/reconcile/alerts.go` (evaluator) and `delivery.go`
+  (delivery loop), wired in `cmd/serendipd/alerts.go`. The provider's
+  `EvaluateCondition` is a stub until T006, so every rule reads
+  `QueryFailed` meanwhile. **Retention records Approvals** (one per rule
+  per pass, by policy; contract-guardian blocked the plan's "no Approval"
+  under constitution 5, plan amended, RP-071). go-reviewer's 9 findings
+  fixed. **T006 also has to set `core/notify`'s cluster ranges**
+  (`SetClusterRanges`: pod/Service CIDRs, node addresses); nothing sets
+  them yet.
 - **T003:** actions in `core/policy/builtins.go`
   (`allowPrivateDestination/action` Owner-only); `api/authz.go`
   `alertingRoutes()` has every decision-12/15 route's rule, the
@@ -106,7 +115,19 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T005 (evaluator and delivery loop).
+- **Next:** T006 (the provider's condition queries and the built-in disk rule).
+- **After spec 024 (agreed 2026-11-15): a PIM spec, before spec 025.**
+  Numbered 026 (so #66 keeps 025), done first. Azure PIM-style eligible
+  role assignments and time-bound activation (reason, duration cap,
+  optional approver, per-role settings like Azure's role management
+  policies). Only principals eligible (usually through a group, like
+  Azure's role-assignable groups) can activate. Approval once per
+  activation, not per delete; deletes under an activation stay
+  policy-approved Approvals, so constitution 5 holds. Mainly for agents,
+  whose deletes each wait for a person today. Delete locks (Azure's
+  `CanNotDelete`) possibly later. **Standing rule:** follow Azure's
+  procedures and structures whenever possible, and name the Azure
+  analogue each time.
 
 **Spec 023 (observability package): done and closed out on GitHub
 (2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**

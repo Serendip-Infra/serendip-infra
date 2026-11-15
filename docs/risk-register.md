@@ -1648,3 +1648,26 @@ The text below is the T013 record.
 - **Revisit:** if channels become shared across Projects other than
   through platform defaults, or if a custom-role editor should warn about
   wildcards covering Owner-only actions.
+
+## RP-071 — Resolved Alerts are removed after 30 days by system retention
+
+- **Kind:** audit, data retention. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 plan decision 11; built in T005.
+- **What:** `serendipd` removes resolved Alerts that resolved more than 30
+  days ago, at most 500 a pass, hourly (`sqlite.PurgeResolvedAlerts`).
+  It's system retention of operational records, not a person's delete
+  (spec 019's RP-003 left that open), but still a delete: each pass
+  records one Approval per rule, decided by policy and Executed in the
+  same transaction, naming the removed Alerts (constitution 5, ADR 0016;
+  plan decision 11's "no Approval" was amended in T005 review). Azure
+  Monitor keeps fired alerts for 30 days the same way.
+- **Mitigation:** the purge can remove nothing but resolved Alerts, which
+  nothing depends on and no route deletes. Each removed Alert gets an
+  audit row under `system:alerts` naming its Approval. A backlog is
+  purged in batches (up to 20 × 500 a run), so it can't outgrow the
+  hourly pass.
+- **Residual:** a removed Alert's history (its deliveries) is gone; the
+  Approval keeps its ID and name. The purge scans Alerts' JSON status (no
+  index on `resolvedAt`), which is fine at this scale.
+- **Revisit:** if a profile needs longer retention, or an export before
+  removal.

@@ -182,6 +182,9 @@ const (
 	ReasonConditionRefused = "ConditionRefused"
 	ReasonQueryFailed      = "QueryFailed"
 	ReasonDisabled         = "Disabled"
+	// ReasonNotDeployed: nothing of the rule's runs in its Environment.
+	ReasonNotDeployed = "NotDeployed"
+	ReasonNoData      = "NoData"
 )
 
 // AlertSilence suppresses a rule's deliveries, not its Alerts, until
@@ -232,6 +235,9 @@ const (
 	ResolvedRuleDeleted    = "ruleDeleted"
 	ResolvedPackageRemoved = "packageRemoved"
 	ResolvedComponentGone  = "componentGone"
+	// ResolvedRuleDisabled: the rule was disabled while its Alert fired
+	// (spec 024 T005), so nothing watches it any more.
+	ResolvedRuleDisabled = "ruleDisabled"
 
 	DeliveryEventFiring   = "firing"
 	DeliveryEventResolved = "resolved"
