@@ -481,6 +481,61 @@ these works. The guide (`docs/guides/alert-integrations.md`) suggests
 them with their free limits, as checked on 2026-11-15. None of them is
 installed, bundled or required.
 
+### By profile (the user, 2026-11-15)
+
+The watcher must live outside the thing it watches: if the cluster is
+down, its own alerting is down too.
+
+- **`edge-1` (one person, one laptop): free SaaS, nothing to run.**
+  - Alerts go to Telegram.
+  - The heartbeat goes to **healthchecks.io's free tier**, which alerts on
+    Telegram and email when the pings stop.
+  - Email goes through a Gmail app password or Brevo.
+- **`small-3` and `standard-5` (a small team): a self-hosted watcher on
+  an always-free cloud VM.**
+  - It's **Gatus**, a single Go binary with a YAML config:
+    - it receives the cluster's heartbeat (`external-endpoints`);
+    - it probes the console's URL from outside;
+    - it alerts on Telegram, by email, or through Twilio for calls.
+  - It's reached over HTTPS, or over a Tailscale or WireGuard link when
+    the cluster has no public address. Gatus needs no inbound path to the
+    cluster, because the cluster pings it.
+  - **Watch the watcher:** Gatus itself pings healthchecks.io's free tier,
+    so a reclaimed or crashed VM is noticed too.
+  - Apprise API or Node-RED can sit beside it, for SMS or calls.
+- **Always-free VMs, for the watcher** (2026-11-15; check before relying
+  on them):
+  - **Google Cloud e2-micro** (2 shared vCPUs, 1 GB RAM, 30 GB disk, in
+    `us-west1`, `us-central1` or `us-east1`): **the suggested home for
+    Gatus.**
+    - Gatus needs tens of MB, and pings coming in are free.
+    - The 1 GB a month of outbound traffic is far more than alert
+      messages use.
+    - It's not reclaimed for being idle.
+  - **Oracle Cloud Always Free** (up to 4 Ampere cores and 24 GB in A1,
+    or two 1 GB x86 micros; 200 GB of storage; 10 TB of traffic):
+    - The most capacity, but **Oracle reclaims an Always Free instance
+      that stays idle for 7 days** (CPU, network and, on A1, memory under
+      20%). A watcher is idle by nature.
+    - Converting the account to Pay As You Go keeps the free resources
+      and avoids the reclaim.
+    - A1 capacity is often short in popular regions.
+    - It's the better choice if the VM also runs Node-RED or Uptime
+      Kuma.
+  - **Not always-free:**
+    - AWS and Azure: 12 months, or credits for new AWS accounts since
+      2025;
+    - Render and Koyeb: free instances sleep, so a sleeping watcher
+      misses the silence it's meant to catch.
+  - **A serverless alternative, with no VM:** a Cloudflare Worker on the
+    free plan (Research: unverified limits):
+    - the heartbeat stores a timestamp in KV;
+    - a once-a-minute Cron Trigger sends a Telegram message when the
+      timestamp goes stale.
+
+    It's about 40 lines of JavaScript. The guide could carry it, but
+    Serendip wouldn't ship or maintain it.
+
 - **Heartbeat monitors** (decision 15). The monitor must not run on the
   same laptop.
   - **healthchecks.io**, the suggested default:
