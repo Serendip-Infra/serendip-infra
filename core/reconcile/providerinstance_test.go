@@ -15,6 +15,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
+	"github.com/serendip-infra/serendip-infra/core/store/storetest"
 )
 
 // testPackage is the test package that proves the mechanics (no real
@@ -407,5 +408,83 @@ func TestProviderInstanceReconciler_CheapResync(t *testing.T) {
 	if pkg.full != 2 || got.Status.Applied != pkg.desired || got.Metadata.ResourceVersion != version+1 {
 		t.Errorf("changed fingerprint: %d full installs, applied %q, version %d; want 2, the new one, %d",
 			pkg.full, got.Status.Applied, got.Metadata.ResourceVersion, version+1)
+	}
+}
+
+// A package's built-in alert rule (spec 024 plan decision 4): created when
+// the package reads Ready, left as people change it, refused a delete on
+// its own (409), and removed with the package.
+func TestProviderInstanceReconciler_BuiltInAlertRule(t *testing.T) {
+	ctx := context.Background()
+	s := newAppStores(t)
+	insts := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](s.db, resource.KindProviderInstance)
+	rules := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](s.db, resource.KindAlertRule)
+	pkg := &testPackage{}
+	disk := reconcile.BuiltInAlertRule{Name: "package-disk", Spec: resource.AlertRuleSpec{
+		Condition: resource.AlertCondition{Type: resource.ConditionTypePackageDisk, PackageDisk: &resource.PackageDiskCondition{PercentOfBudget: 85}},
+		Severity:  resource.SeverityWarning, Summary: "Stored data is near its disk budget",
+	}}
+	catalogue := reconcile.Catalogue{"test-store": {Provider: "test-store", Capability: "observability", Installer: pkg, Requirements: measured,
+		AlertRules: []reconcile.BuiltInAlertRule{disk}}}
+	r := reconcile.NewProviderInstanceReconciler(insts, catalogue, readinessLog{}.report).WithAlertRules(rules)
+	inst, err := insts.Create(ctx, resource.ProviderInstance{Metadata: resource.Metadata{Name: "observability"},
+		Spec: resource.ProviderInstanceSpec{CapabilityID: "observability", ProviderID: "test-store"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := graph.ResourceRef{Kind: resource.KindProviderInstance, ID: inst.Metadata.ID}
+	owned := func() []resource.AlertRule {
+		t.Helper()
+		list, err := rules.List(ctx, store.ListOptions{OwnerID: inst.Metadata.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+
+	// Not before Ready.
+	pkg.state = reconcile.PackageState{Message: "installing"}
+	checkRequeue(t, r.Reconcile(ctx, ref), true)
+	if n := len(owned()); n != 0 {
+		t.Fatalf("%d rules before Ready", n)
+	}
+	pkg.state = reconcile.PackageState{Ready: true}
+	checkRequeue(t, r.Reconcile(ctx, ref), false)
+	list := owned()
+	if len(list) != 1 || !list[0].Spec.BuiltIn || list[0].Metadata.Name != "package-disk" || list[0].Spec.Condition.PackageDisk.PercentOfBudget != 85 {
+		t.Fatalf("rules = %+v", list)
+	}
+
+	// Changed, even renamed, by a person: a resync neither rewrites it
+	// nor adds another.
+	rule := list[0]
+	rule.Metadata.Name = "disk-renamed"
+	rule.Spec.Condition.PackageDisk.PercentOfBudget = 70
+	off := false
+	rule.Spec.Enabled = &off
+	if rule, err = rules.Update(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+	checkRequeue(t, r.Reconcile(ctx, ref), false)
+	list = owned()
+	if len(list) != 1 || list[0].Metadata.ResourceVersion != rule.Metadata.ResourceVersion {
+		t.Errorf("a resync touched the changed rule: %+v", list)
+	}
+
+	// Refused alone, as in use (409), naming why.
+	err = rules.Delete(storetest.Approved(ctx, resource.KindAlertRule, rule.Metadata.ID, false), rule.Metadata.ID, false)
+	if !errors.Is(err, store.ErrInUse) || !strings.Contains(err.Error(), "goes with its package") {
+		t.Errorf("Delete(built-in rule) = %v, want ErrInUse", err)
+	}
+	if len(owned()) != 1 {
+		t.Fatal("the refused delete removed the rule")
+	}
+
+	// Removed with the package.
+	if err := insts.Delete(storetest.Approved(ctx, resource.KindProviderInstance, inst.Metadata.ID, true), inst.Metadata.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rules.Get(ctx, rule.Metadata.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("rule after the package's removal: %v, want gone", err)
 	}
 }

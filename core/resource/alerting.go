@@ -107,8 +107,9 @@ type AlertCondition struct {
 }
 
 // MetricCondition fires when every point over the last ForMinutes is
-// above Above. As says what Above is measured in: cores or bytes for
-// "value", a percentage for the other two.
+// above Above. As says what Above is measured in: millicores or MiB for
+// "value" (the units Serendip's metrics are read in), a percentage for
+// the other two.
 type MetricCondition struct {
 	Metric     string  `json:"metric"`
 	As         string  `json:"as"`
@@ -159,6 +160,15 @@ type AlertRuleSpec struct {
 	// it can be changed, silenced or disabled, not deleted. Only
 	// serendipd sets it.
 	BuiltIn bool `json:"builtIn,omitempty"`
+}
+
+// KeptByOwner refuses deleting a built-in rule on its own (plan decision
+// 4): it goes with its package.
+func (s AlertRuleSpec) KeptByOwner() string {
+	if s.BuiltIn {
+		return "a built-in rule goes with its package; disable or silence it instead"
+	}
+	return ""
 }
 
 // IsEnabled is Enabled, defaulting to true.
@@ -426,6 +436,13 @@ type Heartbeat = Resource[HeartbeatSpec, HeartbeatStatus]
 // HeartbeatKey is the Heartbeat store's unique key: one per install.
 func HeartbeatKey(HeartbeatSpec) string { return "heartbeat" }
 
+// OwnerKept is a spec that may say it can be removed only with its owner
+// (a cascade), not by a delete aimed at it: KeptByOwner returns why, or
+// "" when it can be deleted alone.
+type OwnerKept interface {
+	KeptByOwner() string
+}
+
 // RefusesDeleteWhileUsed lists the kinds the store won't delete while
 // something outside the delete still depends on them (decision 1): a
 // Secret, channel or SMTP server that a channel, rule or heartbeat names.
@@ -547,7 +564,7 @@ func ValidateCondition(c AlertCondition, builtIn bool) error {
 		switch m.As {
 		case MetricAsValue:
 			if m.Above <= 0 {
-				return invalid("condition.metric.above: more than 0 (cores for cpu, bytes for memory)")
+				return invalid("condition.metric.above: more than 0 (millicores for cpu, MiB for memory)")
 			}
 		case MetricAsPercentOfRequest:
 			if m.Above <= 0 || m.Above > 1000 {

@@ -381,6 +381,12 @@ func (s *Store[S, St]) Delete(ctx context.Context, resourceID string, cascade bo
 	}
 
 	ref := graph.ResourceRef{Kind: s.kind, ID: resourceID}
+	// Only the target: a cascade from its owner removes it.
+	if k, ok := any(before.Spec).(resource.OwnerKept); ok {
+		if why := k.KeptByOwner(); why != "" {
+			return fmt.Errorf("%w: %s %s: %s", store.ErrInUse, s.kind, before.Metadata.Name, why)
+		}
+	}
 	if err := checkReviewed(ctx, tx, intent, ref, before.Metadata.ResourceVersion); err != nil {
 		return err
 	}

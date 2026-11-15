@@ -378,8 +378,9 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	// Alerting (spec 024). Alerts are written only by serendipd, so they
 	// get no generic routes; the heartbeat is a singleton with its own.
 	channelStore := sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus)
-	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](
-		sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus), "alertrules").
+	ruleStore := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus)
+	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](ruleStore, "alertrules").
+		WithValidate(builtInKept(ruleStore)).
 		WithPrepare(prepareAlertRule).
 		WithAuthorize(resource.KindAlertRule, recordDeniedIn(db), channelUse{channels: channelStore}.check).Register(apiMux)
 	NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](channelStore, "notificationchannels").

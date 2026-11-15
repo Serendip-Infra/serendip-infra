@@ -25,6 +25,23 @@ import (
 
 const testToken = "1000000001:AAH-test_token_value_0123456789abcd"
 
+// Until the cluster's ranges are known, a private address is refused
+// even with the allowance: it could be the cluster's own (T006 review).
+func TestCheckAddr_PrivateRefusedUntilRangesKnown(t *testing.T) {
+	c := &notify.Checker{}
+	lan := netip.MustParseAddr("192.168.1.30")
+	if err := c.CheckAddr(lan, true); !errors.Is(err, notify.ErrRefusedAddress) || !strings.Contains(err.Error(), "aren't known yet") {
+		t.Errorf("before the ranges: %v", err)
+	}
+	if err := c.CheckAddr(netip.MustParseAddr("1.1.1.1"), false); err != nil {
+		t.Errorf("a public address before the ranges: %v", err)
+	}
+	c.SetClusterRanges(nil)
+	if err := c.CheckAddr(lan, true); err != nil {
+		t.Errorf("after the ranges: %v", err)
+	}
+}
+
 func TestCheckAddr(t *testing.T) {
 	c := &notify.Checker{}
 	c.SetClusterRanges([]netip.Prefix{netip.MustParsePrefix("10.42.0.0/16"), netip.MustParsePrefix("10.43.0.0/16"), netip.MustParsePrefix("192.168.1.20/32"), netip.MustParsePrefix("fd42::/48")})

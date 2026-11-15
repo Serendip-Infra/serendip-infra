@@ -302,6 +302,17 @@ func TestAlerts_ErrorLeavesFiringAlertFiring(t *testing.T) {
 		t.Errorf("the provider's error reached the rule: %q", c.Message)
 	}
 
+	// A refused condition says why on the rule, and changes nothing.
+	f.provider.err = fmt.Errorf("wrapped: %w", &reconcile.ConditionRefusedError{Why: "the Component sets no CPU request"})
+	f.tick(time.Minute)
+	c = findCond(f.ruleNow(r.Metadata.ID).Status.Conditions, resource.AlertRuleConditionEvaluating)
+	if c == nil || c.Reason != resource.ReasonConditionRefused || c.Message != "the Component sets no CPU request" {
+		t.Errorf("Evaluating = %+v, want ConditionRefused with the reason", c)
+	}
+	if got := f.alertsOf(r.Metadata.ID); got[0].Status.State != resource.AlertFiring {
+		t.Fatalf("a refused condition resolved the Alert")
+	}
+
 	// No data is an error too: never a resolution.
 	f.provider.err = reconcile.ErrNoData
 	f.tick(time.Minute)

@@ -78,6 +78,8 @@ func newEnv(t *testing.T) *env {
 		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 	}})
 	e.client.Check.Exempt(netip.MustParsePrefix("127.0.0.1/32"))
+	// As serendipd does once it has read the cluster.
+	e.client.Check.SetClusterRanges([]netip.Prefix{netip.MustParsePrefix("10.42.0.0/16")})
 	return e
 }
 

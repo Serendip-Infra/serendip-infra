@@ -31,6 +31,18 @@ const buildsRemoval = "Build history stays, but run logs and the stored images b
 const observabilityRemoval = "All stored logs and metrics history are deleted. Recent logs and events on the Runtime tab keep working. " +
 	"Finished builds' logs can no longer be read once their pods are gone."
 
+// observabilityDiskRule is the observability package's built-in rule
+// (specs/024-alerts plan decision 4): stored data at 85% of its disk
+// budget, sent to the platform's default channels.
+var observabilityDiskRule = reconcile.BuiltInAlertRule{
+	Name: "observability-disk",
+	Spec: resource.AlertRuleSpec{
+		Condition: resource.AlertCondition{Type: resource.ConditionTypePackageDisk, PackageDisk: &resource.PackageDiskCondition{PercentOfBudget: 85}},
+		Severity:  resource.SeverityWarning,
+		Summary:   "Stored logs and metrics are near the observability package's disk budget",
+	},
+}
+
 // packageCatalogue is the optional packages this build offers (specs/020
 // plan decision 5). builds installs the workflow plane (spec 022) and
 // observability the observability plane (spec 023); either is nil when
@@ -52,6 +64,7 @@ func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcil
 			Installer:    observability,
 			Requirements: obsplane.Requirements,
 			Removal:      observabilityRemoval,
+			AlertRules:   []reconcile.BuiltInAlertRule{observabilityDiskRule},
 		},
 	}
 }
@@ -72,7 +85,8 @@ func registerPackages(db *sql.DB, bus event.Bus, engine *reconcile.Engine, regis
 		}
 	}
 	instances := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).SetBus(bus)
-	r := reconcile.NewProviderInstanceReconciler(instances, c, report)
+	rules := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus)
+	r := reconcile.NewProviderInstanceReconciler(instances, c, report).WithAlertRules(rules)
 	if err := r.ReportStart(context.Background()); err != nil {
 		log.Printf("serendipd: packages: report readiness at start: %v", err)
 	}

@@ -22,9 +22,14 @@ import (
 // targets it's given, one component-scoped query each, and never a wider
 // one (decision 6).
 type Provider struct {
-	adapters adapters
-	scopes   *scopes
-	now      func() time.Time
+	adapters   adapters
+	prometheus prometheus
+	scopes     *scopes
+	now        func() time.Time
+	// usage and budgetMiB are the package's disk use and budget, for the
+	// built-in packageDisk rule (WithDiskUsage).
+	usage     reconcile.PackageUsage
+	budgetMiB int
 	// maxAnswer is the most lines asked of one query (adapterMaxLimit;
 	// smaller in tests).
 	maxAnswer int
@@ -38,7 +43,7 @@ func NewProvider(client *kubernetes.Client) *Provider {
 }
 
 func newProvider(client *kubernetes.Client, now func() time.Time) *Provider {
-	return &Provider{adapters: adapters{client: client}, scopes: newScopes(client, now), now: now, maxAnswer: adapterMaxLimit}
+	return &Provider{adapters: adapters{client: client}, prometheus: prometheus{client: client}, scopes: newScopes(client, now), now: now, maxAnswer: adapterMaxLimit}
 }
 
 const (

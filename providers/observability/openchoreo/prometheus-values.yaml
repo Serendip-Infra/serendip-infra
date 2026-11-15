@@ -50,6 +50,8 @@ kube-state-metrics:
     - kube_pod_completion_time
     - kube_pod_container_resource_limits
     - kube_pod_container_resource_requests
+    # Spec 024: the restarts alert condition (conditions.go).
+    - kube_pod_container_status_restarts_total
     - kube_pod_info
     - kube_pod_init_container_resource_limits
     - kube_pod_init_container_resource_requests

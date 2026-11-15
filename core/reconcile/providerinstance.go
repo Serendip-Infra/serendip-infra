@@ -88,6 +88,20 @@ type Package struct {
 	// Removal says plainly what removing the package loses, shown before
 	// the request to remove it.
 	Removal string `json:"removal,omitempty"`
+	// AlertRules are the rules the package keeps for itself while it's
+	// installed (specs/024-alerts plan decision 4).
+	AlertRules []BuiltInAlertRule `json:"-"`
+}
+
+// BuiltInAlertRule is a rule a package keeps: created, owned by its
+// ProviderInstance, when the package first reads Ready, and removed with
+// it. People can change, silence or disable it, never delete it alone,
+// so it's created only when missing and never rewritten.
+type BuiltInAlertRule struct {
+	Name string
+	// Spec is the rule as first created; BuiltIn is set on it. A
+	// package declares at most one rule per condition type.
+	Spec resource.AlertRuleSpec
 }
 
 // Installable reports why the package can't be installed in this build,
@@ -170,10 +184,55 @@ type ProviderInstanceReconciler struct {
 	// jobs runs installs and removals in the background (packagejob.go),
 	// shared with UninstallCleanup.
 	jobs *packageJobs
+	// rules is where packages' built-in alert rules are kept; nil keeps
+	// none.
+	rules store.Store[resource.AlertRuleSpec, resource.AlertRuleStatus]
 }
 
 func NewProviderInstanceReconciler(s store.Store[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus], c Catalogue, report ReadinessFunc) *ProviderInstanceReconciler {
 	return &ProviderInstanceReconciler{store: s, catalogue: c, report: report, jobs: newPackageJobs()}
+}
+
+// WithAlertRules keeps packages' built-in alert rules in s.
+func (r *ProviderInstanceReconciler) WithAlertRules(s store.Store[resource.AlertRuleSpec, resource.AlertRuleStatus]) *ProviderInstanceReconciler {
+	r.rules = s
+	return r
+}
+
+// ensureAlertRules creates each of p's built-in rules that inst doesn't
+// own yet, matched by condition type (a person may rename one, never
+// change its type to another built-in's, nor clear builtIn). One List
+// when they all exist, so a resync writes nothing; an existing rule is
+// left as people have changed it.
+func (r *ProviderInstanceReconciler) ensureAlertRules(ctx context.Context, inst resource.ProviderInstance, p Package) error {
+	if r.rules == nil || len(p.AlertRules) == 0 {
+		return nil
+	}
+	owned, err := r.rules.List(ctx, store.ListOptions{OwnerID: inst.Metadata.ID})
+	if err != nil {
+		return fmt.Errorf("list built-in alert rules: %w", err)
+	}
+	have := map[string]bool{}
+	for _, rule := range owned {
+		if rule.Spec.BuiltIn {
+			have[rule.Spec.Condition.Type] = true
+		}
+	}
+	for _, b := range p.AlertRules {
+		if have[b.Spec.Condition.Type] {
+			continue
+		}
+		spec := b.Spec
+		spec.BuiltIn = true
+		_, err := r.rules.Create(ctx, resource.AlertRule{
+			Metadata: resource.Metadata{Name: b.Name, OwnerRefs: []resource.OwnerRef{{Kind: resource.KindProviderInstance, ID: inst.Metadata.ID}}},
+			Spec:     spec,
+		})
+		if err != nil && !errors.Is(err, store.ErrDuplicate) {
+			return fmt.Errorf("create built-in alert rule %s: %w", b.Name, err)
+		}
+	}
+	return nil
 }
 
 // installingMessage is shown while an install runs in the background.
@@ -311,7 +370,12 @@ func (r *ProviderInstanceReconciler) Reconcile(ctx context.Context, ref graph.Re
 		return RequeueAfter{Delay: installPoll}
 	}
 	r.report(capability, true, ReasonInstalled, state.Message)
-	return r.setStatus(ctx, inst, applied, resource.ConditionTrue, ReasonInstalled, state.Message)
+	if err := r.setStatus(ctx, inst, applied, resource.ConditionTrue, ReasonInstalled, state.Message); err != nil {
+		return err
+	}
+	// After Ready is stored: a failure here is retried without holding
+	// the package back.
+	return r.ensureAlertRules(ctx, inst, p)
 }
 
 // readyReason is the reason of inst's Ready condition, or "".

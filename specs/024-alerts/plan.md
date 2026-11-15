@@ -361,6 +361,18 @@ release's.
      filled from validated IDs, never from user text.
    - **Scope always carries all three UIDs,** as spec 023 found it must,
      because an unknown or missing field widens a query silently.
+   - **Amended in T006:**
+     - a metric `value` threshold is in millicores or MiB, the units
+       Serendip's metrics are read in (T002's message said cores or
+       bytes);
+     - a percentage pairs each point with the request or limit in force
+       then (its latest point at or before it);
+     - an empty restarts answer is 0 only when the pods' restart series
+       exist (a second `count` query), else no data;
+     - a condition that can't be evaluated as written (a percentage of
+       a request that isn't set) reads `ConditionRefused`, with the
+       reason;
+     - a disk reading over 5 minutes old is no data.
 
 4. **The built-in disk rule** (spec IN 2).
    - **Created** by `serendipd` when the package becomes Ready: one
@@ -370,6 +382,17 @@ release's.
    - **People can** silence it, change its threshold or disable it, but
      not delete it (409).
    - **It goes** with the package.
+   - **As built (T006):**
+     - a package declares its rules in the catalogue
+       (`reconcile.Package.AlertRules`), so `core` names no product;
+     - the reconciler creates a missing one after Ready is stored,
+       matched by condition type, and never rewrites it;
+     - the store refuses a delete aimed at it (`resource.OwnerKept`,
+       `ErrInUse`, 409), and the API refuses setting or clearing
+       `builtIn`;
+     - it goes by cascade: **removing the package now needs
+       `cascade=true`**, and the console sends it, so the Approval's
+       blast radius lists the rule and its Alerts (RP-077).
 
 5. **The sender** (`core/notify`, standard library only; open question
    2).

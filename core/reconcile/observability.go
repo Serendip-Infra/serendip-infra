@@ -126,6 +126,16 @@ type ConditionValue struct {
 // ErrNoData is a condition whose window has too few points to decide.
 var ErrNoData = errors.New("reconcile: no data for the condition's window")
 
+// ConditionRefusedError is a condition that can't be evaluated as
+// written, such as a percentage of a request the Component doesn't set.
+// Retrying won't help until the rule or the Component changes. Why is
+// shown on the rule, so a provider words it in Serendip's terms.
+type ConditionRefusedError struct {
+	Why string
+}
+
+func (e *ConditionRefusedError) Error() string { return "reconcile: condition refused: " + e.Why }
+
 // LogCursor is where the next page of a time-ordered, newest-first search
 // starts: before Time, after skipping Seen lines at exactly Time (lines
 // can share a timestamp, so time alone would repeat or drop them).

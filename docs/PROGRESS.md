@@ -12,23 +12,36 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T005 done)
+Last updated: 2026-11-15 (spec 024: T001–T006 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
-(authorization), T004 (`core/notify`) and T005 (evaluator and delivery
-loop) done and committed on local branch `spec-024`.** Nothing pushed.
+(authorization), T004 (`core/notify`), T005 (evaluator and delivery
+loop) and T006 (condition queries, built-in disk rule) done and
+committed on local branch `spec-024`.** Nothing pushed.
+- **T006:**
+  - `providers/observability/openchoreo/conditions.go` and
+    `prometheus.go` evaluate all four conditions, replayed against
+    T001's recordings. The restart counter is in the allowlist, and in
+    the bench copy.
+  - The built-in `observability-disk` rule (warning, 85%) is declared in
+    the catalogue and created on Ready. A delete aimed at it gets 409;
+    it goes by cascade. **Package removal now needs `cascade=true`**
+    (the console sends it), and the API refuses changing `builtIn`.
+  - The cluster's ranges reach `core/notify` every 5 minutes, and the
+    Checker refuses private destinations until the first read.
+  - New `ConditionRefusedError` → reason `ConditionRefused`. A metric
+    `value` is in millicores or MiB.
+  - Plan decisions 3 and 4 amended. RP-076 and RP-077 are new; RP-068's
+    residual is closed. Both reviews are in: contract-guardian pass;
+    go-reviewer's findings fixed, one left with its reason.
 - **T005:** `core/reconcile/alerts.go` (evaluator) and `delivery.go`
-  (delivery loop), wired in `cmd/serendipd/alerts.go`. The provider's
-  `EvaluateCondition` is a stub until T006, so every rule reads
-  `QueryFailed` meanwhile. **Retention records Approvals** (one per rule
-  per pass, by policy; contract-guardian blocked the plan's "no Approval"
-  under constitution 5, plan amended, RP-071). go-reviewer's 9 findings
-  fixed. **T006 also has to set `core/notify`'s cluster ranges**
-  (`SetClusterRanges`: pod/Service CIDRs, node addresses); nothing sets
-  them yet.
+  (delivery loop), wired in `cmd/serendipd/alerts.go`. **Retention
+  records Approvals** (one per rule per pass, by policy; contract-guardian
+  blocked the plan's "no Approval" under constitution 5, plan amended,
+  RP-071). go-reviewer's 9 findings fixed.
 - **T003:** actions in `core/policy/builtins.go`
   (`allowPrivateDestination/action` Owner-only); `api/authz.go`
   `alertingRoutes()` has every decision-12/15 route's rule, the
@@ -115,7 +128,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T006 (the provider's condition queries and the built-in disk rule).
+- **Next:** T007 (the API: routes of plan decision 12, test send, catalogue, empty `pendingRoutes`, the heartbeat allowance at `/`; keep `builtInKept` and the `WithAuthorize` checks when replacing the generic routes).
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").

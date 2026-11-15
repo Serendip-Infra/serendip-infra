@@ -280,7 +280,51 @@ Dependency sketch:
   - 200 rules at 1 minute making at most 2 concurrent queries, with no
     store write per evaluation (counted).
 
-## T006 — The provider: conditions and the built-in disk rule
+## T006 — The provider: conditions and the built-in disk rule ✅ 2026-11-15
+
+> **Done as:**
+> - **Queries:** `conditions.go` and `prometheus.go` (a Prometheus HTTP
+>   API v1 instant-query client through the Service proxy):
+>   - metric: for + 1 points at a 1-minute step, the window's lowest
+>     point as the value, each point paired with the request or limit
+>     then in force;
+>   - logMatch: `limit: 1`, reading `total`;
+>   - restarts: the PromQL template, filled only from UIDs that match
+>     `^[A-Za-z0-9-]{1,64}$`;
+>   - packageDisk: through `WithDiskUsage`.
+> - **The restart counter** is in the allowlist, and in the bench's copy
+>   of the values, which a test keeps identical.
+> - **VERSIONS.md** pins the query shapes.
+> - **New in core:** `ConditionRefusedError` (reason `ConditionRefused`,
+>   with a message a person can act on).
+> - **The built-in rule:** declared in the catalogue as
+>   `observability-disk` (warning, 85%). It's created on Ready by
+>   `ProviderInstanceReconciler.WithAlertRules`, matched by condition
+>   type. A delete aimed at it is refused with 409 (`resource.OwnerKept`
+>   in the store), and the API refuses setting or clearing `builtIn`. It
+>   goes by cascade, so the console's package removal now sends
+>   `cascade=true` (plan decision 4 amended).
+> - **The cluster's ranges** come from `kubernetes.Client.ClusterRanges`
+>   (nodes' `podCIDRs` and addresses, and ServiceCIDRs). They're
+>   refreshed every 5 minutes, or 30 s after a failure, and set on
+>   `core/notify`'s Checker. The Checker refuses private destinations
+>   until the first read (RP-076).
+> - **Unit fix:** the metric `value` unit is millicores or MiB, as the
+>   notification text has it (T002's message said cores or bytes).
+> - **Review fixes:**
+>   - go-reviewer: a request or limit on another grid still pairs; an
+>     empty restarts answer is no data unless the pods' series exist;
+>     the rule is matched by type, so a rename doesn't re-create it; a
+>     partial ranges read adds to the last; the fail-closed Checker;
+>     `builtIn` can't be cleared through the API; the fallback is capped
+>     at the answer limit; node DNS-name addresses are skipped;
+>     unparseable ones are reported.
+>   - contract-guardian: pass. Its stale-disk-reading advisory is fixed
+>     (over 5 minutes old is no data).
+>   - Left as is: a UID that fails the check gives a logged
+>     `QueryFailed`, not `ConditionRefused`, since a person can't act on
+>     it.
+> - **Risks:** RP-076 and RP-077. RP-068's "no alert" residual is closed.
 
 - **Do:**
   - `conditions.go` (plan decision 3): the fixed queries over the metrics

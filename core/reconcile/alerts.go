@@ -517,6 +517,7 @@ func (e *AlertEvaluator) apply(ctx context.Context, jobs []*evalJob, now time.Ti
 	}
 	byRule := map[string]*outcome{}
 	var order []string
+	var refused *ConditionRefusedError
 	for _, j := range jobs {
 		o, ok := byRule[j.rule.Metadata.ID]
 		if !ok {
@@ -530,6 +531,9 @@ func (e *AlertEvaluator) apply(ctx context.Context, jobs []*evalJob, now time.Ti
 			continue
 		case errors.Is(j.err, ErrNoData):
 			o.reason, o.msg = resource.ReasonNoData, "no data in the condition's window yet"
+			continue
+		case errors.As(j.err, &refused):
+			o.reason, o.msg = resource.ReasonConditionRefused, refused.Why
 			continue
 		case j.err != nil:
 			// The provider's error can name backend internals: logged,

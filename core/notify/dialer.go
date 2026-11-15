@@ -69,10 +69,13 @@ func mustPrefixes(ss ...string) []netip.Prefix {
 
 // Checker is the address check (spec IN 9). The cluster's own ranges
 // and the node's addresses are set by serendipd and refreshed with the
-// cluster; until then only the fixed ranges apply.
+// cluster. Until they're first set, a private address is refused even
+// where a channel allows one: it could be the cluster's own.
 type Checker struct {
 	mu      sync.RWMutex
 	cluster []netip.Prefix
+	// known says the cluster's ranges have been set at least once.
+	known bool
 	// exempt is for this package's tests only (export_test.go): the
 	// test servers listen on loopback.
 	exempt []netip.Prefix
@@ -90,6 +93,7 @@ func (c *Checker) SetClusterRanges(ranges []netip.Prefix) {
 	}
 	c.mu.Lock()
 	c.cluster = cp
+	c.known = true
 	c.mu.Unlock()
 }
 
@@ -102,7 +106,7 @@ func (c *Checker) CheckAddr(ip netip.Addr, allowPrivate bool) error {
 	}
 	ip = ip.Unmap().WithZone("")
 	c.mu.RLock()
-	cluster, exempt := c.cluster, c.exempt
+	cluster, exempt, known := c.cluster, c.exempt, c.known
 	c.mu.RUnlock()
 	for _, p := range exempt {
 		if p.Contains(ip) {
@@ -126,11 +130,15 @@ func (c *Checker) CheckAddr(ip netip.Addr, allowPrivate bool) error {
 			return fmt.Errorf("%w: %s is a loopback, link-local, multicast or reserved address", ErrRefusedAddress, ip)
 		}
 	}
-	if !allowPrivate {
-		for _, p := range private {
-			if p.Contains(ip) {
-				return fmt.Errorf("%w: %s is a private address; an Owner can allow a private destination for this channel", ErrRefusedAddress, ip)
-			}
+	for _, p := range private {
+		if !p.Contains(ip) {
+			continue
+		}
+		if !allowPrivate {
+			return fmt.Errorf("%w: %s is a private address; an Owner can allow a private destination for this channel", ErrRefusedAddress, ip)
+		}
+		if !known {
+			return fmt.Errorf("%w: %s is a private address, and the cluster's own ranges aren't known yet; try again shortly", ErrRefusedAddress, ip)
 		}
 	}
 	return nil

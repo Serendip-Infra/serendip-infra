@@ -192,7 +192,7 @@ func run() error {
 	if kube != nil {
 		// Alerts (spec 024): the evaluator and delivery loop write the
 		// store, so they stop with ctx before it closes.
-		alertsDone = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String()).run(ctx)
+		alertsDone = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String(), kube.clusterRanges).run(ctx)
 		// Setup goroutines touch only the cluster API and the registry,
 		// never the store, so shutdown doesn't wait for them.
 		kube.plan.start(ctx, newTracker(registry, setupBackoff, capStorage, capSecrets, capGateway, capAppPlatform, capIdentity))

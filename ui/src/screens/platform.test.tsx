@@ -576,7 +576,8 @@ describe("packages page", () => {
     fireEvent.click(await enabled("Remove package"));
     const confirm = await screen.findByRole("group", { name: "Confirm deleting test-pkg" });
     expect(within(confirm).getByText(removal)).toBeTruthy();
-    expect(within(confirm).getByText(/DELETE \/v1\/provider-instances\/pi1/)).toBeTruthy();
+    // A package owns its built-in alert rules (spec 024), so it cascades.
+    expect(within(confirm).getByText(/DELETE \/v1\/provider-instances\/pi1\?cascade=true/)).toBeTruthy();
   });
 });
 

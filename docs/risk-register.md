@@ -89,6 +89,10 @@ purpose), **Closed** (fixed).
 | RP-066 | The observability plane chart's `observabilityalertrules` CRD outlives the package's removal | Footprint | Decided | Spec 023 T001 |
 | RP-067 | Stored logs keep what pods print, secrets included, for 3 days | Data exposure | Accepted | Spec 023 plan |
 | RP-068 | A noisy Component can fill the logs volume before retention acts | Availability, capacity | Accepted | Spec 023 plan |
+| RP-071 | Resolved Alerts are removed after 30 days by system retention | Audit, data retention | Accepted | Spec 024 T005 |
+| RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
+| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
+| RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
 
 ---
 
@@ -1617,8 +1621,9 @@ The text below is the T013 record.
 - **Mitigation:** the volumes are bounded, so the node's disk isn't
   filled; the package reports current use (`usage` on
   `GET /v1/packages`, the Packages page) against the stated budget.
-- **Residual:** no alert when use nears the budget (spec 024's alerts),
-  and the reported use lags (RP-061).
+- **Residual:** the reported use lags (RP-061). The "no alert" part is
+  closed by spec 024 T006: the package's built-in `observability-disk`
+  rule warns at 85% of the budget, to the platform's default channels.
 - **Revisit:** with spec 024 (an alert on the package's own disk use), or
   if a size-based cap for the logs store becomes settable in the logs
   module.
@@ -1671,3 +1676,56 @@ The text below is the T013 record.
   index on `resolvedAt`), which is fine at this scale.
 - **Revisit:** if a profile needs longer retention, or an export before
   removal.
+
+## RP-076 — The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs
+
+- **Kind:** security (SSRF). **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T006.
+- **What:** `core/notify` refuses the cluster's own ranges whatever a
+  channel allows. `serendipd` learns them from the cluster
+  (`kubernetes.Client.ClusterRanges`): each node's `spec.podCIDRs` and
+  addresses, and the ServiceCIDR API's ranges, re-read every 5 minutes
+  (30 s after a failed read). So:
+  - pod ranges are the per-node slices, not the cluster-wide pool, which
+    the API doesn't expose. A CNI that allocates pod addresses without
+    `podCIDRs` (Cilium's cluster-pool IPAM, spec 025) leaves them out;
+  - a node that joins is unknown for up to 5 minutes;
+  - before the first read, a private address is refused even where a
+    channel allows one (the check fails closed, T006 review).
+- **Mitigation:** these ranges are private addresses, refused anyway
+  unless a channel has `allowPrivateDestination`, an Owner-only action
+  with a reason (T003). A failed or empty read never clears ranges a good
+  read set; a partial read adds what it found to the last ranges.
+- **Residual:** a channel allowed private destinations could reach a pod
+  address outside the nodes' `podCIDRs` while that's so.
+- **Revisit:** with spec 025 (Cilium): read its IPAM pool ranges too.
+
+## RP-077 — Alert condition trade-offs found in T006
+
+- **Kind:** correctness; footprint. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T001 and T006.
+- **What:**
+  - **Restarts** are `max − min` of kube-state-metrics' counter over the
+    window (T001: `increase()` overstated 6 restarts as 7.08). A pod's
+    restarts before its first scrape aren't counted (1 per pod in the
+    spike), and a restart is seen ~40 s to ~2 minutes late. An empty
+    answer is 0 only when the pods' restart series exist (a second
+    `count` query); otherwise it's no data, so a stopped exporter can't
+    resolve a firing Alert. A Deployment scaled to 0 reads `NoData`.
+  - **The built-in disk rule is owned by its package**, so removing the
+    package cascades (the console now sends `cascade=true`, and its
+    confirmation lists the rule). The rule's Alerts go with it, so a
+    firing disk Alert gets no "resolved" message when the package is
+    removed; other rules' Alerts resolve with `packageRemoved` as
+    planned.
+  - **One more series per container**
+    (`kube_pod_container_status_restarts_total` in `metricAllowlist`),
+    next to ~9,600 head series. The package's measured footprint
+    predates it.
+- **Mitigation:** a crash loop keeps counting, so the first missed
+  restart only delays a firing. A disk alert for a package being removed
+  is moot: its data is deleted. T011's benchmark measures the package
+  with the new series.
+- **Residual:** as above.
+- **Revisit:** if T011's numbers move the package's stated cost, or a
+  restart alert must catch a single restart.
