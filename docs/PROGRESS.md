@@ -116,12 +116,20 @@ writes, done or pending: check the epics).
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
 - **Next:** T006 (the provider's condition queries and the built-in disk rule).
+- **Later, after spec 024 (agreed 2026-11-15):** composite alert
+  conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
+  done").
 - **After spec 024 (agreed 2026-11-15): a PIM spec, before spec 025.**
   Numbered 026 (so #66 keeps 025), done first. Azure PIM-style eligible
   role assignments and time-bound activation (reason, duration cap,
   optional approver, per-role settings like Azure's role management
   policies). Only principals eligible (usually through a group, like
-  Azure's role-assignable groups) can activate. Approval once per
+  Azure's role-assignable groups) can activate. **Also in that spec
+  (agreed 2026-11-15): permission ceilings**, like AWS IAM permission
+  boundaries and organizations' service control policies: a cap on what
+  a principal's roles can ever grant, whatever is assigned or activated,
+  mainly to bound agents (Azure has no direct equivalent; the nearest are
+  deny assignments). Approval once per
   activation, not per delete; deletes under an activation stay
   policy-approved Approvals, so constitution 5 holds. Mainly for agents,
   whose deletes each wait for a person today. Delete locks (Azure's

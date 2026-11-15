@@ -883,6 +883,12 @@ decisions.
 ## Explicitly NOT done
 
 Everything in the spec's Scope OUT, and also:
+- **composite conditions** (agreed for later, 2026-11-15): a rule that
+  fires on a combination of others, such as "CPU high *and* error logs",
+  like AWS CloudWatch's composite alarms (Azure Monitor has no direct
+  equivalent; its alert processing rules only route and suppress). A
+  later spec adds a `composite` condition over existing rules' states;
+  T005's fingerprints and evaluator are the base it builds on;
 - OpenChoreo's `ObservabilityAlertRule`,
   `ObservabilityAlertsNotificationChannel` and `observability-alert-rule`
   trait, and the Observer's alert store;
