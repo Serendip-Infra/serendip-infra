@@ -12,7 +12,7 @@ console, CLI and MCP) and integrates everything else.
 - **Accepted risks and costs** of these choices live in
   `docs/risk-register.md`.
 
-Last updated: 2026-11-09.
+Last updated: 2026-11-15.
 
 ## Built (Serendip's own code)
 
@@ -96,9 +96,11 @@ Last updated: 2026-11-09.
 | OpenSearch (logs-opensearch module) for logs | OpenObserve | Measured: twice the memory, about 6.6 GB of disk a day at the test load, and a 1.16 GB image (confirms the row above) | ADR 0021 |
 | SigNoz as the edge-1 observability backend | OpenObserve and Prometheus | The heaviest measured (about 2 GB, 3.5× the CPU); no OpenChoreo module; it needs a root user before it ingests anything, and a fixed ClickHouse password. Its search was fastest: reconsider for multi-node installs with memory to spare | ADR 0021 |
 | The metrics module's kube-prometheus-stack (Prometheus Operator) | Plain Prometheus | About 450 MiB more at idle; its 10 CRDs left kube-apiserver about 390 MiB higher after removal | ADR 0021, plan 023 decision 3 |
+| WSO2 cs-tools' alert services' code (`sre-alert-ingestion-service`, `sre-alert-core-service`, `csm-notification-service`) | Serendip's own alert and notification code, following their design | Built on PostgreSQL, Kafka and Redis (constitution 4), with libraries each needing an ADR. Adopted as design: one alert shape from the backends' webhooks (their OpenObserve and Prometheus mappings), folding by fingerprint inside a window, resolution as a note, delivery in its own retrying loop | Spec 024 (Prior art) |
 
 ## Open (decided later)
 
 | Question | Options | Where |
 |---|---|---|
+| An external Ticketing provider | cs-tools' entity-service (WSO2's ServiceNow replacement, REST over PostgreSQL), Zammad, GLPI, Jira | Spec 028 (capability-model.md's Ticketing row) |
 | Self-service autonomous agents in Serendip's own ThunderID | A small spec after 020 (both identity kinds: exchange for a person's assistant, own identity for autonomous agents) | Spec 021 plan decision 1 |
