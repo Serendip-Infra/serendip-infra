@@ -12,15 +12,32 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (after spec 023 T015)
+Last updated: 2026-11-15 (after spec 023's GitHub close-out)
 
 ## Current phase
 
-**Spec 023 (observability package): all 15 tasks done (2026-11-15).
-Left: the GitHub close-out (push `spec-023`, the PR with `Closes #64`,
-epic #64's body rewritten to DONE, the merge), paced beside the
-backfill run (see "GitHub" below). Then the next spec: 024 (alerts),
-whose tasks must include validating alert destinations itself (RP-062).**
+**Spec 023 (observability package): done and closed out on GitHub
+(2026-11-15): PR #197 merged (`b568806`), epic #64 closed. Next spec:
+024 (alerts), whose tasks must include validating alert destinations
+itself (RP-062).**
+- **After the close-out (2026-11-15), upstream `main` = `5bb071d`:**
+  - **#197's merge conflict:** `spec-023` had been cut while upstream
+    `main` was stale, and `CLAUDE.md` conflicted. The cause: the
+    `github.com-org` SSH alias couldn't fetch, because `serendipinfra`
+    had no SSH key on GitHub. `~/.ssh/id_ed25519_org.pub` is now on that
+    account, and `git fetch upstream` works. The fork's `main` is synced
+    too (it was 302 commits behind).
+  - **Dependabot #78–#81 merged:** `actions/github-script` 9,
+    `actions/setup-go` 7, `modernc.org/sqlite` 1.61.1, `golang.org/x/sys`
+    0.50.0. **`go.mod` is now `go 1.26.0`** (both Go bumps need it). CI
+    reads the version from `go.mod`, and Go fetches the 1.26 toolchain
+    itself on older installs.
+  - **PR #210 (`4eedba7`), console bug behind a flaky test:** the Logs
+    panel's first recent-lines read could start after a quick click on
+    Follow and wipe the streamed lines (`log follow reconnects` failed
+    4/20). Fixed in `ui/src/screens/Runtime.tsx`, with two new tests
+    (late read, Refresh after a follow). Now passes 40/40. No-spec fixes
+    go as a small branch and PR, like this one, not straight to `main`.
 - **T015 (closes #90):** docs and close-out (tasks.md T015).
   - **Docs:** `application-platform.md` "Observability (spec 023)" and
     the package readiness reasons (`Removing`); `provider-model.md`
@@ -1714,9 +1731,9 @@ PASS on all, several real findings caught and fixed along the way (see
 git log on `core/` commits for detail per-task if needed; not repeated
 here since it's git-archaeology, not current state).
 
-`go.mod`'s `go` directive is `1.25.0`, not `1.22` — `modernc.org/sqlite`
-v1.56.0 forced this via Go's toolchain mechanism when it was added in
-T010. Still satisfies "Go 1.22+" as a floor (ADR 0003 addendum).
+`go.mod`'s `go` directive is `1.26.0` (since Dependabot #80/#81,
+2026-11-15; `modernc.org/sqlite` v1.56.0 first raised it to `1.25.0` in
+T010). Still satisfies "Go 1.22+" as a floor (ADR 0003 addendum).
 
 ## Tooling set up this session (unrelated to spec 001 — separate track)
 
