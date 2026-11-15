@@ -1,0 +1,5 @@
+{
+ "description": "Bad Request: inline keyboard button URL 'http://localhost:8088/alerts/alr-0123456789' is invalid: Wrong HTTP URL",
+ "error_code": 400,
+ "ok": false
+}

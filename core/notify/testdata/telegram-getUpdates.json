@@ -1,0 +1,54 @@
+{
+ "ok": true,
+ "result": [
+  {
+   "message": {
+    "chat": {
+     "first_name": "Test",
+     "id": 123456789,
+     "last_name": "User",
+     "type": "private"
+    },
+    "date": 1794714581,
+    "entities": [
+     {
+      "length": 6,
+      "offset": 0,
+      "type": "bot_command"
+     }
+    ],
+    "from": {
+     "first_name": "Test",
+     "id": 123456789,
+     "is_bot": false,
+     "language_code": "en",
+     "last_name": "User"
+    },
+    "message_id": 1,
+    "text": "/start"
+   },
+   "update_id": 798288007
+  },
+  {
+   "message": {
+    "chat": {
+     "first_name": "Test",
+     "id": 123456789,
+     "last_name": "User",
+     "type": "private"
+    },
+    "date": 1794714593,
+    "from": {
+     "first_name": "Test",
+     "id": 123456789,
+     "is_bot": false,
+     "language_code": "en",
+     "last_name": "User"
+    },
+    "message_id": 2,
+    "text": "hi"
+   },
+   "update_id": 798288008
+  }
+ ]
+}

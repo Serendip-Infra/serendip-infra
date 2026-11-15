@@ -1,6 +1,6 @@
 # Plan: Spec 024 — Alert rules and notification channels
 
-Status: Draft, 2026-11-15. Awaiting approval.
+Status: Approved, 2026-11-15. T001 (spike) in progress.
 
 Upstream facts come from two research passes on 2026-11-15: oss-researcher
 on OpenChoreo's alerting, and a channel-pricing review. The OpenChoreo
@@ -119,6 +119,145 @@ Telegram bot. Telegram Gateway is the paid fallback, at $0.01 a code.
     added at review.
 - **Open questions 1–6** are answered by the decisions below.
 
+## Spike findings (T001, 2026-11-15, `serendip-t018`)
+
+Queried through `kubectl proxy` to the plane's Service proxies, the path
+`serendipd` uses. Recorded answers are in
+`providers/observability/openchoreo/testdata/condition-*.json`; a scratch
+test parsed each into the provider's types (metrics: 6 points, logs: 4
+lines with `total` 11, restarts: one sample and an empty vector).
+
+1. **Metric condition: as planned.** `POST /api/v1/metrics/query`,
+   `metric=resource`, `step=1m`, a 5-minute window, scope with
+   `namespace` and all three UIDs, for `cmp-00620e1f19` in
+   `env-312daaeb07` (3 replicas): 200, six points per series (both ends
+   included), values summed across the Deployment's pods (CPU limit
+   0.3 = 3 × 0.1). Points are aligned to the query's end, not a fixed
+   grid. **Amends decision 3:** a `for` of N minutes reads N + 1 points,
+   and fires when all of them are above; the evaluator asks for
+   `[now − for, now]`.
+2. **Log condition: the answer carries an exact `total`.** A search for
+   `spike-crash` with `limit: 4` gave 4 lines and `"total": 11`; with
+   `limit: 100`, 11 lines and `total` 11. **Amends decision 3:** query
+   with `limit: 1` and compare `total` with `above`, so `Alert.value` is
+   the real count, not "at least above + 1". The line itself is never put
+   in a notification (RP-067). A scope missing `environmentUid` was
+   accepted, not refused, which is why the scope always carries all
+   three (spec 023's finding, unchanged).
+3. **Restarts.**
+   - **The counter wasn't collected.** Our kube-state-metrics
+     `metricAllowlist` (`prometheus-values.yaml`) has no
+     `kube_pod_container_status_restarts_total`; the plan's "the chart
+     has it" was wrong. Added for the spike by patching the Deployment's
+     args (restored afterwards). **T006 adds it to the allowlist**: one
+     series per container, next to ~9,600 head series now.
+   - **Pods match by label.** kube-state-metrics already exports the
+     pods' `openchoreo.dev/*-uid` labels on `kube_pod_labels`
+     (`metricLabelsAllowlist`), so no ReplicaSet lookup is needed:
+
+     ```
+     sum((max_over_time(kube_pod_container_status_restarts_total[W])
+        - min_over_time(kube_pod_container_status_restarts_total[W]))
+       * on (namespace, pod) group_left()
+         max by (namespace, pod) (kube_pod_labels{
+           label_openchoreo_dev_component_uid="C",
+           label_openchoreo_dev_environment_uid="E",
+           label_openchoreo_dev_project_uid="P"}))
+     ```
+
+   - **`increase()` overstates:** a 2-pod crash loop at 4 restarts each
+     (6 inside the window) read 7.08, then 9.82. `max − min` read 6,
+     an integer. It misses a new pod's restarts before its first scrape
+     (here, 1 per pod); accepted, since a crash loop keeps counting.
+     An empty vector (no pods, or none restarting yet) reads 0.
+   - **Lag:** scrape interval is 1 minute. kubectl showed the third
+     restart at 03:25:01; Prometheus at 03:25:42 (~40 s). Worst case is
+     about one scrape plus one evaluation, ~2 minutes from the restart
+     to the firing.
+4. **Latency at the current store size** (Prometheus 44 MiB, 9,636 head
+   series; logs store 3-day retention, not sized here):
+   - metrics adapter: 10–22 ms (3 runs);
+   - logs adapter: 101–464 ms (the first cold), 230 ms over 24 hours;
+   - Prometheus restart query: 9–19 ms.
+
+   Well inside decision 2's 20 s timeout; T011 measures 200 rules.
+5. **Telegram** (a scratch bot, a private chat; the probe, kept outside
+   the repo, wrote `core/notify/testdata/telegram-*.json` and
+   `probe-report-telegram.txt`, with the token, chat ID, names and bot ID
+   replaced):
+   - **The card is accepted:** `sendMessage`, `parse_mode: HTML`, one
+     URL button, link previews off: 200 in ~350 ms
+     (`telegram-request-card.json` is the body T004 matches). A summary
+     with `<b>`, `&` and `</a>` escaped to entities shows as text.
+   - **Button URLs:** only the host name `localhost` is refused (400,
+     "inline keyboard button URL … is invalid: Wrong HTTP URL").
+     `http://127.0.0.1:8088`, `http://serendip.lan:8088`,
+     `http://192.168.1.20:8088` and `https://console.localhost` are all
+     accepted: plain `http` is fine. **Amends decision 6:** the card gets
+     its button unless the console URL's host is `localhost`; then the
+     URL goes in the text and there's no button. A LAN URL works only
+     while the phone is on that LAN; Settings says so.
+   - **Threading:** `reply_parameters: {message_id,
+     allow_sending_without_reply: true}` gave 200, and the answer's
+     `reply_to_message` is the firing.
+   - **Errors:** a truncated JSON body reads as an empty request (400,
+     "message text is empty"), not a parse error; unclosed HTML gives
+     400 "can't parse entities"; 4,097 characters give 400 "message is
+     too long". All 400s, never retried (decision 7). The card stays
+     well under 4,096 characters; the summary is capped.
+   - **Rate:** 40 messages sent one after another (~3 a second), then 30
+     sent at once, all got 200: no 429 for a private chat at this
+     volume. Not pushed further. The 429 body wasn't recorded, so T004's
+     test uses the Bot API documentation's shape: `error_code: 429` with
+     `parameters.retry_after` in seconds. Decision 7's per-channel rate
+     and digests keep Serendip far below this anyway.
+   - **Finding the chat:** one `getUpdates` call returned the private
+     chat's ID and type after the person sent the bot a message, and
+     nothing before (0 updates, no webhook set). The console's "Find
+     chat" step tells the person to message the bot first.
+6. **Email** (`probe-report-gmail.txt`, `probe-report-brevo.txt`):
+   - **Gmail** (`smtp.gmail.com`, an app password): both ports sent one
+     message, in 3.3–4.1 s.
+     - **587:** no AUTH offered before STARTTLS (the safe behaviour);
+       after TLS 1.3, `LOGIN PLAIN XOAUTH2 …`. **465:** implicit TLS 1.3,
+       same AUTH list.
+     - `SIZE` 34 MiB. Google's documented limit for a personal account
+       is about 500 recipients a day; no limit was shown in the session.
+     - Gmail signs its own mail, so DMARC passes: the recommended
+       zero-cost default.
+     - PLAIN over TLS is all Serendip needs; XOAUTH2 isn't used (an app
+       password is simpler and needs no OAuth client).
+   - **Brevo** (`smtp-relay.brevo.com`, free plan, a verified
+     `@gmail.com` sender): both ports sent one message, in 1.6–2.0 s.
+     - **587:** STARTTLS, then TLS 1.3. **It offers `AUTH PLAIN LOGIN
+       CRAM-MD5` before STARTTLS too**, so a client that authenticates
+       when AUTH is offered would send the key in clear text. Decision
+       5's rule (STARTTLS required, auth only after TLS) is needed, not
+       defensive; T004 tests it with a fake server that offers AUTH
+       before TLS.
+     - **465:** implicit TLS 1.3; it also lists STARTTLS inside TLS,
+       which the client ignores.
+     - `SIZE` 20 MiB; the card email is a few KiB.
+     - **Free-mail senders don't pass DMARC through a relay.** Brevo
+       flags a `@gmail.com` sender as "not compliant" (no DKIM for
+       gmail.com, DMARC unaligned), so receivers may file it as spam or
+       refuse it. Seen: to a Gmail inbox, `brevo` (587) arrived with
+       the From name shown as `serendipinfra` (not rewritten), but
+       `brevo-implicit` (465), the same message through the same relay a
+       moment later, went to Spam (both `gmail` messages reached the
+       inbox). The free-mail sender's unaligned DMARC makes filing a coin
+       toss, which is what the warning predicted. And a relay's 250
+       doesn't mean delivered: the channel's `lastResult` says "accepted by the
+       relay", never "delivered". **Amends decision 6:** Settings recommends a Gmail app
+       password (Gmail signs its own mail) as the zero-cost default, and
+       a relay such as Brevo only with a domain the user owns and has
+       authenticated (DKIM, DMARC). Brevo's "block unauthorized IPs" is
+       documented as hardening for a fixed public IP (T013).
+
+Clean-up: the scratch namespace `t024-spike` (a 2-replica crash loop
+with fake UIDs) is deleted, and kube-state-metrics' args are back to the
+release's.
+
 ## Decisions
 
 1. **The new kinds** (`core/resource`), all with status conditions.
@@ -213,8 +352,8 @@ Telegram bot. Telegram Gateway is the paid fallback, at $0.01 a code.
    | Type | Data | How it's evaluated |
    |---|---|---|
    | `metric` (`cpu` or `memory`; as `value`, `percentOfRequest` or `percentOfLimit`; `above`; `for`) | the metrics adapter (spec 023's path) | it reads the window's points, and fires when every point in `for` is above |
-   | `restarts` (`above` within `window`) | Prometheus: kube-state-metrics' `kube_pod_container_status_restarts_total` (the chart has it, `prometheus-values.yaml`) | `increase(...)` over the window, across the Deployment's pods. T001 checks whether pods can be matched by label; if not, they're named by owner |
-   | `logMatch` (`text`, `above` within `window`, `above` ≤ 999) | the logs adapter | a search with `limit = above + 1`; it fires when the page comes back full |
+   | `restarts` (`above` within `window`) | Prometheus: kube-state-metrics' `kube_pod_container_status_restarts_total`, **added to `prometheus-values.yaml`'s `metricAllowlist`** (T001: it wasn't there) | `max_over_time − min_over_time` per container over the window, joined to `kube_pod_labels` on the three UIDs and summed (T001: not `increase`, which extrapolates) |
+   | `logMatch` (`text`, `above` within `window`, `above` ≤ 999) | the logs adapter | a search with `limit = 1`, reading the answer's `total` (T001); if `total` is ever absent, `limit = above + 1` and a full page |
    | `packageDisk` (`percentOfBudget`) | spec 023's `usage` | built-in only |
 
    - **Restarts read Prometheus directly,** through the same Service

@@ -13,7 +13,19 @@ Dependency sketch:
 **Memory:** spike and benchmark one thing at a time on `serendip-t018` and
 `bench-t470`, and run the keep-awake beside long runs.
 
-## T001 — Spike: the condition queries on serendip-t018
+## T001 — Spike: the condition queries on serendip-t018 ✅ 2026-11-15
+
+> **Done as:** plan.md "Spike findings" 1–6, with recorded answers in
+> `providers/observability/openchoreo/testdata/condition-*.json` and
+> `core/notify/testdata/` (Telegram bodies and answers, the probe reports;
+> token, chat ID, names and addresses replaced). Amended: decision 3
+> (restart counter added to the allowlist and read as max − min; logs read
+> `total`; `for` reads N + 1 points) and decision 6 (no button for a
+> `localhost` console URL; Gmail app password as the free default, a relay
+> only with an owned, authenticated domain; "accepted by the relay", never
+> "delivered"). No 429 recorded at 70 messages; T004 uses the documented
+> shape. Scratch namespace deleted; bot token revoked (`getMe` 401), SMTP
+> key and app password deleted.
 
 - **Do,** with the observability package installed:
   1. **Metric condition:** the metrics adapter's points over a `for`

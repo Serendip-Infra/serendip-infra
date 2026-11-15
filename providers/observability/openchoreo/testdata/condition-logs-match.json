@@ -1,0 +1,62 @@
+{
+ "logs": [
+  {
+   "level": "INFO",
+   "log": "spike-crash-line",
+   "metadata": {
+    "componentUid": "00000000-0000-4000-8000-00000000c024",
+    "containerName": "c",
+    "environmentUid": "00000000-0000-4000-8000-00000000e024",
+    "namespaceName": "t024-spike-ns",
+    "podName": "crasher-ccd77fb59-5nb5s",
+    "podNamespace": "t024-spike",
+    "projectUid": "00000000-0000-4000-8000-00000000a024"
+   },
+   "timestamp": "2026-11-15T03:27:26.586909Z"
+  },
+  {
+   "level": "INFO",
+   "log": "spike-crash-line",
+   "metadata": {
+    "componentUid": "00000000-0000-4000-8000-00000000c024",
+    "containerName": "c",
+    "environmentUid": "00000000-0000-4000-8000-00000000e024",
+    "namespaceName": "t024-spike-ns",
+    "podName": "crasher-ccd77fb59-wwg9l",
+    "podNamespace": "t024-spike",
+    "projectUid": "00000000-0000-4000-8000-00000000a024"
+   },
+   "timestamp": "2026-11-15T03:26:01.585031Z"
+  },
+  {
+   "level": "INFO",
+   "log": "spike-crash-line",
+   "metadata": {
+    "componentUid": "00000000-0000-4000-8000-00000000c024",
+    "containerName": "c",
+    "environmentUid": "00000000-0000-4000-8000-00000000e024",
+    "namespaceName": "t024-spike-ns",
+    "podName": "crasher-ccd77fb59-5nb5s",
+    "podNamespace": "t024-spike",
+    "projectUid": "00000000-0000-4000-8000-00000000a024"
+   },
+   "timestamp": "2026-11-15T03:25:46.582874Z"
+  },
+  {
+   "level": "INFO",
+   "log": "spike-crash-line",
+   "metadata": {
+    "componentUid": "00000000-0000-4000-8000-00000000c024",
+    "containerName": "c",
+    "environmentUid": "00000000-0000-4000-8000-00000000e024",
+    "namespaceName": "t024-spike-ns",
+    "podName": "crasher-ccd77fb59-wwg9l",
+    "podNamespace": "t024-spike",
+    "projectUid": "00000000-0000-4000-8000-00000000a024"
+   },
+   "timestamp": "2026-11-15T03:25:06.584156Z"
+  }
+ ],
+ "tookMs": 200,
+ "total": 11
+}

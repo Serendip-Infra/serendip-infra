@@ -12,14 +12,45 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024 re-scoped to alerts; plan rewritten)
+Last updated: 2026-11-15 (spec 024 approved; T001 cluster half done)
 
 ## Current phase
 
-**Spec 024 (alert rules and notification channels; epic #65): spec,
-`plan.md` and `tasks.md` (T001–T013) in `specs/024-alerts/` on local
-branch `spec-024`, awaiting the user's approval of the plan.** Nothing
-pushed. Epic #65 → "Spec 024: Alert rules and notification channels" and
+**Spec 024 (alert rules and notification channels; epic #65): plan
+approved by the user 2026-11-15. T001 (spike) done and committed on
+local branch `spec-024`.** Nothing pushed.
+- **T001** (plan "Spike findings" 1–6; recordings in
+  `providers/observability/openchoreo/testdata/condition-*.json` and
+  `core/notify/testdata/`):
+  - metric query as planned (a `for` of N min reads N + 1 points);
+  - the logs answer has an exact `total`, so `logMatch` queries
+    `limit: 1` and reads it;
+  - **restart counter wasn't collected:** T006 must add
+    `kube_pod_container_status_restarts_total` to
+    `prometheus-values.yaml`'s `metricAllowlist`. Pods match by
+    `kube_pod_labels` UIDs; `max − min` over the window, not `increase`;
+    lag ~40 s;
+  - latencies 10–460 ms. Scratch namespace deleted, kube-state-metrics
+    args restored.
+  - **Telegram:** card and URL button accepted; only a `localhost` host
+    is refused in a button (plain http is fine); threading via
+    `reply_parameters` works; no 429 at 70 messages (T004 uses the
+    documented shape); `getUpdates` finds the chat only after the person
+    messages the bot.
+  - **Email:** Gmail app password delivered to the inbox on 587 and 465
+    (the free default). Brevo with a `@gmail.com` sender: one inbox, one
+    Spam (DMARC unaligned), so a relay needs an owned, authenticated
+    domain. **Brevo offers AUTH before STARTTLS on 587**: auth only after
+    TLS is required, and T004 tests it.
+  - All scratch credentials revoked (bot `getMe` 401, SMTP key and app
+    password deleted). The probe lives in that session's scratchpad only.
+  - **No public domain exists yet.** The user may register one
+    (`serendipinfra.com` or `serendip-infra.dev` suggested) for email
+    sending with DKIM; not decided.
+- **GitHub for spec 024 is waiting on `backfill.sh`** (resting, resumes
+  about 07:26 UTC 2026-11-15, ends around Monday): never two runs at
+  once. After it logs `DONE`: epic #65's body to IN PROGRESS, and T001–
+  T013's task issues as one paced batch. Epic #65 → "Spec 024: Alert rules and notification channels" and
 #66 → "Spec 025: Networking: Cilium, Hubble and traces" (two paced
 writes, done or pending: check the epics).
 - **Traces moved to spec 025** (the user agreed, 2026-11-15), with
@@ -54,8 +85,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** on approval, the epic's body to IN PROGRESS and the task
-  issues as one paced batch, then T001 (spike on `serendip-t018`).
+- **Next:** T002 and T004 (no cluster needed), then T003.
 
 **Spec 023 (observability package): done and closed out on GitHub
 (2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**

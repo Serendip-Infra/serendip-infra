@@ -1,0 +1,16 @@
+getUpdates: 200 in 787ms
+getUpdates: found chat type=private
+getUpdates: found chat type=private
+card https button: 200 in 350ms
+card button localhost (http://localhost:8088/alerts/alr-0123456789): 400 in 143ms: {"ok":false,"error_code":400,"description":"Bad Request: inline keyboard button URL 'http://localhost:8088/alerts/alr-0123456789' is invalid: Wrong HTTP URL"}
+card button loopback-ip (http://127.0.0.1:8088/alerts/alr-0123456789): 200 in 335ms: {"ok":true,"result":{"message_id":4,"from":{"id":1000000001,"is_bot":true,"first_name":"example_alerts_bot","username":"example_alerts_bot"},"chat":{"id":123456789,"first_name":"Test","last_name":"User","type":"private"},"date":1794714607,"text":"\ud83d\udd34 FIRING \u00b7 critical
+card button plain-http-name (http://serendip.lan:8088/alerts/alr-0123456789): 200 in 353ms: {"ok":true,"result":{"message_id":5,"from":{"id":1000000001,"is_bot":true,"first_name":"example_alerts_bot","username":"example_alerts_bot"},"chat":{"id":123456789,"first_name":"Test","last_name":"User","type":"private"},"date":1794714608,"text":"\ud83d\udd34 FIRING \u00b7 critical
+card button plain-http-lan-ip (http://192.168.1.20:8088/alerts/alr-0123456789): 200 in 334ms: {"ok":true,"result":{"message_id":6,"from":{"id":1000000001,"is_bot":true,"first_name":"example_alerts_bot","username":"example_alerts_bot"},"chat":{"id":123456789,"first_name":"Test","last_name":"User","type":"private"},"date":1794714608,"text":"\ud83d\udd34 FIRING \u00b7 critical
+card button https-localhost (https://console.localhost/alerts/alr-0123456789): 200 in 343ms: {"ok":true,"result":{"message_id":7,"from":{"id":1000000001,"is_bot":true,"first_name":"example_alerts_bot","username":"example_alerts_bot"},"chat":{"id":123456789,"first_name":"Test","last_name":"User","type":"private"},"date":1794714608,"text":"\ud83d\udd34 FIRING \u00b7 critical
+resolution reply_parameters: 200 in 338ms
+malformed JSON: 400: {"ok":false,"error_code":400,"description":"Bad Request: message text is empty"}
+bad HTML: 400: {"ok":false,"error_code":400,"description":"Bad Request: can't parse entities: Can't find end tag corresponding to start tag \"b\""}
+4097-char text: 400: {"ok":false,"error_code":400,"description":"Bad Request: message is too long"}
+burst: 40 sends, no 429 (last 200)
+gmail: skipped
+brevo: skipped

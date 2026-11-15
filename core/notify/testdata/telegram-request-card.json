@@ -1,0 +1,18 @@
+{
+ "chat_id": "123456789",
+ "link_preview_options": {
+  "is_disabled": true
+ },
+ "parse_mode": "HTML",
+ "reply_markup": {
+  "inline_keyboard": [
+   [
+    {
+     "text": "View in console",
+     "url": "https://console.example.com/alerts/alr-0123456789"
+    }
+   ]
+  ]
+ },
+ "text": "\u003cb\u003e🔴 FIRING · critical\u003c/b\u003e\n\u003cb\u003echeckout-api\u003c/b\u003e · production\nCPU above 90% of limit for 5 min (now 97%)\nSummary: queue \u0026lt;b\u0026gt; \u0026amp; \u0026lt;/a\u0026gt; \"x\"\n\u003ci\u003eRule cpu-high · Serendip spike T001\u003c/i\u003e"
+}
