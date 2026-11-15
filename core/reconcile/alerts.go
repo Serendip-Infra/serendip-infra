@@ -886,6 +886,37 @@ func addDeliveries(st *resource.AlertStatus, channels []string, event string, no
 	}
 }
 
+// resolvedDetail is a resolution's line when the condition didn't clear:
+// the Alert stopped being watched (spec 024 T010: a package removal read
+// "back under 3 (now 24)"). "" for a cleared one.
+func resolvedDetail(reason string, last float64, lasted time.Duration) string {
+	why := map[string]string{
+		resource.ResolvedPackageRemoved: "the observability package was removed",
+		resource.ResolvedRuleDeleted:    "its rule was deleted",
+		resource.ResolvedRuleDisabled:   "its rule was turned off",
+		resource.ResolvedComponentGone:  "its component is gone",
+	}[reason]
+	if why == "" {
+		return ""
+	}
+	return fmt.Sprintf("No longer watched: %s (last value %.4g) after %s", why, last, lastedWords(lasted))
+}
+
+// lastedWords is how long an Alert fired: "less than a minute", "7 min",
+// "2 h 5 min".
+func lastedWords(d time.Duration) string {
+	m := int(d / time.Minute)
+	switch {
+	case m < 1:
+		return "less than a minute"
+	case m < 60:
+		return fmt.Sprintf("%d min", m)
+	case m%60 == 0:
+		return fmt.Sprintf("%d h", m/60)
+	}
+	return fmt.Sprintf("%d h %d min", m/60, m%60)
+}
+
 // conditionDetail is the condition line a notification carries.
 func conditionDetail(c resource.AlertCondition, event string, current, threshold float64, lasted time.Duration) string {
 	what, unit := "value", ""
@@ -909,7 +940,7 @@ func conditionDetail(c resource.AlertCondition, event string, current, threshold
 	}
 	num := func(v float64) string { return fmt.Sprintf("%.4g", v) }
 	if event == resource.DeliveryEventResolved {
-		return fmt.Sprintf("%s back under %s%s (now %s) after %s", what, num(threshold), unit, num(current), lasted.Round(time.Minute))
+		return fmt.Sprintf("%s back under %s%s (now %s) after %s", what, num(threshold), unit, num(current), lastedWords(lasted))
 	}
 	s := fmt.Sprintf("%s above %s%s (now %s)", what, num(threshold), unit, num(current))
 	if c.Metric != nil {

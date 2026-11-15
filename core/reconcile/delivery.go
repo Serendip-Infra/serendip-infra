@@ -429,12 +429,18 @@ func (d *DeliveryLoop) message(ctx context.Context, it pendingItem) notify.Messa
 		m.ConsoleURL = strings.TrimRight(d.o.ConsoleURL, "/") + "/alerts/" + a.Metadata.ID
 	}
 	d.names(ctx, a, &m)
+	lasted := time.Duration(0)
+	if a.Status.ResolvedAt != nil {
+		lasted = a.Status.ResolvedAt.Sub(a.Status.StartedAt)
+	}
 	if r, err := d.s.Rules.Get(ctx, a.Spec.RuleID); err == nil {
-		lasted := time.Duration(0)
-		if a.Status.ResolvedAt != nil {
-			lasted = a.Status.ResolvedAt.Sub(a.Status.StartedAt)
-		}
 		m.Detail = conditionDetail(r.Spec.Condition, it.d.Event, a.Status.Value, a.Status.Threshold, lasted)
+	}
+	// A resolution that didn't clear says why, even with the rule gone.
+	if it.d.Event == resource.DeliveryEventResolved {
+		if s := resolvedDetail(a.Status.ResolvedReason, a.Status.Value, lasted); s != "" {
+			m.Detail = s
+		}
 	}
 	if it.d.Event == resource.DeliveryEventResolved {
 		// The resolution replies to the firing in the same thread.

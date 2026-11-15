@@ -282,6 +282,22 @@ to the outside and LAN webhooks and a heartbeat test, all `sent`.
 - **F8: an unused 15-minute backoff step.** Five attempts use four
   waits; the fifth, 15 min, was dead, and the plan listed it.
   Dropped from `deliveryBackoff` and the plan.
+- **F9: a resolution that didn't clear read as if it had.** When the
+  package removal resolved the log Alert, Telegram said "✅ RESOLVED …
+  back under 3 in 2 min (now 24) after 12m0s" (seen by the user). The
+  condition line ignored `resolvedReason`. Now a resolution for a removed
+  package, a deleted or disabled rule or a gone Component says "No
+  longer watched: <why> (last value N) after <time>", even when the rule
+  is gone, and durations read "7 min", "1 h 5 min" or "less than a
+  minute" (`core/reconcile/alerts.go`, `delivery.go`, a new test).
+  Live: a rule on `t023-echo` fired (Telegram 89), was turned off, and
+  its resolution (90, a reply) went out as `ruleDisabled`.
+- **Heartbeat, again** (at the user's request, 13:52–14:03): pings
+  every minute (healthchecks.io's count went 70 → 73), `serendipd`
+  stopped at 13:56:10, DOWN with a Telegram alert at 13:58, and beats
+  resumed at 14:02:58 after the restart. The user has two checks named
+  "Serendip -test"; Serendip pings one, and the other (the URL now in
+  the user's file) has no pings and stays DOWN.
 - **Doc:** `docs/cli-and-mcp.md` said `alerts_list` answers at most 50
   "whatever it asks"; a larger `limit` is refused, and it now says so.
 
