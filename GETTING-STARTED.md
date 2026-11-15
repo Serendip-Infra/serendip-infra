@@ -32,6 +32,12 @@ Rules of thumb:
 3. Sign in as `admin`. The password is in the Secret
    `serendip-identity/serendip-identity-admin`, key `password`.
 
+`serendipd` runs on the host, not in the cluster's container, so
+`docker start` alone doesn't bring the console back. On Windows,
+`scripts/dev-up.ps1` does both: it starts the kind node, builds `serendipd`
+and runs it in the background with the settings in its state dir
+(`~\.serendip-t018` by default; see the script's help for `dev-up.env`).
+
 Without a cluster the console still loads, but sign-in reports the identity
 provider as unavailable; API keys work as always. Details, and the
 one-time step for installs that predate the console:
