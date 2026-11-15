@@ -270,6 +270,20 @@ describe("runtime tab", () => {
     const follow = calls.find((c) => c.url.includes("follow=true"))!;
     expect((follow.init.headers as Record<string, string>)["X-Serendip-Csrf"]).toBe("1");
   });
+
+  it("reads the recent lines again on Refresh after a follow ends", async () => {
+    goTo("/applications/app1/components/c1?tab=runtime");
+    const ndjson = [{ time: at, instance: "i1", line: "followed" }, { end: "ended" }].map((x) => JSON.stringify(x) + "\n").join("");
+    mockFetch(runtime, () => owner, (url) =>
+      url.includes("follow=true") ? new Response(new ReadableStream({ start: (c) => (c.enqueue(new TextEncoder().encode(ndjson)), c.close()) }), { status: 200, headers: { "Content-Type": "application/x-ndjson" } }) : undefined,
+    );
+    render(<App />);
+    fireEvent.click(await enabled("Follow"));
+    expect(await screen.findByText("followed")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    expect(await screen.findByText("<script>alert(1)</script>")).toBeTruthy();
+    expect(screen.queryByText("followed")).toBeNull();
+  });
 });
 
 describe("log follow reconnects", () => {
@@ -301,6 +315,26 @@ describe("log follow reconnects", () => {
     const follows = calls.filter((c) => c.url.includes("follow=true")).map((c) => c.url);
     expect(follows.length).toBe(2);
     expect(follows[1]).toMatch(/sinceSeconds=\d+/);
+  });
+
+  it("keeps the followed lines when the recent-lines read answers late", async () => {
+    goTo("/applications/app1/components/c1?tab=runtime");
+    let answerRecent!: () => void;
+    const late = new Promise<Response>((resolve) => (answerRecent = () => resolve(json(200, { lines: [], truncated: false }))));
+    const streamed = JSON.stringify({ time: at, instance: "i1", line: "streamed" }) + "\n" + JSON.stringify({ end: "ended" }) + "\n";
+    mockFetch({ ...base, "/v1/deployments/d1/runtime": { objects: [] }, "/v1/deployments/d1/events": { events: [] } }, () => owner, (url) =>
+      url.includes("follow=true")
+        ? new Response(new ReadableStream({ start: (c) => (c.enqueue(new TextEncoder().encode(streamed)), c.close()) }), { status: 200, headers: { "Content-Type": "application/x-ndjson" } })
+        : undefined,
+    );
+    const mocked = vi.mocked(fetch);
+    const answer = mocked.getMockImplementation()!;
+    mocked.mockImplementation((url, init) => (String(url).endsWith("/logs?tailLines=100") ? (calls.push({ url: String(url), init: init ?? {} }), late) : answer(url, init)));
+    render(<App />);
+    fireEvent.click(await enabled("Follow"));
+    expect(await screen.findByText("streamed")).toBeTruthy();
+    await act(async () => answerRecent());
+    expect(screen.getByText("streamed")).toBeTruthy();
   });
 });
 

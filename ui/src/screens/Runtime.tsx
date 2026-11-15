@@ -237,6 +237,9 @@ function Logs({
   // The recent-lines read in flight, cancelled when following starts so a
   // late answer can't replace the streamed lines.
   const recent = useRef<AbortController | undefined>(undefined);
+  // Counts follows started, so a recent read that began before the latest
+  // one knows it's stale.
+  const follows = useRef(0);
   const recentPath = `${base}?tailLines=100`;
   const followPath = `${base}?follow=true&tailLines=100`;
 
@@ -244,9 +247,14 @@ function Logs({
     recent.current?.abort();
     const ctrl = new AbortController();
     recent.current = ctrl;
+    const gen = follows.current;
     setError(undefined);
     try {
       const r = await apiFetch<{ lines: LogLine[]; truncated: boolean }>("GET", recentPath, undefined, ctrl.signal);
+      // A recent read never replaces streamed lines: not one that began
+      // before the latest follow (even if its answer beat the abort), nor
+      // one that answers while a follow runs.
+      if (ctrl.signal.aborted || gen !== follows.current || stream.current) return;
       setLines(r.lines ?? []);
       setTruncated(r.truncated);
     } catch (err) {
@@ -256,10 +264,15 @@ function Logs({
 
   useEffect(() => {
     if (!allowed) return;
-    void loadRecent();
+    // The first run can come after a quick click on Follow: the stream's
+    // lines win.
+    if (!stream.current) void loadRecent();
     return () => {
       recent.current?.abort();
       stream.current?.abort();
+      // So the next path's read isn't taken for a running follow.
+      stream.current = undefined;
+      setFollowing(false);
     };
   }, [base, allowed]);
 
@@ -276,6 +289,7 @@ function Logs({
 
   async function follow() {
     followed.current = true;
+    follows.current++;
     recent.current?.abort();
     stream.current?.abort();
     const ctrl = new AbortController();
