@@ -16,7 +16,8 @@
   - The second: the alert evaluator (`alerts.go`, spec 024) runs its
     condition queries 2 at a time (plan decision 2), because 200 rules a
     minute at up to 460 ms each won't fit one at a time. It's an ops loop
-    beside the engine, not reconcile dispatch.
+    beside the engine, not reconcile dispatch. So are its delivery loop
+    (`delivery.go`) and the heartbeat (`heartbeat.go`), each one goroutine.
 - Reuse `core/graph.ResourceRef` (Kind, ID) as the kind-agnostic resource
   identifier — do not invent a second one.
 - No vendor product names in identifiers/comments-as-behavior (constitution

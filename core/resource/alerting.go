@@ -42,6 +42,10 @@ const (
 	MinHeartbeatMinutes    = 1
 	MaxHeartbeatMinutes    = 10
 	DefaultIntervalMinutes = 1
+	MaxSilenceReason       = 500
+	// MaxSilence is the longest a rule can be silenced in one go, so a
+	// forgotten silence ends by itself (spec 024 T007).
+	MaxSilence = 30 * 24 * time.Hour
 )
 
 // Severity is an alert's severity, and a channel's minimum.
@@ -203,6 +207,23 @@ type AlertSilence struct {
 	By     string    `json:"by"`
 	Reason string    `json:"reason"`
 	Until  time.Time `json:"until"`
+}
+
+// ValidateSilence checks a silence asked for at now: a reason, and an
+// end after now and at most MaxSilence away.
+func ValidateSilence(s AlertSilence, now time.Time) error {
+	if err := plainText("reason", s.Reason, MaxSilenceReason); err != nil {
+		return err
+	}
+	switch {
+	case s.Until.IsZero():
+		return invalid("until is required (an RFC 3339 time)")
+	case !s.Until.After(now):
+		return invalid("until must be in the future")
+	case s.Until.Sub(now) > MaxSilence:
+		return invalid("until: at most %d days from now", int(MaxSilence/(24*time.Hour)))
+	}
+	return nil
 }
 
 // AlertRuleStatus is written by serendipd. LastValue and LastEvaluated

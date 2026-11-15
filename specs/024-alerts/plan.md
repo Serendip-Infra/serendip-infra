@@ -596,6 +596,23 @@ release's.
       `POST …/{id}/test`.
     - **SMTP servers:** CRUD on `/v1/smtpservers`.
     - **Heartbeat:** decision 15.
+    - **Amended in T007:**
+      - **Status is the server's** on rules, channels and SMTP servers: a
+        body's `status` is ignored, so a rule's silence changes only
+        through `silence/action` (before this, the generic PUT stored it).
+      - `GET /v1/alerts` takes `limit` (default 100, at most 500), newest
+        first. The summary adds `total` and `unacknowledged`.
+      - A silence needs a `reason`, and its end must be in the future and
+        at most 30 days away (`resource.MaxSilence`).
+      - **A destination is checked when it's saved** by the sender's
+        address rules (webhook URLs and hosts, SMTP hosts, the
+        heartbeat's host): a refused address is a 400 with the reason. A
+        name that doesn't resolve yet is left to the send (RP-078).
+      - **A test send** answers 200 when sent, 422 when the address check
+        refused the destination, and 502 when the receiver failed, with
+        the host-only error. It's recorded on the channel's
+        `lastTest`/`lastTestResult`, whose write is its audit row. With
+        no cluster there's no sender, so it answers 503.
 
 13. **CLI and MCP.**
     - **CLI commands:**
@@ -610,6 +627,14 @@ release's.
         Alerts;
       - the write tools that follow from the catalogue, under the agent's
         roles.
+    - **Amended in T007:**
+      - `get` instead of `show`, as every other CLI command says;
+      - the catalogue's MCP tools are the Alert reads, `alerts_acknowledge`,
+        the rule CRUD and silence and unsilence. Channel, SMTP server and
+        heartbeat writes, and the channel test, are left off MCP with a
+        reason: people set them up, since they name Secrets and where
+        alert content leaves the laptop (RP-070). AI agents read channels
+        through `resources_list`.
 
 14. **The console:**
     - **Component › Observability:** an Alerts section with the
@@ -652,7 +677,12 @@ release's.
       says plainly that the monitor must not run on the same laptop.
     - **The API, CLI and MCP:** `PUT /v1/heartbeat` (the singleton), `GET`,
       `DELETE` (through an Approval), and `POST /v1/heartbeat/test`;
-      `serendip heartbeat set|show|test|delete`.
+      `serendip heartbeat set|get|test|delete`.
+    - **Amended in T007:** the loop is `core/reconcile/heartbeat.go`,
+      started with the evaluator. It checks every 15 s whether a beat is
+      due. It writes status only when the result changes, or every
+      10 minutes while steady, since each write is an audit row (RP-078).
+      A test send skips the health gate and always writes.
 
 ## Suggested outside tools (not dependencies)
 

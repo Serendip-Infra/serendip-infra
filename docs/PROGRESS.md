@@ -12,15 +12,34 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T006 done)
+Last updated: 2026-11-15 (spec 024: T001–T007 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
-loop) and T006 (condition queries, built-in disk rule) done and
-committed on local branch `spec-024`.** Nothing pushed.
+loop), T006 (condition queries, built-in disk rule) and T007 (the API)
+done and committed on local branch `spec-024`.** Nothing pushed.
+- **T007:**
+  - `api/alerts_handler.go` and `api/notifications_handler.go`. Every
+    plan-decision-12 and -15 route is registered, and `pendingRoutes` is
+    gone.
+  - Secrets show only as `secretSet`. Platform default channels show as
+    `platformChannel` below `/`.
+  - Destinations are checked at save, after authorization, through
+    `api.Notifier`/`WithNotifier` (`core/notify`'s Client).
+  - Test sends answer 200, 422 or 502, two at a time.
+  - **Status is the server's** on rules, channels and SMTP servers
+    (`WithServerStatus`).
+  - **The heartbeat loop** is new (`core/reconcile/heartbeat.go`), started
+    with the evaluator. `wireAlerting` now runs before `NewServer`.
+  - Catalogue: CLI groups `alerts`, `alertrules`, `channels`, `smtp` and
+    `heartbeat`, with `get`, not `show`. Rule writes, Alert reads and ack
+    are MCP tools; channel, SMTP and heartbeat writes are CLI-only.
+  - RP-078 is new.
+  - Both reviews are in, no blockers, and the cheap findings are fixed.
+    tasks.md lists what's left as is, with reasons.
 - **T006:**
   - `providers/observability/openchoreo/conditions.go` and
     `prometheus.go` evaluate all four conditions, replayed against
@@ -128,7 +147,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T007 (the API: routes of plan decision 12, test send, catalogue, empty `pendingRoutes`, the heartbeat allowance at `/`; keep `builtInKept` and the `WithAuthorize` checks when replacing the generic routes).
+- **Next:** T008 (CLI and MCP from the catalogue: the MCP cap of 50 Alerts on `alerts_list`, and a test that no channel token reaches CLI or MCP output) ∥ T009 (the console).
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").

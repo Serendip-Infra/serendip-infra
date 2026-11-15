@@ -26,7 +26,10 @@ import (
 type alerting struct {
 	evaluator *reconcile.AlertEvaluator
 	delivery  *reconcile.DeliveryLoop
+	heartbeat *reconcile.HeartbeatLoop
 	client    *notify.Client
+	// secrets reads a channel's or the heartbeat's Secret at send time.
+	secrets notify.SecretReader
 	// ranges reads the cluster's own ranges for the sender's address
 	// check; nil reads none.
 	ranges func(context.Context) ([]netip.Prefix, error)
@@ -77,17 +80,30 @@ func wireAlerting(db *sql.DB, bus event.Bus, obs reconcile.ObservabilityProvider
 		ConsoleURL: consoleURL,
 		Source:     "Serendip",
 	})
-	return &alerting{evaluator: e, delivery: d, client: client, ranges: ranges}
+	// The heartbeat goes only while Serendip can alert (plan decision 15).
+	health := notify.Health{
+		EvaluatorTick: e.LastTick,
+		DeliveryRun:   d.LastRun,
+		StoreOK: func(ctx context.Context) error {
+			_, err := stores.Rules.List(ctx, store.ListOptions{})
+			return err
+		},
+	}
+	beats := sqlite.NewStore[resource.HeartbeatSpec, resource.HeartbeatStatus](db, resource.KindHeartbeat).SetBus(bus).SetUniqueKey(resource.HeartbeatKey)
+	hb := reconcile.NewHeartbeatLoop(beats, client, health, secretValue(secrets))
+	return &alerting{evaluator: e, delivery: d, heartbeat: hb, client: client, secrets: secretValue(secrets), ranges: ranges}
 }
 
-// run starts both loops. They stop with ctx; the returned channel closes
-// once both have, so the store isn't closed under a write.
+// run starts the evaluator, the delivery loop and the heartbeat. They
+// stop with ctx; the returned channel closes once all have, so the store
+// isn't closed under a write.
 func (a *alerting) run(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); a.evaluator.Run(ctx) }()
 	go func() { defer wg.Done(); a.delivery.Run(ctx) }()
+	go func() { defer wg.Done(); a.heartbeat.Run(ctx) }()
 	go func() { wg.Wait(); close(done) }()
 	// The ranges loop touches only the cluster, never the store, so
 	// shutdown doesn't wait for it.

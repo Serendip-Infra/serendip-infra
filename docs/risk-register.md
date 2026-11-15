@@ -1729,3 +1729,47 @@ The text below is the T013 record.
 - **Residual:** as above.
 - **Revisit:** if T011's numbers move the package's stated cost, or a
   restart alert must catch a single restart.
+
+## RP-078 — Alerting API trade-offs found in T007
+
+- **Kind:** audit volume; correctness; footprint. **Status:** Accepted,
+  2026-11-15. **Found:** spec 024 T007.
+- **What:**
+  - **The heartbeat's status is written only when its result changes,
+    or every 10 minutes while it's steady** (`HeartbeatStatusEvery`).
+    Every store write is an audit row, and a beat a minute would add
+    1,440 rows a day. So `lastSent` can lag the real last send by up to
+    10 minutes. The outside monitor, not `lastSent`, is the alarm.
+  - **The address check at save refuses only a refused address.** A name
+    that doesn't resolve yet (DNS down, a host not created yet) is saved,
+    and every send checks again. A name re-pointed at a private address
+    after it's saved is refused at the send (tested at test send: 422).
+  - **Status is the server's on rules, channels and SMTP servers**
+    (`WithServerStatus`): a PUT's `status` is ignored. Before this, the
+    generic PUT stored a client's status, so writing a rule could set its
+    silence without `silence/action`. The other generic kinds still
+    store a body's status (spec 002's behaviour), which isn't
+    authorization-relevant for them today.
+  - **A rule PUT can answer 409** when the evaluator flushed the rule's
+    status (at most once a minute) between the client's read and its
+    write. The client re-reads and retries, as for any conflict.
+  - **The channel list reads each named Secret** for `secretSet` (one
+    store read per Secret per channel). That's fine at this size (a few
+    dozen channels). Revisit if lists get slow.
+  - **Alert lists filter in memory**: every Alert is read, the request's
+    own filters (state, severity, Component, Environment; firing for the
+    summary) are applied, and only the survivors are authorized one by
+    one, then capped at 500. Retention keeps resolved Alerts for 30 days
+    (RP-071), and 200 rules fold flaps into one Alert each. The console's
+    bell polls the summary, which authorizes only firing Alerts.
+  - **Test sends run two at a time**; a third answers 429 with
+    `Retry-After`. Each holds a connection for up to 40 s.
+  - **The heartbeat retries a failed send within a minute**, and while
+    it's paused re-checks every 15 s, so its first beat after Serendip
+    recovers isn't held back an interval.
+- **Mitigation:** as above. A test send and a heartbeat test always
+  write, so each has its audit row.
+- **Residual:** `lastSent` granularity; one extra query per Secret on
+  channel lists.
+- **Revisit:** if a console view needs `lastSent` to the minute, or Alert
+  lists pass about 10,000 rows.

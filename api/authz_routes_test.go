@@ -32,7 +32,7 @@ func TestEveryRouteHasARule(t *testing.T) {
 	// A zero reconciler is enough: registering never calls it.
 	registerAPI(m, db, event.NewInProcessBus(), nil, nil, &reconcile.SecretReconciler{}, nil, nil, serverOptions{})
 
-	table := liveRouteTable()
+	table := routeTable()
 	for _, p := range m.patterns {
 		if _, ok := table[p]; !ok {
 			t.Errorf("route %q has no authorization rule", p)
@@ -46,35 +46,6 @@ func TestEveryRouteHasARule(t *testing.T) {
 	if len(m.patterns) < 80 {
 		t.Errorf("only %d routes registered; the enumeration looks incomplete", len(m.patterns))
 	}
-}
-
-// pendingRoutes have their authorization rules (spec 024 T003) ahead of
-// their handlers (T007): the route and catalogue tests skip them until
-// they're registered. T007 empties this list.
-var pendingRoutes = []string{
-	"POST /v1/alertrules/{id}/silence",
-	"POST /v1/alertrules/{id}/unsilence",
-	"GET /v1/alerts",
-	"GET /v1/alerts/summary",
-	"GET /v1/alerts/{id}",
-	"POST /v1/alerts/{id}/acknowledge",
-	"POST /v1/notificationchannels/{id}/test",
-	"GET /v1/heartbeat",
-	"PUT /v1/heartbeat",
-	"DELETE /v1/heartbeat",
-	"POST /v1/heartbeat/test",
-}
-
-// liveRouteTable is the route table without pendingRoutes.
-func liveRouteTable() map[string]rule {
-	t := routeTable()
-	for _, p := range pendingRoutes {
-		if _, ok := t[p]; !ok {
-			panic("pending route " + p + " has no rule")
-		}
-		delete(t, p)
-	}
-	return t
 }
 
 // TestAlertingRouteRules is spec 024's rows in the route table (plan

@@ -52,13 +52,13 @@ func parityErrors(table map[string]rule) []string {
 }
 
 func TestCatalogueCoversEveryRoute(t *testing.T) {
-	for _, e := range parityErrors(liveRouteTable()) {
+	for _, e := range parityErrors(routeTable()) {
 		t.Error(e)
 	}
 }
 
 func TestCatalogueParityCatchesANewRoute(t *testing.T) {
-	table := liveRouteTable()
+	table := routeTable()
 	table["GET /v1/unmapped"] = rule{authOnly: true}
 	errs := parityErrors(table)
 	want := []string{

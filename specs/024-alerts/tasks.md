@@ -347,7 +347,67 @@ Dependency sketch:
   - the built-in rule is created on Ready, can't be deleted (409), and
     goes with the package.
 
-## T007 — The API
+## T007 — The API ✅ 2026-11-15
+
+> **Done as:** `api/alerts_handler.go` (Alerts list with filters and
+> `limit`, summary, get, acknowledge; rule silence and unsilence) and
+> `api/notifications_handler.go` (channel, SMTP server and heartbeat
+> views showing `secretSet`, never a value; platform default channels
+> shown as `platformChannel` with their settings hidden from those who
+> can't read them; test sends; the heartbeat singleton's routes). An
+> `api.Notifier` (`core/notify`'s Client, `WithNotifier`) checks a
+> destination when it's saved, after authorization: a refused address
+> is a 400 with its reason, a name that doesn't resolve yet is left to
+> the send. A test send answers 200, 422 (refused) or 502 (receiver),
+> two at a time (429 beyond). Its record is the status write and that
+> write's audit row. With no cluster it answers 503.
+> - **Status is the server's** on rules, channels and SMTP servers
+>   (`WithServerStatus` on the generic handler; `WithView` renders
+>   responses). The generic PUT used to store a body's status, so a rule
+>   PUT could set its own silence.
+> - **The heartbeat loop** (`core/reconcile/heartbeat.go`) wasn't owned
+>   by any task, so it's here: started with the evaluator, beating only
+>   while Serendip can alert, writing status on change or every 10 minutes
+>   (RP-078). `wireAlerting` is now built before `NewServer`, so test
+>   sends share its sender.
+> - The heartbeat's allowance is checked with `allowancesAt` at `/`, and
+>   its URL Secret needs `secrets/value/read`. `builtInKept` and the
+>   `WithAuthorize` checks are kept. `pendingRoutes` is gone, not just
+>   emptied.
+> - **Catalogue:** Alert reads, acknowledge, and rule CRUD, silence and
+>   unsilence are MCP tools. Channel, SMTP server and heartbeat writes, and
+>   the channel test, are CLI-only, with a reason. The CLI groups are
+>   `channels` and `smtp`, and `get` replaces `show` (plan amended).
+>   `docs/cli-and-mcp.md` is updated, and stale `alerts` exclusions are
+>   gone.
+> - `resource.ValidateSilence`: a reason, and an end in the future at most
+>   30 days away.
+>
+> **Reviews:** contract-guardian passed with no blocking findings. Its
+> non-blocking findings are fixed: the channel list keeps label filters,
+> the heartbeat PUT is decided before validation, a varying failure
+> message keeps the condition's transition time, and
+> `core/reconcile/CLAUDE.md` names the loop. go-reviewer found no
+> blockers. Fixed from its list:
+> - the heartbeat's schedule after a pause, a failure or a conflict;
+> - Alert lists filter before authorizing;
+> - test-send records don't turn a sent test into an error;
+> - the cap on test sends;
+> - a version-less heartbeat PUT retries a status-only conflict;
+> - the channel's destination check runs after authorization;
+> - the acknowledge text.
+>
+> Left as is, by design:
+> - acknowledging a resolved Alert is allowed (someone may own its
+>   follow-up);
+> - one Secret read per channel for `secretSet` (RP-078);
+> - three heartbeat store constructors, each setting the unique key that
+>   enforces the singleton.
+>
+> **Azure analogues:** acknowledging is Azure Monitor's alert state
+> change ("Acknowledged"). Silences are alert processing rules that
+> suppress notifications for a time. A test send is an action group's
+> "Test action group".
 
 - **Do:**
   - the routes of plan decision 12;

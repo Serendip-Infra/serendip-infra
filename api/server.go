@@ -14,6 +14,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/graph"
 	"github.com/serendip-infra/serendip-infra/core/identity"
+	"github.com/serendip-infra/serendip-infra/core/notify"
 	"github.com/serendip-infra/serendip-infra/core/policy"
 	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
@@ -247,6 +248,9 @@ type serverOptions struct {
 	obs       reconcile.ObservabilityProvider
 	metadata  *ResourceMetadata
 	mcp       bool
+	// notifier and notifySecrets send test notifications (spec 024).
+	notifier      Notifier
+	notifySecrets notify.SecretReader
 }
 
 // WithDirectory lets the authorization routes read the identity provider's
@@ -376,19 +380,45 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	(&PackageHandler{catalogue: opts.packages, instances: instStore}).Register(apiMux)
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
 	// Alerting (spec 024). Alerts are written only by serendipd, so they
-	// get no generic routes; the heartbeat is a singleton with its own.
+	// get only reads and acknowledge; the heartbeat is a singleton with its
+	// own routes. Status is the server's on every alerting kind: a rule's
+	// silence changes only through its own action.
 	channelStore := sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus)
 	ruleStore := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus)
+	smtpStore := sqlite.NewStore[resource.SMTPServerSpec, resource.SMTPServerStatus](db, resource.KindSMTPServer).SetBus(bus)
+	notifications := &notificationsHandler{
+		channels:     channelStore,
+		smtp:         smtpStore,
+		heartbeats:   sqlite.NewStore[resource.HeartbeatSpec, resource.HeartbeatStatus](db, resource.KindHeartbeat).SetBus(bus).SetUniqueKey(resource.HeartbeatKey),
+		secrets:      sqlite.NewStore[resource.SecretSpec, resource.SecretStatus](db, resource.KindSecret),
+		notifier:     opts.notifier,
+		read:         opts.notifySecrets,
+		recordDenied: recordDeniedIn(db),
+		now:          time.Now,
+		sending:      make(chan struct{}, maxTestSends),
+	}
 	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](ruleStore, "alertrules").
+		WithServerStatus().
 		WithValidate(builtInKept(ruleStore)).
 		WithPrepare(prepareAlertRule).
 		WithAuthorize(resource.KindAlertRule, recordDeniedIn(db), channelUse{channels: channelStore}.check).Register(apiMux)
-	NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](channelStore, "notificationchannels").
+	notifications.registerChannels(apiMux, NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](channelStore, "notificationchannels").
+		WithServerStatus().
 		WithPrepare(prepareNotificationChannel).
-		WithAuthorize(resource.KindNotificationChannel, recordDeniedIn(db), channelChecks).Register(apiMux)
-	NewResourceHandler[resource.SMTPServerSpec, resource.SMTPServerStatus](
-		sqlite.NewStore[resource.SMTPServerSpec, resource.SMTPServerStatus](db, resource.KindSMTPServer).SetBus(bus), "smtpservers").
-		WithPrepare(prepareSMTPServer).Register(apiMux)
+		WithAuthorize(resource.KindNotificationChannel, recordDeniedIn(db), notifications.channelAuthorize).
+		WithView(notifications.channelView))
+	NewResourceHandler[resource.SMTPServerSpec, resource.SMTPServerStatus](smtpStore, "smtpservers").
+		WithServerStatus().
+		WithValidate(notifications.checkSMTP).
+		WithPrepare(prepareSMTPServer).
+		WithView(notifications.smtpView).Register(apiMux)
+	notifications.registerHeartbeat(apiMux)
+	(&alertsHandler{
+		alerts: sqlite.NewStore[resource.AlertSpec, resource.AlertStatus](db, resource.KindAlert).SetBus(bus),
+		rules:  ruleStore,
+		comps:  compStore,
+		now:    time.Now,
+	}).register(apiMux)
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")
 	// Not mountResource -- SecretHandler isn't the generic
 	// ResourceHandler[S,St] (its Delete and value routes need

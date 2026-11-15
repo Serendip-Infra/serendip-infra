@@ -5,31 +5,42 @@ type kind struct {
 	Name, Path string
 	// AI marks the kinds whose writes are MCP tools in spec 021 (spec
 	// scope items 1 and 2). The rest are read through the generic
-	// resources tools.
+	// resources tools. Spec 024 adds AlertRule (plan decision 13).
 	AI bool
+	// CLI is the command group, when it isn't Path (spec 024: channels,
+	// smtp).
+	CLI string
+}
+
+// cli is k's command group.
+func (k kind) cli() string {
+	if k.CLI != "" {
+		return k.CLI
+	}
+	return k.Path
 }
 
 // kinds mirrors api's resourcePaths; the parity test checks they agree.
 var kinds = []kind{
-	{"Organization", "organizations", false},
-	{"Team", "teams", false},
-	{"Project", "projects", false},
-	{"Environment", "environments", false},
-	{"Site", "sites", false},
-	{"Cluster", "clusters", false},
-	{"Node", "nodes", false},
-	{"Application", "applications", true},
-	{"Component", "components", true},
-	{"Capability", "capabilities", false},
-	{"Provider", "providers", false},
-	{"ProviderInstance", "provider-instances", false},
-	{"Incident", "incidents", false},
-	{"AlertRule", "alertrules", false},
-	{"NotificationChannel", "notificationchannels", false},
-	{"SMTPServer", "smtpservers", false},
-	{"Volume", "volumes", false},
-	{"Secret", "secrets", true},
-	{"Deployment", "deployments", true},
+	{"Organization", "organizations", false, ""},
+	{"Team", "teams", false, ""},
+	{"Project", "projects", false, ""},
+	{"Environment", "environments", false, ""},
+	{"Site", "sites", false, ""},
+	{"Cluster", "clusters", false, ""},
+	{"Node", "nodes", false, ""},
+	{"Application", "applications", true, ""},
+	{"Component", "components", true, ""},
+	{"Capability", "capabilities", false, ""},
+	{"Provider", "providers", false, ""},
+	{"ProviderInstance", "provider-instances", false, ""},
+	{"Incident", "incidents", false, ""},
+	{"AlertRule", "alertrules", true, ""},
+	{"NotificationChannel", "notificationchannels", false, "channels"},
+	{"SMTPServer", "smtpservers", false, "smtp"},
+	{"Volume", "volumes", false, ""},
+	{"Secret", "secrets", true, ""},
+	{"Deployment", "deployments", true, ""},
 }
 
 // KindPaths maps each kind's name to its collection path, for the parity
@@ -90,19 +101,19 @@ var searchParams = []Param{
 func crud(k kind) []Operation {
 	what := k.Name
 	return []Operation{
-		{Name: underscore(k.Path) + "_list", CLI: []string{k.Path, "list"}, MCP: k.AI,
+		{Name: underscore(k.Path) + "_list", CLI: []string{k.cli(), "list"}, MCP: k.AI,
 			Summary: "List " + k.Path + " the caller may read", Method: "GET", Path: "/v1/" + k.Path,
 			Params: []Param{ownerParam, labelsParam}, Hints: Hints{ReadOnly: true}},
-		{Name: underscore(k.Path) + "_get", CLI: []string{k.Path, "get"}, MCP: k.AI,
+		{Name: underscore(k.Path) + "_get", CLI: []string{k.cli(), "get"}, MCP: k.AI,
 			Summary: "Get one " + what, Method: "GET", Path: "/v1/" + k.Path + "/{id}",
 			Params: []Param{id(what)}, Hints: Hints{ReadOnly: true}},
-		{Name: underscore(k.Path) + "_create", CLI: []string{k.Path, "create"}, MCP: k.AI,
+		{Name: underscore(k.Path) + "_create", CLI: []string{k.cli(), "create"}, MCP: k.AI,
 			Summary: "Create a " + what, Method: "POST", Path: "/v1/" + k.Path,
 			Params: []Param{resourceBody}},
-		{Name: underscore(k.Path) + "_update", CLI: []string{k.Path, "update"}, MCP: k.AI,
+		{Name: underscore(k.Path) + "_update", CLI: []string{k.cli(), "update"}, MCP: k.AI,
 			Summary: "Replace a " + what + "'s spec (send the version read, for a conflict check)", Method: "PUT", Path: "/v1/" + k.Path + "/{id}",
 			Params: []Param{id(what), resourceBody}, Hints: Hints{Idempotent: true}},
-		{Name: underscore(k.Path) + "_delete", CLI: []string{k.Path, "delete"}, MCP: k.AI,
+		{Name: underscore(k.Path) + "_delete", CLI: []string{k.cli(), "delete"}, MCP: k.AI,
 			Summary: "Delete a " + what + ". Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request",
 			Method:  "DELETE", Path: "/v1/" + k.Path + "/{id}",
 			Params: []Param{id(what), cascadeParam}, Hints: Hints{Destructive: true, Idempotent: true}},
@@ -336,8 +347,66 @@ var operations = func() []Operation {
 			Params: []Param{id("Secret"), {Name: "data", In: InField, Type: Object, Required: true, Description: "Key/value pairs"}},
 			Hints:  Hints{Destructive: true, Idempotent: true}},
 	)
-	return ops
+	return append(ops, alertingOperations()...)
 }()
+
+// alertingOperations are spec 024's routes beyond the generic CRUD (plan
+// decisions 12, 13 and 15).
+func alertingOperations() []Operation {
+	severities := []string{"info", "warning", "critical"}
+	return []Operation{
+		{Name: "alerts_list", CLI: []string{"alerts", "list"}, MCP: true,
+			Summary: "Alerts the caller may read, newest first: firing and resolved, with their value against the threshold, who acknowledged them and how each notification went",
+			Method:  "GET", Path: "/v1/alerts",
+			Params: []Param{
+				{Name: "componentId", In: InQuery, Description: "Only this Component's Alerts"},
+				{Name: "applicationId", In: InQuery, Description: "Only Alerts of this Application's Components"},
+				{Name: "environmentId", In: InQuery, Description: "Only Alerts in this Environment"},
+				{Name: "state", In: InQuery, Enum: []string{"firing", "resolved"}, Description: "Only firing or only resolved Alerts"},
+				{Name: "severity", In: InQuery, Enum: severities, Description: "Only this severity"},
+				{Name: "limit", In: InQuery, Type: Integer, Max: 500, Description: "At most this many (default 100)"},
+			}, Hints: Hints{ReadOnly: true}},
+		{Name: "alerts_get", CLI: []string{"alerts", "get"}, MCP: true,
+			Summary: "One Alert", Method: "GET", Path: "/v1/alerts/{id}",
+			Params: []Param{id("Alert")}, Hints: Hints{ReadOnly: true}},
+		{Name: "alerts_summary", CLI: []string{"alerts", "summary"}, MCP: true,
+			Summary: "How many of the caller's Alerts are firing, by severity, and how many of those nobody has acknowledged",
+			Method:  "GET", Path: "/v1/alerts/summary", Hints: Hints{ReadOnly: true}},
+		{Name: "alerts_acknowledge", CLI: []string{"alerts", "ack"}, MCP: true,
+			Summary: "Acknowledge an Alert: records who is looking at it. Notifications still go out",
+			Method:  "POST", Path: "/v1/alerts/{id}/acknowledge",
+			Params: []Param{id("Alert")}, Hints: Hints{Idempotent: true}},
+		{Name: "alertrules_silence", CLI: []string{"alertrules", "silence"}, MCP: true,
+			Summary: "Silence a rule's notifications until a time (at most 30 days away). Its Alerts still open and resolve; only sending stops",
+			Method:  "POST", Path: "/v1/alertrules/{id}/silence",
+			Params: []Param{id("AlertRule"),
+				{Name: "until", In: InField, Required: true, Description: "When the silence ends, an RFC 3339 time"},
+				{Name: "reason", In: InField, Required: true, Description: "Why, shown with the silence"}},
+			Hints: Hints{Idempotent: true}},
+		{Name: "alertrules_unsilence", CLI: []string{"alertrules", "unsilence"}, MCP: true,
+			Summary: "End a rule's silence now", Method: "POST", Path: "/v1/alertrules/{id}/unsilence",
+			Params: []Param{id("AlertRule")}, Hints: Hints{Idempotent: true}},
+		{Name: "notificationchannels_test", CLI: []string{"channels", "test"},
+			Summary: "Send a test notification to a channel now, whatever its minimum severity, and record the result on it",
+			Method:  "POST", Path: "/v1/notificationchannels/{id}/test",
+			Params: []Param{id("NotificationChannel")}},
+		{Name: "heartbeat_get", CLI: []string{"heartbeat", "get"},
+			Summary: "The heartbeat to an outside monitor: where it goes (the URL is a Secret), how often, and its last result",
+			Method:  "GET", Path: "/v1/heartbeat", Hints: Hints{ReadOnly: true}},
+		{Name: "heartbeat_set", CLI: []string{"heartbeat", "set"},
+			Summary: "Set the heartbeat: a request to an outside monitor every interval, sent only while Serendip can alert",
+			Method:  "PUT", Path: "/v1/heartbeat",
+			Params: []Param{{Name: "heartbeat", In: InBody, Type: Object, Required: true,
+				Description: "The heartbeat document: spec (urlSecretId, host, method, intervalMinutes, allowPrivateDestination)"}},
+			Hints: Hints{Idempotent: true}},
+		{Name: "heartbeat_test", CLI: []string{"heartbeat", "test"},
+			Summary: "Send one heartbeat now, whatever Serendip's health, and record the result",
+			Method:  "POST", Path: "/v1/heartbeat/test"},
+		{Name: "heartbeat_delete", CLI: []string{"heartbeat", "delete"},
+			Summary: "Stop the heartbeat. Recorded as an Approval. The outside monitor will then raise its alarm",
+			Method:  "DELETE", Path: "/v1/heartbeat", Hints: Hints{Destructive: true, Idempotent: true}},
+	}
+}
 
 // approvalRequestBody nests the flat arguments into the API's ApprovalSpec.
 // Request has checked their types and that kind and id are there.
@@ -371,6 +440,7 @@ var excluded = func() map[string]Exclusion {
 		directory      = "directory data, readable only by those who may assign roles, which agents never may"
 		platform       = "a platform-wide setting, changed by people"
 		catchAll       = "the catch-all route only ever answers 404"
+		notifySettings = "notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get"
 		infraWrites    = "infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get"
 	)
 	e := map[string]Exclusion{
@@ -385,13 +455,22 @@ var excluded = func() map[string]Exclusion {
 		"POST /v1/approvals/{id}/approve":                     {MCP: agentsNoDecide},
 		"POST /v1/approvals/{id}/reject":                      {MCP: agentsNoDecide},
 		"PUT /v1/capabilities/{name}/default":                 {MCP: platform},
+		"POST /v1/notificationchannels/{id}/test":             {MCP: notifySettings},
+		"GET /v1/heartbeat":                                   {MCP: platform},
+		"PUT /v1/heartbeat":                                   {MCP: platform},
+		"POST /v1/heartbeat/test":                             {MCP: platform},
+		"DELETE /v1/heartbeat":                                {MCP: platform},
 	}
 	for _, k := range kinds {
 		if k.AI {
 			continue
 		}
+		reason := infraWrites
+		if k.Name == "NotificationChannel" || k.Name == "SMTPServer" {
+			reason = notifySettings
+		}
 		for _, r := range []string{"POST /v1/" + k.Path, "PUT /v1/" + k.Path + "/{id}", "DELETE /v1/" + k.Path + "/{id}"} {
-			e[r] = Exclusion{MCP: infraWrites}
+			e[r] = Exclusion{MCP: reason}
 		}
 	}
 	return e

@@ -379,3 +379,26 @@ func TestValidateAlertAndDeliveries(t *testing.T) {
 	}
 	wantErr(t, resource.ValidateAlert(m, spec, over), "at most 20 finished")
 }
+
+func TestValidateSilence(t *testing.T) {
+	now := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name string
+		s    resource.AlertSilence
+		ok   bool
+	}{
+		{"two hours", resource.AlertSilence{Reason: "deploying", Until: now.Add(2 * time.Hour)}, true},
+		{"the longest", resource.AlertSilence{Reason: "holiday", Until: now.Add(resource.MaxSilence)}, true},
+		{"too long", resource.AlertSilence{Reason: "forever", Until: now.Add(resource.MaxSilence + time.Second)}, false},
+		{"in the past", resource.AlertSilence{Reason: "x", Until: now.Add(-time.Second)}, false},
+		{"now", resource.AlertSilence{Reason: "x", Until: now}, false},
+		{"no end", resource.AlertSilence{Reason: "x"}, false},
+		{"no reason", resource.AlertSilence{Until: now.Add(time.Hour)}, false},
+		{"a control character", resource.AlertSilence{Reason: "a\nb", Until: now.Add(time.Hour)}, false},
+	} {
+		err := resource.ValidateSilence(tt.s, now)
+		if (err == nil) != tt.ok || (err != nil && !errors.Is(err, resource.ErrValidation)) {
+			t.Errorf("%s: %v, want ok %v", tt.name, err, tt.ok)
+		}
+	}
+}
