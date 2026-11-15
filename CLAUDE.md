@@ -64,15 +64,23 @@ but with few, paced writes:
 - **Epic → Task → Sub-task**, as GitHub issue types and sub-issues
   (`.github/ISSUE_TEMPLATE/`):
   - **Epic:** one per spec (label `epic`), opened when its spec is
-    approved.
+    approved, in epic #1's layout: a status line ("Status: IN
+    PROGRESS", then "Status: DONE. All N tasks … Delivered in #PR"),
+    links to spec/plan/tasks (and `verification.md`), `## Scope` (one
+    paragraph), `## What got built` (bullets), and `## Tasks` (the
+    checklist, with the sub-issues below). The body is rewritten when
+    the spec closes. Milestone: the roadmap phase it belongs to
+    (planned specs: "v1 GA").
   - **Task:** one per `T###`, a sub-issue of its epic, opened when
     `tasks.md` is approved (as one paced batch), closed in the commit that
     finishes it (`closes #N` in the commit body, or at the checkpoint).
   - **Sub-task:** a sub-issue of a task, only when a task splits (review
     findings carried, a live check's items).
-  - Specs closed before 2026-11-14 keep a task checklist in their epic
-    instead of task issues: back-filling ~270 closed issues is exactly the
-    burst that got the account flagged.
+  - Specs closed before 2026-11-14 get their task issues (about 245,
+    closed) from one slow, resumable background run, never a burst:
+    one write every 90 s, a 6-hour rest after every 200, stopping at
+    the first 403 or 429 (the user's choice, 2026-11-14). Until it
+    finishes, their epics' checklists are the record.
 - **One PR per spec** when it closes: branch `spec-NNN` on the Yasindu007
   fork, opened by Yasindu007, merged by `serendipinfra` with a merge
   commit, its body saying `Closes #<epic>` so the merge closes the epic.

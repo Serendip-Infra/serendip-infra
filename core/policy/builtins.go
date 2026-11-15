@@ -40,6 +40,10 @@ const (
 	// ActionPlatformRead reads the platform's description: where workloads
 	// run, and the component types and traits available.
 	ActionPlatformRead = "serendip/platform/read"
+	// ActionObservabilityRead reads a Deployment's stored metrics
+	// (specs/023-observability plan decision 11). Unlike logs, it's in
+	// the read-only roles through */read.
+	ActionObservabilityRead = "serendip/observability/read"
 )
 
 // builtInRoles mirror Azure's built-in roles of the same names and meaning

@@ -327,7 +327,17 @@ type packageRow struct {
 		MeasuredOn        string `json:"measuredOn"`
 		Results           string `json:"results"`
 		Note              string `json:"note"`
+		Disk              *struct {
+			GrowthMiBPerDay int `json:"growthMiBPerDay"`
+			RetentionDays   int `json:"retentionDays"`
+			BudgetMiB       int `json:"budgetMiB"`
+		} `json:"disk"`
 	} `json:"requirements"`
+	Usage *struct {
+		UsedMiB     int `json:"usedMiB"`
+		CapacityMiB int `json:"capacityMiB"`
+	} `json:"usage"`
+	UsageError string `json:"usageError"`
 }
 
 // printPackages prints the packages with their measured cost, idle and
@@ -369,6 +379,19 @@ func printPackages(body []byte, out io.Writer) {
 			if r.Note != "" {
 				notes = append(notes, safe(r.Note))
 			}
+			if d := r.Disk; d != nil {
+				notes = append(notes, fmt.Sprintf("Disk: about %d MiB a day, kept %d days, at most %d MiB.", d.GrowthMiBPerDay, d.RetentionDays, d.BudgetMiB))
+			}
+		}
+		if u := p.Usage; u != nil {
+			used := fmt.Sprintf("Disk in use: %d MiB", u.UsedMiB)
+			if u.CapacityMiB > 0 {
+				used += fmt.Sprintf(" of %d MiB", u.CapacityMiB)
+			}
+			notes = append(notes, used+".")
+		}
+		if p.UsageError != "" {
+			notes = append(notes, "Disk in use: "+safe(p.UsageError)+".")
 		}
 		if p.NotInstallable != "" {
 			notes = append(notes, "Not installable: "+safe(p.NotInstallable)+".")

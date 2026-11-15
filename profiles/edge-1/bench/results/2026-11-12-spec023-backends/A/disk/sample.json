@@ -1,0 +1,2639 @@
+{
+  "label": "A: under load, disk growth",
+  "startedAt": "2026-11-12T22:55:37.2080792Z",
+  "machine": {
+    "hostOS": "windows/amd64",
+    "hostCPU": "AMD Ryzen 7 7840HS with Radeon 780M Graphics",
+    "nodeName": "bench-t470-control-plane",
+    "nodeKernel": "6.6.87.2-microsoft-standard-WSL2",
+    "nodeOSImage": "Debian GNU/Linux 12 (bookworm)",
+    "containerRuntime": "containerd://2.1.3",
+    "kubeletVersion": "v1.34.0",
+    "nodeCPUCapacity": "4",
+    "nodeMemoryCapacity": "8133872Ki"
+  },
+  "simulation": {
+    "cpus": 2,
+    "cpuset": "0-3",
+    "note": "kind node limited to 4 threads and 2.0 CPUs of quota to approximate an i5-6300U (2c/4t)",
+    "notSimulated": [
+      "16-32 GB RAM (only measured, not limited)",
+      "SATA/NVMe disk speed"
+    ]
+  },
+  "intervalSeconds": 600,
+  "samples": [
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 7031948,
+          "workingSetBytes": 68608000,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 262713,
+              "workingSetBytes": 10477568
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 6085294,
+              "workingSetBytes": 30670848
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 524874,
+              "workingSetBytes": 12029952
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 159067,
+              "workingSetBytes": 15429632
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 221900,
+          "workingSetBytes": 8798208,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 221900,
+              "workingSetBytes": 8798208
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2218877,
+          "workingSetBytes": 88358912,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 958752,
+              "workingSetBytes": 28909568
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 798892,
+              "workingSetBytes": 45096960
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 461233,
+              "workingSetBytes": 14352384
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5975527,
+          "workingSetBytes": 64557056,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1985700,
+              "workingSetBytes": 43413504
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3989827,
+              "workingSetBytes": 21143552
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 494623,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 494623,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 178053596,
+          "workingSetBytes": 1160089600,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 3144482,
+              "workingSetBytes": 17190912
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2826814,
+              "workingSetBytes": 16850944
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 49350185,
+              "workingSetBytes": 110202880
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 511313,
+              "workingSetBytes": 13746176
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 86841781,
+              "workingSetBytes": 854200320
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 24518957,
+              "workingSetBytes": 89825280
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 784893,
+              "workingSetBytes": 15753216
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 10046024,
+              "workingSetBytes": 32395264
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 29147,
+              "workingSetBytes": 9924608
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 125502792,
+          "workingSetBytes": 1450704896,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 160135,
+              "workingSetBytes": 6778880
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 695083,
+              "workingSetBytes": 13008896
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 7338650,
+              "workingSetBytes": 17047552
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 419078,
+              "workingSetBytes": 56782848
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 1539737,
+              "workingSetBytes": 9641984
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 583573,
+              "workingSetBytes": 11882496
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 5526335,
+              "workingSetBytes": 2248704
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 272250,
+              "workingSetBytes": 13709312
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 92014161,
+              "workingSetBytes": 1063845888
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 12098042,
+              "workingSetBytes": 215908352
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 4855748,
+              "workingSetBytes": 39849984
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 1107950,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 215035,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 217378,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 222540,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 216163,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 236834,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 10558771,
+          "workingSetBytes": 20459520,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 10558771,
+              "workingSetBytes": 20459520
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "volumes": {
+        "openchoreo-observability-plane/observer-alerts-data": {
+          "usedBytes": 102400,
+          "capacityBytes": 134217728
+        },
+        "openchoreo-observability-plane/opensearch-master-opensearch-master-0": {
+          "usedBytes": 68628480,
+          "capacityBytes": 5368709120
+        },
+        "openchoreo-observability-plane/prometheus-openchoreo-observability-db-prometheus-openchoreo-observability-0": {
+          "usedBytes": 6602752,
+          "capacityBytes": 3221225472
+        },
+        "serendip-identity/thunderid-certs-pvc": {
+          "usedBytes": 32768,
+          "capacityBytes": 16777216
+        },
+        "serendip-identity/thunderid-database-pvc": {
+          "usedBytes": 917504,
+          "capacityBytes": 1073741824
+        },
+        "serendip-identity/thunderid-secrets-pvc": {
+          "usedBytes": 8192,
+          "capacityBytes": 16777216
+        },
+        "serendip-system/openbao-data": {
+          "usedBytes": 4632576,
+          "capacityBytes": 1073741824
+        }
+      },
+      "at": "2026-11-12T22:55:43.2859751Z",
+      "nodeNanoCores": 437900741,
+      "nodeWorkingSetBytes": 4319444992,
+      "nodeFsUsedBytes": 86479142912,
+      "imageFsUsedBytes": 5333487616
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 7458403,
+          "workingSetBytes": 68800512,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 265229,
+              "workingSetBytes": 10563584
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 6833651,
+              "workingSetBytes": 30670848
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 208959,
+              "workingSetBytes": 12058624
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 150564,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 1790962,
+          "workingSetBytes": 8765440,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 1790962,
+              "workingSetBytes": 8765440
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2673540,
+          "workingSetBytes": 88535040,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 1041985,
+              "workingSetBytes": 28925952
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 1134032,
+              "workingSetBytes": 45096960
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 497523,
+              "workingSetBytes": 14512128
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5591599,
+          "workingSetBytes": 64692224,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1647067,
+              "workingSetBytes": 43544576
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3944532,
+              "workingSetBytes": 21147648
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 288682,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 288682,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 177749928,
+          "workingSetBytes": 1045520384,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 3142962,
+              "workingSetBytes": 17244160
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 3004250,
+              "workingSetBytes": 16875520
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 53080650,
+              "workingSetBytes": 84193280
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 542093,
+              "workingSetBytes": 13639680
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 83366409,
+              "workingSetBytes": 765550592
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 24441840,
+              "workingSetBytes": 89853952
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 133110,
+              "workingSetBytes": 15802368
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 9963205,
+              "workingSetBytes": 32403456
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 75409,
+              "workingSetBytes": 9957376
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 141569087,
+          "workingSetBytes": 1476927488,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 29509,
+              "workingSetBytes": 6754304
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 678716,
+              "workingSetBytes": 12894208
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 8043807,
+              "workingSetBytes": 17043456
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 730441,
+              "workingSetBytes": 56799232
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 1133893,
+              "workingSetBytes": 9539584
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 772693,
+              "workingSetBytes": 12083200
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 5851301,
+              "workingSetBytes": 2252800
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 231994,
+              "workingSetBytes": 13709312
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 104929733,
+              "workingSetBytes": 1081466880
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 15369520,
+              "workingSetBytes": 224825344
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 3797480,
+              "workingSetBytes": 39559168
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 984898,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 214693,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 202321,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 182642,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 187624,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 197618,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 6653765,
+          "workingSetBytes": 20463616,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 6653765,
+              "workingSetBytes": 20463616
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "at": "2026-11-12T23:05:43.3859368Z",
+      "nodeNanoCores": 484025149,
+      "nodeWorkingSetBytes": 4237049856,
+      "nodeFsUsedBytes": 86536015872,
+      "imageFsUsedBytes": 5333581824
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 6623631,
+          "workingSetBytes": 69378048,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 171325,
+              "workingSetBytes": 11010048
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 5432278,
+              "workingSetBytes": 30674944
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 513606,
+              "workingSetBytes": 12185600
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 506422,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 0,
+          "workingSetBytes": 8462336,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 0,
+              "workingSetBytes": 8462336
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2323832,
+          "workingSetBytes": 88829952,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 815009,
+              "workingSetBytes": 28934144
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 1062246,
+              "workingSetBytes": 45105152
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 446577,
+              "workingSetBytes": 14790656
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5893262,
+          "workingSetBytes": 64692224,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1832775,
+              "workingSetBytes": 43544576
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 4060487,
+              "workingSetBytes": 21147648
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 163604,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 163604,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 167917931,
+          "workingSetBytes": 1068548096,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 2934738,
+              "workingSetBytes": 17256448
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2741601,
+              "workingSetBytes": 16986112
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 46791562,
+              "workingSetBytes": 87650304
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 331417,
+              "workingSetBytes": 13750272
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 80703528,
+              "workingSetBytes": 785072128
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 23493626,
+              "workingSetBytes": 89657344
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 629442,
+              "workingSetBytes": 15814656
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 10097065,
+              "workingSetBytes": 32403456
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 194952,
+              "workingSetBytes": 9957376
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 105242730,
+          "workingSetBytes": 1487409152,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 16274,
+              "workingSetBytes": 6762496
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 728887,
+              "workingSetBytes": 12894208
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 6806811,
+              "workingSetBytes": 16773120
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 367401,
+              "workingSetBytes": 56455168
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 871427,
+              "workingSetBytes": 9412608
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 286119,
+              "workingSetBytes": 12115968
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 3109114,
+              "workingSetBytes": 2256896
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 231324,
+              "workingSetBytes": 13721600
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 80013177,
+              "workingSetBytes": 1093885952
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 9975565,
+              "workingSetBytes": 221642752
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 2836631,
+              "workingSetBytes": 41488384
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 1063917,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 220227,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 211688,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 205717,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 196709,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 229576,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 7667834,
+          "workingSetBytes": 20463616,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 7667834,
+              "workingSetBytes": 20463616
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "at": "2026-11-12T23:15:43.4958929Z",
+      "nodeNanoCores": 416451766,
+      "nodeWorkingSetBytes": 4260155392,
+      "nodeFsUsedBytes": 86655905792,
+      "imageFsUsedBytes": 5333737472
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 6626048,
+          "workingSetBytes": 69357568,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 295667,
+              "workingSetBytes": 10985472
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 5814935,
+              "workingSetBytes": 30670848
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 409517,
+              "workingSetBytes": 12193792
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 105929,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 105879,
+          "workingSetBytes": 8613888,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 105879,
+              "workingSetBytes": 8613888
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2081775,
+          "workingSetBytes": 88965120,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 752892,
+              "workingSetBytes": 28979200
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 978162,
+              "workingSetBytes": 45211648
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 350721,
+              "workingSetBytes": 14774272
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5257571,
+          "workingSetBytes": 64643072,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1558853,
+              "workingSetBytes": 43495424
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3698718,
+              "workingSetBytes": 21147648
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 177391,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 177391,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 166112083,
+          "workingSetBytes": 1144500224,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 3147121,
+              "workingSetBytes": 17326080
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2710206,
+              "workingSetBytes": 16990208
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 44973826,
+              "workingSetBytes": 88285184
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 607908,
+              "workingSetBytes": 13631488
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 79587070,
+              "workingSetBytes": 860381184
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 23821860,
+              "workingSetBytes": 89374720
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 940225,
+              "workingSetBytes": 16019456
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 9967701,
+              "workingSetBytes": 32534528
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 356166,
+              "workingSetBytes": 9957376
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 138223009,
+          "workingSetBytes": 1493282816,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 18678,
+              "workingSetBytes": 6795264
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 747237,
+              "workingSetBytes": 12898304
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 7344869,
+              "workingSetBytes": 16875520
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 619730,
+              "workingSetBytes": 54607872
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 902764,
+              "workingSetBytes": 9162752
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 748265,
+              "workingSetBytes": 12386304
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 5879682,
+              "workingSetBytes": 2244608
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 224521,
+              "workingSetBytes": 13709312
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 105964217,
+              "workingSetBytes": 1108893696
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 12460891,
+              "workingSetBytes": 215781376
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 3312155,
+              "workingSetBytes": 39927808
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 1047504,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 214716,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 217230,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 211633,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 193374,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 210551,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 7823211,
+          "workingSetBytes": 20463616,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 7823211,
+              "workingSetBytes": 20463616
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "at": "2026-11-12T23:25:43.6076114Z",
+      "nodeNanoCores": 429746593,
+      "nodeWorkingSetBytes": 4327510016,
+      "nodeFsUsedBytes": 86713061376,
+      "imageFsUsedBytes": 5333897216
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 6152552,
+          "workingSetBytes": 69238784,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 184719,
+              "workingSetBytes": 10764288
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 5620826,
+              "workingSetBytes": 30740480
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 299032,
+              "workingSetBytes": 12226560
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 47975,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 267490,
+          "workingSetBytes": 8859648,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 267490,
+              "workingSetBytes": 8859648
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2423802,
+          "workingSetBytes": 89268224,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 785835,
+              "workingSetBytes": 28971008
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 1247175,
+              "workingSetBytes": 45375488
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 390792,
+              "workingSetBytes": 14921728
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5571463,
+          "workingSetBytes": 64884736,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1775298,
+              "workingSetBytes": 43732992
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3796165,
+              "workingSetBytes": 21151744
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 192915,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 192915,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 169014210,
+          "workingSetBytes": 1069199360,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 3003462,
+              "workingSetBytes": 17838080
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2626371,
+              "workingSetBytes": 17268736
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 49136964,
+              "workingSetBytes": 83279872
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 697908,
+              "workingSetBytes": 13713408
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 80523084,
+              "workingSetBytes": 789807104
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 22592837,
+              "workingSetBytes": 89165824
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 647447,
+              "workingSetBytes": 15994880
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 9727120,
+              "workingSetBytes": 32239616
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 59017,
+              "workingSetBytes": 9891840
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 118450439,
+          "workingSetBytes": 1510207488,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 0,
+              "workingSetBytes": 6766592
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 1107640,
+              "workingSetBytes": 12906496
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 6852242,
+              "workingSetBytes": 16785408
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 451016,
+              "workingSetBytes": 54251520
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 728546,
+              "workingSetBytes": 9383936
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 305034,
+              "workingSetBytes": 12713984
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 4547729,
+              "workingSetBytes": 2248704
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 225519,
+              "workingSetBytes": 13705216
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 87119331,
+              "workingSetBytes": 1118437376
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 12626015,
+              "workingSetBytes": 222380032
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 4487367,
+              "workingSetBytes": 40628224
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 1255961,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 228492,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 245715,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 210085,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 233582,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 338087,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 7754018,
+          "workingSetBytes": 20480000,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 7754018,
+              "workingSetBytes": 20480000
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "at": "2026-11-12T23:35:43.7291502Z",
+      "nodeNanoCores": 414197567,
+      "nodeWorkingSetBytes": 4259909632,
+      "nodeFsUsedBytes": 86768615424,
+      "imageFsUsedBytes": 5334061056
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 5281164,
+          "workingSetBytes": 69804032,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 219251,
+              "workingSetBytes": 11014144
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 4653172,
+              "workingSetBytes": 30748672
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 297499,
+              "workingSetBytes": 12533760
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 111242,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 23700,
+          "workingSetBytes": 8830976,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 23700,
+              "workingSetBytes": 8830976
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2529489,
+          "workingSetBytes": 89534464,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 1131573,
+              "workingSetBytes": 29089792
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 1016449,
+              "workingSetBytes": 45449216
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 381467,
+              "workingSetBytes": 14995456
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5809621,
+          "workingSetBytes": 64897024,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 1820265,
+              "workingSetBytes": 43745280
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3989356,
+              "workingSetBytes": 21151744
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 215460,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 215460,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 163914828,
+          "workingSetBytes": 1037938688,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 2892950,
+              "workingSetBytes": 17940480
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2156774,
+              "workingSetBytes": 17309696
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 46989374,
+              "workingSetBytes": 81887232
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 336619,
+              "workingSetBytes": 13750272
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 79558618,
+              "workingSetBytes": 759689216
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 22417296,
+              "workingSetBytes": 89260032
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 640995,
+              "workingSetBytes": 15986688
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 8898345,
+              "workingSetBytes": 32223232
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 23857,
+              "workingSetBytes": 9891840
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 121620896,
+          "workingSetBytes": 1541615616,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 22650,
+              "workingSetBytes": 6811648
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 689261,
+              "workingSetBytes": 12918784
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 7172578,
+              "workingSetBytes": 16711680
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 527887,
+              "workingSetBytes": 53706752
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 1191122,
+              "workingSetBytes": 9678848
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 218296,
+              "workingSetBytes": 12967936
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 2856095,
+              "workingSetBytes": 2244608
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 278751,
+              "workingSetBytes": 13832192
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 92692405,
+              "workingSetBytes": 1135206400
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 12594644,
+              "workingSetBytes": 236355584
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 3377207,
+              "workingSetBytes": 41181184
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 1031412,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 206564,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 223260,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 181874,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 172163,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 247551,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 11334233,
+          "workingSetBytes": 20480000,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 11334233,
+              "workingSetBytes": 20480000
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "at": "2026-11-12T23:45:43.836532Z",
+      "nodeNanoCores": 388838714,
+      "nodeWorkingSetBytes": 4261650432,
+      "nodeFsUsedBytes": 86824382464,
+      "imageFsUsedBytes": 5334220800
+    },
+    {
+      "groups": {
+        "Application platform: control plane": {
+          "nanoCores": 6402212,
+          "workingSetBytes": 69718016,
+          "pods": [
+            {
+              "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+              "nanoCores": 208182,
+              "workingSetBytes": 10919936
+            },
+            {
+              "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+              "nanoCores": 5717030,
+              "workingSetBytes": 30748672
+            },
+            {
+              "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+              "nanoCores": 346386,
+              "workingSetBytes": 12541952
+            },
+            {
+              "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+              "nanoCores": 130614,
+              "workingSetBytes": 15507456
+            }
+          ]
+        },
+        "Application platform: data plane": {
+          "nanoCores": 0,
+          "workingSetBytes": 8679424,
+          "pods": [
+            {
+              "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+              "nanoCores": 0,
+              "workingSetBytes": 8679424
+            }
+          ]
+        },
+        "Certificates (cert-manager)": {
+          "nanoCores": 2190874,
+          "workingSetBytes": 89743360,
+          "pods": [
+            {
+              "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+              "nanoCores": 722837,
+              "workingSetBytes": 29159424
+            },
+            {
+              "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+              "nanoCores": 1016527,
+              "workingSetBytes": 45543424
+            },
+            {
+              "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+              "nanoCores": 451510,
+              "workingSetBytes": 15040512
+            }
+          ]
+        },
+        "Gateway (kgateway)": {
+          "nanoCores": 5822415,
+          "workingSetBytes": 64884736,
+          "pods": [
+            {
+              "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+              "nanoCores": 2025554,
+              "workingSetBytes": 43732992
+            },
+            {
+              "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+              "nanoCores": 3796861,
+              "workingSetBytes": 21151744
+            }
+          ]
+        },
+        "Identity (ThunderID)": {
+          "nanoCores": 536597,
+          "workingSetBytes": 12746752,
+          "pods": [
+            {
+              "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+              "nanoCores": 536597,
+              "workingSetBytes": 12746752
+            }
+          ]
+        },
+        "Kubernetes system": {
+          "nanoCores": 158785052,
+          "workingSetBytes": 1086500864,
+          "pods": [
+            {
+              "name": "kube-system/coredns-66bc5c9577-8tsc6",
+              "nanoCores": 3103321,
+              "workingSetBytes": 18198528
+            },
+            {
+              "name": "kube-system/coredns-66bc5c9577-nlmvv",
+              "nanoCores": 2192308,
+              "workingSetBytes": 17383424
+            },
+            {
+              "name": "kube-system/etcd-bench-t470-control-plane",
+              "nanoCores": 44268689,
+              "workingSetBytes": 82677760
+            },
+            {
+              "name": "kube-system/kindnet-p44xf",
+              "nanoCores": 717064,
+              "workingSetBytes": 13750272
+            },
+            {
+              "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+              "nanoCores": 77048937,
+              "workingSetBytes": 807084032
+            },
+            {
+              "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+              "nanoCores": 21553309,
+              "workingSetBytes": 89272320
+            },
+            {
+              "name": "kube-system/kube-proxy-gjnsk",
+              "nanoCores": 1096992,
+              "workingSetBytes": 15978496
+            },
+            {
+              "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+              "nanoCores": 8726483,
+              "workingSetBytes": 32194560
+            },
+            {
+              "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+              "nanoCores": 77949,
+              "workingSetBytes": 9961472
+            }
+          ]
+        },
+        "Observability": {
+          "nanoCores": 106640413,
+          "workingSetBytes": 1534771200,
+          "pods": [
+            {
+              "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+              "nanoCores": 98566,
+              "workingSetBytes": 6828032
+            },
+            {
+              "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+              "nanoCores": 752805,
+              "workingSetBytes": 12918784
+            },
+            {
+              "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+              "nanoCores": 7463029,
+              "workingSetBytes": 16859136
+            },
+            {
+              "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+              "nanoCores": 442381,
+              "workingSetBytes": 53825536
+            },
+            {
+              "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+              "nanoCores": 789600,
+              "workingSetBytes": 9486336
+            },
+            {
+              "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+              "nanoCores": 945261,
+              "workingSetBytes": 12742656
+            },
+            {
+              "name": "openchoreo-observability-plane/obs-load-driver",
+              "nanoCores": 4963791,
+              "workingSetBytes": 2244608
+            },
+            {
+              "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+              "nanoCores": 488732,
+              "workingSetBytes": 13832192
+            },
+            {
+              "name": "openchoreo-observability-plane/opensearch-master-0",
+              "nanoCores": 76586227,
+              "workingSetBytes": 1139171328
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+              "nanoCores": 10933133,
+              "workingSetBytes": 226250752
+            },
+            {
+              "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+              "nanoCores": 3176888,
+              "workingSetBytes": 40611840
+            }
+          ]
+        },
+        "Other: serendip-obs-load": {
+          "nanoCores": 990710,
+          "workingSetBytes": 3629056,
+          "pods": [
+            {
+              "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+              "nanoCores": 168015,
+              "workingSetBytes": 856064
+            },
+            {
+              "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+              "nanoCores": 218131,
+              "workingSetBytes": 692224
+            },
+            {
+              "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+              "nanoCores": 202084,
+              "workingSetBytes": 679936
+            },
+            {
+              "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+              "nanoCores": 199384,
+              "workingSetBytes": 716800
+            },
+            {
+              "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+              "nanoCores": 203096,
+              "workingSetBytes": 684032
+            }
+          ]
+        },
+        "Secrets (OpenBao)": {
+          "nanoCores": 10617124,
+          "workingSetBytes": 20484096,
+          "pods": [
+            {
+              "name": "serendip-system/openbao-0",
+              "nanoCores": 10617124,
+              "workingSetBytes": 20484096
+            }
+          ]
+        },
+        "Workloads": {
+          "nanoCores": 0,
+          "workingSetBytes": 14360576,
+          "pods": [
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+              "nanoCores": 0,
+              "workingSetBytes": 4763648
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+              "nanoCores": 0,
+              "workingSetBytes": 4849664
+            },
+            {
+              "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+              "nanoCores": 0,
+              "workingSetBytes": 4747264
+            }
+          ]
+        }
+      },
+      "volumes": {
+        "openchoreo-observability-plane/observer-alerts-data": {
+          "usedBytes": 102400,
+          "capacityBytes": 134217728
+        },
+        "openchoreo-observability-plane/opensearch-master-opensearch-master-0": {
+          "usedBytes": 357392384,
+          "capacityBytes": 5368709120
+        },
+        "openchoreo-observability-plane/prometheus-openchoreo-observability-db-prometheus-openchoreo-observability-0": {
+          "usedBytes": 22089728,
+          "capacityBytes": 3221225472
+        },
+        "serendip-identity/thunderid-certs-pvc": {
+          "usedBytes": 32768,
+          "capacityBytes": 16777216
+        },
+        "serendip-identity/thunderid-database-pvc": {
+          "usedBytes": 917504,
+          "capacityBytes": 1073741824
+        },
+        "serendip-identity/thunderid-secrets-pvc": {
+          "usedBytes": 8192,
+          "capacityBytes": 16777216
+        },
+        "serendip-system/openbao-data": {
+          "usedBytes": 4632576,
+          "capacityBytes": 1073741824
+        }
+      },
+      "at": "2026-11-12T23:55:47.99948Z",
+      "nodeNanoCores": 440831751,
+      "nodeWorkingSetBytes": 4293353472,
+      "nodeFsUsedBytes": 86880628736,
+      "imageFsUsedBytes": 5334384640
+    }
+  ],
+  "cluster": {
+    "groups": {
+      "Application platform: control plane": {
+        "cpuMillicores": {
+          "mean": 6.510851142857144,
+          "max": 7.458403
+        },
+        "memoryMiB": {
+          "mean": 66.06305803571429,
+          "max": 66.5703125
+        }
+      },
+      "Application platform: data plane": {
+        "cpuMillicores": {
+          "mean": 0.34427585714285713,
+          "max": 1.790962
+        },
+        "memoryMiB": {
+          "mean": 8.311941964285714,
+          "max": 8.44921875
+        }
+      },
+      "Certificates (cert-manager)": {
+        "cpuMillicores": {
+          "mean": 2.3488841428571425,
+          "max": 2.67354
+        },
+        "memoryMiB": {
+          "mean": 84.90904017857143,
+          "max": 85.5859375
+        }
+      },
+      "Gateway (kgateway)": {
+        "cpuMillicores": {
+          "mean": 5.703065428571429,
+          "max": 5.975527
+        },
+        "memoryMiB": {
+          "mean": 61.750558035714285,
+          "max": 61.890625
+        }
+      },
+      "Identity (ThunderID)": {
+        "cpuMillicores": {
+          "mean": 0.29561028571428566,
+          "max": 0.536597
+        },
+        "memoryMiB": {
+          "mean": 12.15625,
+          "max": 12.15625
+        }
+      },
+      "Kubernetes system": {
+        "cpuMillicores": {
+          "mean": 168.7925182857143,
+          "max": 178.053596
+        },
+        "memoryMiB": {
+          "mean": 1037.0931919642858,
+          "max": 1106.34765625
+        }
+      },
+      "Observability": {
+        "cpuMillicores": {
+          "mean": 122.46419514285712,
+          "max": 141.569087
+        },
+        "memoryMiB": {
+          "mean": 1429.8191964285713,
+          "max": 1470.19921875
+        }
+      },
+      "Other: serendip-obs-load": {
+        "cpuMillicores": {
+          "mean": 1.0689074285714286,
+          "max": 1.255961
+        },
+        "memoryMiB": {
+          "mean": 3.4609375,
+          "max": 3.4609375
+        }
+      },
+      "Secrets (OpenBao)": {
+        "cpuMillicores": {
+          "mean": 8.915565142857144,
+          "max": 11.334233
+        },
+        "memoryMiB": {
+          "mean": 19.522321428571427,
+          "max": 19.53515625
+        }
+      },
+      "Workloads": {
+        "cpuMillicores": {
+          "mean": 0,
+          "max": 0
+        },
+        "memoryMiB": {
+          "mean": 13.6953125,
+          "max": 13.6953125
+        }
+      }
+    },
+    "pods": [
+      {
+        "name": "openchoreo-observability-plane/opensearch-master-0",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 1054.614955357143,
+          "max": 1086.3984375
+        },
+        "cpuMillicores": {
+          "mean": 91.33132157142857,
+          "max": 105.964217
+        }
+      },
+      {
+        "name": "kube-system/kube-apiserver-bench-t470-control-plane",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 765.9073660714286,
+          "max": 820.5234375
+        },
+        "cpuMillicores": {
+          "mean": 81.08991814285714,
+          "max": 86.841781
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-0",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 212.96149553571428,
+          "max": 225.40625
+        },
+        "cpuMillicores": {
+          "mean": 12.293972857142858,
+          "max": 15.36952
+        }
+      },
+      {
+        "name": "kube-system/kube-controller-manager-bench-t470-control-plane",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 85.34151785714286,
+          "max": 85.69140625
+        },
+        "cpuMillicores": {
+          "mean": 23.262817857142856,
+          "max": 24.518957
+        }
+      },
+      {
+        "name": "kube-system/etcd-bench-t470-control-plane",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 84.21986607142857,
+          "max": 105.09765625
+        },
+        "cpuMillicores": {
+          "mean": 47.79875,
+          "max": 53.08065
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/kube-state-metrics-7d75d8ff7c-wkp5t",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 52.646763392857146,
+          "max": 54.16796875
+        },
+        "cpuMillicores": {
+          "mean": 0.5082762857142857,
+          "max": 0.730441
+        }
+      },
+      {
+        "name": "cert-manager/cert-manager-cainjector-784846b495-bsfbd",
+        "group": "Certificates (cert-manager)",
+        "memoryMiB": {
+          "mean": 43.171316964285715,
+          "max": 43.43359375
+        },
+        "cpuMillicores": {
+          "mean": 1.0362118571428571,
+          "max": 1.247175
+        }
+      },
+      {
+        "name": "kgateway-system/kgateway-7b8984bc55-9vxwg",
+        "group": "Gateway (kgateway)",
+        "memoryMiB": {
+          "mean": 41.581473214285715,
+          "max": 41.71875
+        },
+        "cpuMillicores": {
+          "mean": 1.8065017142857143,
+          "max": 2.025554
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/prometheus-operator-698cd6c5b-jbqdz",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 38.589285714285715,
+          "max": 39.56640625
+        },
+        "cpuMillicores": {
+          "mean": 3.6919251428571433,
+          "max": 4.855748
+        }
+      },
+      {
+        "name": "kube-system/kube-scheduler-bench-t470-control-plane",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 30.84375,
+          "max": 31.02734375
+        },
+        "cpuMillicores": {
+          "mean": 9.63227757142857,
+          "max": 10.097065
+        }
+      },
+      {
+        "name": "openchoreo-control-plane/controller-manager-6b99ffdcd-8mmnz",
+        "group": "Application platform: control plane",
+        "memoryMiB": {
+          "mean": 29.28125,
+          "max": 29.32421875
+        },
+        "cpuMillicores": {
+          "mean": 5.736740857142857,
+          "max": 6.833651
+        }
+      },
+      {
+        "name": "cert-manager/cert-manager-bc44b5799-cd9nt",
+        "group": "Certificates (cert-manager)",
+        "memoryMiB": {
+          "mean": 27.65234375,
+          "max": 27.80859375
+        },
+        "cpuMillicores": {
+          "mean": 0.8869832857142858,
+          "max": 1.131573
+        }
+      },
+      {
+        "name": "kgateway-system/serendip-external-657d66d6c7-b9hlr",
+        "group": "Gateway (kgateway)",
+        "memoryMiB": {
+          "mean": 20.169084821428573,
+          "max": 20.171875
+        },
+        "cpuMillicores": {
+          "mean": 3.8965637142857146,
+          "max": 4.060487
+        }
+      },
+      {
+        "name": "serendip-system/openbao-0",
+        "group": "Secrets (OpenBao)",
+        "memoryMiB": {
+          "mean": 19.522321428571427,
+          "max": 19.53515625
+        },
+        "cpuMillicores": {
+          "mean": 8.915565142857144,
+          "max": 11.334233
+        }
+      },
+      {
+        "name": "kube-system/coredns-66bc5c9577-8tsc6",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 16.756696428571427,
+          "max": 17.35546875
+        },
+        "cpuMillicores": {
+          "mean": 3.0527194285714288,
+          "max": 3.147121
+        }
+      },
+      {
+        "name": "kube-system/coredns-66bc5c9577-nlmvv",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 16.303013392857142,
+          "max": 16.578125
+        },
+        "cpuMillicores": {
+          "mean": 2.608332,
+          "max": 3.00425
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/fluent-bit-7mt6j",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 16.089285714285715,
+          "max": 16.2578125
+        },
+        "cpuMillicores": {
+          "mean": 7.288855142857143,
+          "max": 8.043807
+        }
+      },
+      {
+        "name": "kube-system/kube-proxy-gjnsk",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 15.170200892857142,
+          "max": 15.27734375
+        },
+        "cpuMillicores": {
+          "mean": 0.6961577142857143,
+          "max": 1.096992
+        }
+      },
+      {
+        "name": "openchoreo-control-plane/openchoreo-api-75494997df-lwq6v",
+        "group": "Application platform: control plane",
+        "memoryMiB": {
+          "mean": 14.778459821428571,
+          "max": 14.7890625
+        },
+        "cpuMillicores": {
+          "mean": 0.17311614285714286,
+          "max": 0.506422
+        }
+      },
+      {
+        "name": "cert-manager/cert-manager-webhook-6c6d98f866-s7ptg",
+        "group": "Certificates (cert-manager)",
+        "memoryMiB": {
+          "mean": 14.085379464285714,
+          "max": 14.34375
+        },
+        "cpuMillicores": {
+          "mean": 0.42568899999999993,
+          "max": 0.497523
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/observer-75b8dbf7cf-hpxkx",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 13.108816964285714,
+          "max": 13.19140625
+        },
+        "cpuMillicores": {
+          "mean": 0.279013,
+          "max": 0.488732
+        }
+      },
+      {
+        "name": "kube-system/kindnet-p44xf",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 13.076450892857142,
+          "max": 13.11328125
+        },
+        "cpuMillicores": {
+          "mean": 0.5349031428571428,
+          "max": 0.717064
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/controller-manager-dfc9d8dcd-nvsn4",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 12.321428571428571,
+          "max": 12.40625
+        },
+        "cpuMillicores": {
+          "mean": 0.7713755714285713,
+          "max": 1.10764
+        }
+      },
+      {
+        "name": "serendip-identity/thunderid-deployment-7fdd45668-zblgp",
+        "group": "Identity (ThunderID)",
+        "memoryMiB": {
+          "mean": 12.15625,
+          "max": 12.15625
+        },
+        "cpuMillicores": {
+          "mean": 0.29561028571428566,
+          "max": 0.536597
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/metrics-adapter-prometheus-6fff9bfbf9-s94nz",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 11.838169642857142,
+          "max": 12.3671875
+        },
+        "cpuMillicores": {
+          "mean": 0.5513201428571428,
+          "max": 0.945261
+        }
+      },
+      {
+        "name": "openchoreo-control-plane/event-forwarder-54fbb669c9-m2tnv",
+        "group": "Application platform: control plane",
+        "memoryMiB": {
+          "mean": 11.685267857142858,
+          "max": 11.9609375
+        },
+        "cpuMillicores": {
+          "mean": 0.3714104285714286,
+          "max": 0.524874
+        }
+      },
+      {
+        "name": "openchoreo-control-plane/cluster-gateway-8547556648-sx4sj",
+        "group": "Application platform: control plane",
+        "memoryMiB": {
+          "mean": 10.318080357142858,
+          "max": 10.50390625
+        },
+        "cpuMillicores": {
+          "mean": 0.22958371428571428,
+          "max": 0.295667
+        }
+      },
+      {
+        "name": "local-path-storage/local-path-provisioner-7b8c8ddbd6-wb8rw",
+        "group": "Kubernetes system",
+        "memoryMiB": {
+          "mean": 9.474330357142858,
+          "max": 9.5
+        },
+        "cpuMillicores": {
+          "mean": 0.11664242857142858,
+          "max": 0.356166
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/logs-adapter-opensearch-54dc96c466-t5llf",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 9.033482142857142,
+          "max": 9.23046875
+        },
+        "cpuMillicores": {
+          "mean": 1.0224412857142857,
+          "max": 1.539737
+        }
+      },
+      {
+        "name": "openchoreo-data-plane/cluster-agent-dataplane-5f4cbcf4cf-vc864",
+        "group": "Application platform: data plane",
+        "memoryMiB": {
+          "mean": 8.311941964285714,
+          "max": 8.44921875
+        },
+        "cpuMillicores": {
+          "mean": 0.34427585714285713,
+          "max": 1.790962
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/cluster-agent-observabilityplane-597bbd6cbf-9vgr5",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 6.470982142857143,
+          "max": 6.51171875
+        },
+        "cpuMillicores": {
+          "mean": 0.049401714285714285,
+          "max": 0.160135
+        }
+      },
+      {
+        "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-3a0e5c9ab5-env-0217160c43-0ba359d7-5657f555c9-gwd2c",
+        "group": "Workloads",
+        "memoryMiB": {
+          "mean": 4.625,
+          "max": 4.625
+        },
+        "cpuMillicores": {
+          "mean": 0,
+          "max": 0
+        }
+      },
+      {
+        "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-33ddb72eec-env-0217160c43-ef621df8-7565bb96cc-zzwqc",
+        "group": "Workloads",
+        "memoryMiB": {
+          "mean": 4.54296875,
+          "max": 4.54296875
+        },
+        "cpuMillicores": {
+          "mean": 0,
+          "max": 0
+        }
+      },
+      {
+        "name": "dp-openchoreo-co-app-24c3589ab-env-0217160c-4de11cde/cmp-f1311b844f-env-0217160c43-e6f6cc03-597ddbcd85-4cnfd",
+        "group": "Workloads",
+        "memoryMiB": {
+          "mean": 4.52734375,
+          "max": 4.52734375
+        },
+        "cpuMillicores": {
+          "mean": 0,
+          "max": 0
+        }
+      },
+      {
+        "name": "openchoreo-observability-plane/obs-load-driver",
+        "group": "Observability",
+        "memoryMiB": {
+          "mean": 2.14453125,
+          "max": 2.15234375
+        },
+        "cpuMillicores": {
+          "mean": 4.676292428571428,
+          "max": 5.879682
+        }
+      },
+      {
+        "name": "serendip-obs-load/obs-load-1-86466c8978-65lvg",
+        "group": "Other: serendip-obs-load",
+        "memoryMiB": {
+          "mean": 0.81640625,
+          "max": 0.81640625
+        },
+        "cpuMillicores": {
+          "mean": 0.2096774285714286,
+          "max": 0.228492
+        }
+      },
+      {
+        "name": "serendip-obs-load/obs-load-4-6c9b7c4b9-sskvh",
+        "group": "Other: serendip-obs-load",
+        "memoryMiB": {
+          "mean": 0.68359375,
+          "max": 0.68359375
+        },
+        "cpuMillicores": {
+          "mean": 0.199857,
+          "max": 0.233582
+        }
+      },
+      {
+        "name": "serendip-obs-load/obs-load-2-856796d699-xd8cf",
+        "group": "Other: serendip-obs-load",
+        "memoryMiB": {
+          "mean": 0.66015625,
+          "max": 0.66015625
+        },
+        "cpuMillicores": {
+          "mean": 0.219389,
+          "max": 0.245715
+        }
+      },
+      {
+        "name": "serendip-obs-load/obs-load-5-6d64bb4bbb-z42sk",
+        "group": "Other: serendip-obs-load",
+        "memoryMiB": {
+          "mean": 0.65234375,
+          "max": 0.65234375
+        },
+        "cpuMillicores": {
+          "mean": 0.23761614285714286,
+          "max": 0.338087
+        }
+      },
+      {
+        "name": "serendip-obs-load/obs-load-3-86f4fcf85b-ntm2s",
+        "group": "Other: serendip-obs-load",
+        "memoryMiB": {
+          "mean": 0.6484375,
+          "max": 0.6484375
+        },
+        "cpuMillicores": {
+          "mean": 0.20236785714285713,
+          "max": 0.22254
+        }
+      }
+    ],
+    "nodeCpuMillicores": {
+      "mean": 430.2846115714286,
+      "max": 484.025149
+    },
+    "nodeMemoryMiB": {
+      "mean": 4081.5998883928573,
+      "max": 4127.03515625
+    },
+    "nodeOverheadMiB": {
+      "mean": 1344.818080357143,
+      "max": 1366.2421875
+    },
+    "nodeOverheadMillicores": {
+      "mean": 113.84073871428572,
+      "max": 148.84635400000002
+    },
+    "nodeFsUsedMiB": 82855.82421875,
+    "imageFsUsedMiB": 5087.265625,
+    "volumes": [
+      {
+        "name": "openchoreo-observability-plane/observer-alerts-data",
+        "group": "Observability",
+        "firstUsedMiB": 0.09765625,
+        "lastUsedMiB": 0.09765625,
+        "capacityMiB": 128,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "openchoreo-observability-plane/opensearch-master-opensearch-master-0",
+        "group": "Observability",
+        "firstUsedMiB": 65.44921875,
+        "lastUsedMiB": 340.8359375,
+        "capacityMiB": 5120,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "openchoreo-observability-plane/prometheus-openchoreo-observability-db-prometheus-openchoreo-observability-0",
+        "group": "Observability",
+        "firstUsedMiB": 6.296875,
+        "lastUsedMiB": 21.06640625,
+        "capacityMiB": 3072,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "serendip-identity/thunderid-certs-pvc",
+        "group": "Identity (ThunderID)",
+        "firstUsedMiB": 0.03125,
+        "lastUsedMiB": 0.03125,
+        "capacityMiB": 16,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "serendip-identity/thunderid-database-pvc",
+        "group": "Identity (ThunderID)",
+        "firstUsedMiB": 0.875,
+        "lastUsedMiB": 0.875,
+        "capacityMiB": 1024,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "serendip-identity/thunderid-secrets-pvc",
+        "group": "Identity (ThunderID)",
+        "firstUsedMiB": 0.0078125,
+        "lastUsedMiB": 0.0078125,
+        "capacityMiB": 16,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      },
+      {
+        "name": "serendip-system/openbao-data",
+        "group": "Secrets (OpenBao)",
+        "firstUsedMiB": 4.41796875,
+        "lastUsedMiB": 4.41796875,
+        "capacityMiB": 1024,
+        "intervals": 6,
+        "spanSeconds": 3604.7135049
+      }
+    ]
+  }
+}

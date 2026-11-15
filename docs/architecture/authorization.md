@@ -70,7 +70,8 @@ Fixed IDs, the same on every install (`core/policy/builtins.go`):
 **Logs are their own action** (`serendip/components/logs/read`, spec 020):
 they can carry sensitive data, so the read-only and access-management
 roles leave them out. Log Reader adds them; Owner and Contributor have
-them.
+them. Spec 023's stored logs use the same action; its metrics use
+`serendip/observability/read`, which `*/read` includes.
 
 Built-in roles can't be changed or deleted (400). **Custom roles**
 (`POST /v1/authorization/roleDefinitions`):
@@ -158,6 +159,20 @@ unrestricted, as in Azure.
   - **Installing or removing the builds package** is a package write at
     `/`, like any package; an agent's removal waits for a person's
     Approval.
+  - **Stored logs and metrics** (spec 023, `application-platform.md`
+    "Observability"):
+    - **Stored logs** are `serendip/components/logs/read`, the same as
+      live pod logs, since they keep what pods print, secrets included,
+      for 3 days (RP-067). An Application's search checks
+      `serendip/applications/read` on it, then logs read on each
+      Deployment; the ones left out are counted (`omitted`), not named,
+      and none allowed is 403.
+    - **Metrics** are a new action, `serendip/observability/read`, on the
+      Deployment. Unlike logs it isn't excluded from Reader and the other
+      read-only roles; they get it through `*/read`.
+    - **A finished build's stored logs** keep the build logs' rule.
+    - **Reads aren't audited;** installing and removing the package are,
+      through the package path.
 - **Lists and graph results** keep only what the caller may read.
 - **A refusal** is 403 naming the missing action and scope.
 - **Authenticated only:** `GET /v1/session`,

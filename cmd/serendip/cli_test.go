@@ -26,6 +26,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/identity"
 	"github.com/serendip-infra/serendip-infra/core/policy"
+	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
@@ -107,6 +108,13 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
+	return newWorldWith(t, nil)
+}
+
+// newWorldWith is newWorld with the server given providers (its
+// capabilities' readiness) and opts, for the routes a capability serves.
+func newWorldWith(t *testing.T, providers *provider.Registry, opts ...api.ServerOption) *world {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "cli.db"))
 	if err != nil {
@@ -142,10 +150,10 @@ func newWorld(t *testing.T) *world {
 	assistant := owner
 	assistant.Via = "serendip-mcp"
 	authn := tokenAuthn{"at-1": owner, "at-2": owner, "tok-ai": assistant}
-	srv := api.NewServer(db, event.NewInProcessBus(), map[string]string{"key-ops": "ops"}, authn, &reconcile.SecretReconciler{}, nil, nil,
-		api.WithResourceMetadata(api.ResourceMetadata{
+	srv := api.NewServer(db, event.NewInProcessBus(), map[string]string{"key-ops": "ops"}, authn, &reconcile.SecretReconciler{}, providers, nil,
+		append([]api.ServerOption{api.WithResourceMetadata(api.ResourceMetadata{
 			Issuer: func() string { return w.issuer.srv.URL }, CLIClient: "serendip", AssistantClient: "serendip-mcp",
-		}))
+		})}, opts...)...)
 	w.api = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		w.requests = append(w.requests, r.Method+" "+r.URL.Path+" "+r.Header.Get("X-Serendip-Client"))
@@ -831,6 +839,27 @@ func TestPackagesListShowsCost(t *testing.T) {
 	printSuccess(mustOp(t, "packages_list"), response{Status: 200, Header: http.Header{}, Body: []byte(body)}, globals{json: true}, &out, &errOut)
 	if !strings.Contains(out.String(), `"requirements": null`) {
 		t.Errorf("--json = %s", out.String())
+	}
+}
+
+// packages list states a data-keeping package's disk cost, and an
+// installed one's current use or why it couldn't be read (spec 023 T008).
+func TestPackagesListShowsDisk(t *testing.T) {
+	body := `{"packages":[
+		{"provider":"obs","capability":"observability","available":true,"installable":true,
+		 "requirements":{"idleMemoryMiB":400,"idleCPUMillicores":50,"peakMemoryMiB":600,"peakCPUMillicores":300,
+		  "measuredOn":"edge-1","results":"r","disk":{"growthMiBPerDay":120,"retentionDays":3,"budgetMiB":5120}},
+		 "usage":{"usedMiB":42,"capacityMiB":8192,"readAt":"2026-11-14T10:00:00Z"}},
+		{"provider":"obs2","capability":"other","available":true,"installable":true,"requirements":null,
+		 "usageError":"its disk use couldn't be read now; it may still be starting"}]}`
+	var out, errOut bytes.Buffer
+	printSuccess(mustOp(t, "packages_list"), response{Status: 200, Header: http.Header{}, Body: []byte(body)}, globals{}, &out, &errOut)
+	got := out.String()
+	for _, want := range []string{"Disk: about 120 MiB a day, kept 3 days, at most 5120 MiB.", "Disk in use: 42 MiB of 8192 MiB.",
+		"Disk in use: its disk use couldn't be read now; it may still be starting."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output lacks %q:\n%s", want, got)
+		}
 	}
 }
 

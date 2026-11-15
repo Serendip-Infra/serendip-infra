@@ -243,6 +243,7 @@ type serverOptions struct {
 	platform  reconcile.PlatformViewProvider
 	packages  reconcile.Catalogue
 	builds    reconcile.BuildProvider
+	obs       reconcile.ObservabilityProvider
 	metadata  *ResourceMetadata
 	mcp       bool
 }
@@ -274,6 +275,13 @@ func WithPackages(c reconcile.Catalogue) ServerOption {
 // store, and triggering still needs the capability ready.
 func WithBuilds(b reconcile.BuildProvider) ServerOption {
 	return func(o *serverOptions) { o.builds = b }
+}
+
+// WithObservability serves stored logs and metrics from the observability
+// capability (spec 023), and finished builds' logs once their pods are
+// gone. Without it those routes answer 503 and expired build logs 410.
+func WithObservability(p reconcile.ObservabilityProvider) ServerOption {
+	return func(o *serverOptions) { o.obs = p }
 }
 
 // WithPlatformView serves GET /v1/platform from the application platform
@@ -342,7 +350,11 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		ready:    buildReady,
 		streams:  &runtime.streams, recent: &runtime.recent,
 		idle: streamIdle, max: streamMax,
+		stored: opts.obs, storedReady: observabilityReadiness(providers, opts.packages),
 	}).Register(apiMux)
+	// Stored logs and metrics (spec 023), scoped before the provider is
+	// asked.
+	newObservabilityHandler(deployStore, envStore, compStore, appStore, opts.obs, providers, opts.packages).Register(apiMux)
 	// Capability's store is shared with RegistryHandler below (T019 gap
 	// fix -- specs/002-http-api/spec.md Scope-IN item 2, "get/set a
 	// capability's default provider", was never wired up) rather than
@@ -360,7 +372,7 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		instances.WithValidate(packageValidator(opts.packages, instStore))
 	}
 	instances.Register(apiMux)
-	(&PackageHandler{catalogue: opts.packages}).Register(apiMux)
+	(&PackageHandler{catalogue: opts.packages, instances: instStore}).Register(apiMux)
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
 	mountResource[resource.AlertSpec, resource.AlertStatus](apiMux, db, bus, resource.KindAlert, "alerts")
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")

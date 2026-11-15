@@ -400,3 +400,37 @@ func (l *lazyBuilds) HeadCommit(ctx context.Context, src resource.ComponentSourc
 	}
 	return p.HeadCommit(ctx, src, cred)
 }
+
+// lazyObservability is the observability capability (spec 023), set while
+// the observability package reports Ready and cleared when it stops, so
+// reads answer ErrProviderNotReady rather than reach a plane that isn't
+// there.
+type lazyObservability struct {
+	lazy[reconcile.ObservabilityProvider]
+}
+
+var _ reconcile.ObservabilityProvider = (*lazyObservability)(nil)
+
+func (l *lazyObservability) SearchLogs(ctx context.Context, targets []reconcile.LogTarget, q reconcile.LogQuery) (reconcile.LogPage, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.LogPage{}, err
+	}
+	return p.SearchLogs(ctx, targets, q)
+}
+
+func (l *lazyObservability) BuildLogs(ctx context.Context, b resource.Build, q reconcile.LogQuery) (reconcile.LogPage, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.LogPage{}, err
+	}
+	return p.BuildLogs(ctx, b, q)
+}
+
+func (l *lazyObservability) Metrics(ctx context.Context, t reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.Metrics{}, err
+	}
+	return p.Metrics(ctx, t, q)
+}

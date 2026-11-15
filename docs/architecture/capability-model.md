@@ -51,7 +51,7 @@ escape hatch").
 | Storage (backup) | No | S3-compatible / NFS | — (never counted as primary redundancy) |
 | Database | No | CloudNativePG (PostgreSQL) | Embedded, managed/external PostgreSQL |
 | Observability (telemetry collection) | Yes | OpenTelemetry | — |
-| Observability (backend) | Yes | *unresolved* | OpenObserve, SigNoz, OpenSearch — see Open questions |
+| Observability (backend) | Yes | OpenObserve (logs) and plain Prometheus (metrics), through OpenChoreo's adapters (ADR 0021) | SigNoz for larger installs; OpenSearch rejected for edge-1 |
 | Ticketing / ITSM | No | Native Serendip Incidents | Zammad, GLPI, ServiceNow, Jira |
 | API analytics | No | Native (via kgateway/Envoy + OTel) | Moesif adapter |
 | Compute (VM) | No | *not v1* | Harvester (KubeVirt) — see `deployment-profiles.md` |
@@ -89,10 +89,17 @@ hosting the implementation.
 
 ## Open questions
 
-- **Observability backend default** is explicitly unresolved pending a
-  benchmark of OpenObserve, SigNoz, and OpenSearch on reference (T470)
-  hardware. Do not treat any of the three as "the default" until that
-  benchmark is recorded.
+- ~~Observability backend default~~ — resolved: ADR 0021, measured in
+  spec 023 T003 on a simulated T470. OpenObserve for logs and plain
+  Prometheus for metrics. On top of the platform, idle and then under
+  load:
+  - this setup measured +832 MiB and +1,028 MiB with the metrics module
+    as shipped, and should be about 350–400 MiB idle with plain
+    Prometheus;
+  - OpenSearch measured +1,609 MiB and +1,659 MiB;
+  - SigNoz measured +1,801 MiB and +2,068 MiB.
+
+  T013 confirms the figure on the reference laptop.
 - **AI inference backend** (local model runtime + model choice) was only
   discussed speculatively (e.g. Ollama + a Qwen-class model as one example)
   and was never settled. See `ai-operations.md`.

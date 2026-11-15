@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/audit"
 	"github.com/serendip-infra/serendip-infra/core/resource"
@@ -136,6 +137,12 @@ func TestDelete_RecordsANewApprovalInTheSameTransaction(t *testing.T) {
 	st := got.Status
 	if st.Phase != resource.ApprovalExecuted || st.ExecutedAt.IsZero() || st.RequestedAt.IsZero() {
 		t.Errorf("phase %q, executedAt %v, requestedAt %v; want Executed with both times", st.Phase, st.ExecutedAt, st.RequestedAt)
+	}
+	if st.Decision == nil || !st.Decision.At.Equal(st.RequestedAt) {
+		t.Errorf("decision = %+v, want the policy's decision made at the request's time %v", st.Decision, st.RequestedAt)
+	}
+	if in.Approval.Status.Decision.At != (time.Time{}) {
+		t.Error("the caller's intent was changed")
 	}
 	if st.TargetName != "db" || st.TargetVersion != w.secret.Metadata.ResourceVersion {
 		t.Errorf("target %q v%d, want db v%d", st.TargetName, st.TargetVersion, w.secret.Metadata.ResourceVersion)

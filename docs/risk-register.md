@@ -73,6 +73,22 @@ purpose), **Closed** (fixed).
 | RP-050 | A build's credential copy is a plain Secret on the node while its run lasts | Security (low) | Accepted | Spec 022 T015 |
 | RP-051 | Auto-build reads any HTTPS address a Component names, internal ones included | Security (low) | Accepted | Spec 022 T015 |
 | RP-052 | Build steps have no CPU or memory limits | Footprint, availability | Open | Spec 022 T015 |
+| RP-053 | Logs written while the log store is unreachable are dropped | Correctness, operability | Open | Spec 023 T001 |
+| RP-054 | The observability adapters answer unauthenticated queries; only NetworkPolicies close them | Security (medium) | Open | Spec 023 T001 |
+| RP-055 | OpenObserve's log search slows as stored logs grow (0.24 s to 0.53 s mean, 3.1 s worst, in 2.5 h) | Performance | Accepted | Spec 023 T003 |
+| RP-056 | Serendip's plain Prometheus must keep matching what the metrics module's adapter queries | Operability, correctness | Accepted | Spec 023 T003 |
+| RP-057 | ThunderID's Service-proxy calls drop a kubeconfig's bearer token | Correctness (latent) | Watch | Spec 023 T005 |
+| RP-058 | Stored-log pages rely on the store returning tied timestamps in a stable order; a tie group over 1,000 lines is cut | Correctness | Accepted | Spec 023 T006 |
+| RP-059 | Stored logs are scoped by OpenChoreo object UIDs, so a re-created platform object hides its predecessor's logs | Correctness | Accepted | Spec 023 T006 |
+| RP-060 | Fluent Bit's read-position file stays on the node after the package is removed | Operability | Accepted | Spec 023 T006 |
+| RP-061 | The package's reported disk use lags, and leaves out the logs store's newest data and metadata | Honesty of a reported number | Accepted | Spec 023 T006 |
+| RP-062 | OpenObserve's SSRF guard is off, so its in-cluster alert webhook can be created | Security | Accepted | Spec 023 T012 |
+| RP-063 | The observability package's disk growth is a 2-hour slope under a synthetic load, extrapolated to a day | Honesty of a reported number | Accepted | Spec 023 T012 |
+| RP-064 | Fluent Bit's monitoring port (:2020, host network) answered any pod on the node: counters, no log content | Security (information) | Fixed (T014) | Spec 023 T013 |
+| RP-065 | Serendip carries a copy of the logs chart's Fluent Bit config, and pod metadata now comes from the API server (not re-measured) | Maintenance; performance | Accepted | Spec 023 T014 |
+| RP-066 | The observability plane chart's `observabilityalertrules` CRD outlives the package's removal | Footprint | Decided | Spec 023 T001 |
+| RP-067 | Stored logs keep what pods print, secrets included, for 3 days | Data exposure | Accepted | Spec 023 plan |
+| RP-068 | A noisy Component can fill the logs volume before retention acts | Availability, capacity | Accepted | Spec 023 plan |
 
 ---
 
@@ -1232,3 +1248,377 @@ purpose), **Closed** (fixed).
   the simulated T470, and stated in the package's cost.
 - **Revisit:** in a follow-up builds-hardening spec, or as soon as a build
   starves a workload.
+
+## RP-053 — Logs written while the log store is unreachable are dropped
+
+- **Kind:** correctness, operability. **Status:** Open, 2026-11-12.
+  **Found:** spec 023 T001.
+- **What:** Fluent Bit (the observability package's collector) retries a
+  failed flush a few times and then drops the batch ("cannot be
+  retried"). Lines written while the store can't be reached never arrive.
+  - The spike lost them twice:
+    1. at install, when the plane chart's own NetworkPolicy blocked the
+       `hostNetwork` collector;
+    2. after a Docker restart changed the node's IP and the pinned rule
+       stopped matching.
+  - The pods' own logs are untouched, so recent lines are still readable
+    on the Runtime tab while the pods live.
+- **Mitigation (plan 023):** the node rule is built from the live `Node`
+  addresses and checked on every resync, so an IP change is repaired
+  within one resync. The readiness checks cover Fluent Bit's delivery.
+- **Possible fix:** Fluent Bit's filesystem buffering with a larger retry
+  limit, so batches survive a store outage. It costs disk and must be
+  measured.
+- **Revisit:** in spec 023 T012 (measure buffering), or if stored logs are
+  ever used as an audit source.
+
+## RP-054 — The observability adapters answer unauthenticated queries
+
+- **Kind:** security, medium. **Status:** Open, 2026-11-12.
+  **Found:** spec 023 T001.
+- **What:** OpenChoreo's logs and metrics adapters, which Serendip queries
+  (plan 023 decision 4, amended), have no authentication. Anything that
+  can reach them reads every Component's logs, scoped by any IDs it
+  sends; an omitted ID widens the scope to the whole namespace.
+- **Mitigation:**
+  - **NetworkPolicies:** the plane chart's policy, plus Serendip's,
+    admit only pods in the observability namespace, and the nodes to
+    OpenObserve's ingest port. Checked live on kind: a workload pod and
+    a `hostNetwork` pod both time out.
+  - **Serendip's own scoping:** it reaches the adapters only through the
+    API server's Service proxy, with its own credentials. It always sends
+    all three IDs, and drops any returned line that isn't the target's.
+- **Residual:**
+  - **Enforcement depends on the CNI.** kindnet admitted the API server's
+    proxy traffic while blocking `hostNetwork` pods; K3s must be checked
+    (T013, and RP-018's open item).
+  - **Policies match by label,** so a relabel in a future chart re-opens
+    them. The installer's checks verify that each selector matches a pod.
+- **Revisit:** on every OpenChoreo or module upgrade (`VERSIONS.md`), and
+  if the Observer's authorization becomes usable with Serendip's
+  identity.
+
+## RP-055 — OpenObserve's log search slows as stored logs grow
+
+- **Kind:** performance. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T003.
+- **What:** on the simulated T470, OpenObserve's mean search time went
+  from 0.24 s in the first 10 minutes under load to 0.53 s over 2.5 hours
+  (worst 3.1 s), with about 100 MiB stored. OpenSearch averaged 0.13 s and
+  SigNoz 0.05 s on the same load (ADR 0021).
+- **Why accepted:** it is the lightest store by far, and half a second is
+  fine for a log tab. Retention is 3 days, which bounds the data searched.
+- **Mitigation:** searches are always scoped to one Component and a time
+  window (plan 023 decision 6), and the default window is short.
+- **Revisit:** if T013's run on the reference laptop shows searches over
+  2 s, or if retention grows. Options then: a narrower default window, or
+  OpenObserve's own tuning (a larger `ZO_MEMORY_CACHE_MAX_SIZE`).
+
+## RP-056 — Serendip's plain Prometheus must keep matching the metrics adapter
+
+- **Kind:** operability, correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T003.
+- **What:** ADR 0021 replaces the metrics module's kube-prometheus-stack
+  with plain Prometheus, configured by Serendip to look like it to the
+  module's adapter:
+  - the Service name and port the adapter's address fixes;
+  - the scrape job names;
+  - kube-state-metrics' metric and label allowlists.
+  An upgrade that changes the adapter's queries or its address breaks
+  metrics with no install error: queries return empty series.
+- **Why accepted:** it saves about 450 MiB at idle and leaves nothing in
+  kube-apiserver after removal (the module's 10 CRDs held about 390 MiB
+  there until a restart).
+- **Mitigation:**
+  - `VERSIONS.md` lists what to re-check on every module upgrade.
+  - The installer's readiness check runs a real `resource` query for a
+    known pod and fails if its series are empty (T005).
+- **Revisit:** on every metrics module upgrade, or if a later alerts spec
+  needs the operator anyway.
+
+## RP-057 — ThunderID's Service-proxy calls drop a kubeconfig's bearer token
+
+- **Kind:** correctness (latent). **Status:** Watch, 2026-11-14.
+  **Found:** spec 023 T005.
+- **What:** `kubernetes.Client.HTTPClient()` returns the client's
+  TLS-configured `http.Client`, but the bearer token is added per request
+  inside the client's own calls. `providers/identity/thunderid`
+  (`ready.go`, `clients.go`) sends Service-proxy requests through
+  `HTTPClient()` directly, so with a token-based kubeconfig they would
+  answer 401.
+- **Why it holds today:** K3s and kind kubeconfigs authenticate with
+  client certificates, which the transport carries.
+- **Mitigation:** new proxy callers use `Client.PostRaw` or the other
+  path-taking calls, which send the token (the observability installer
+  does).
+- **Revisit:** before supporting a token-based kubeconfig (a managed
+  cluster, a service-account kubeconfig), or the next time ThunderID's
+  provider is touched. The fix is to move those calls onto the client's
+  own request path.
+
+## RP-058 — Stored-log pages and tied timestamps
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006.
+- **What:** stored-log searches page by time
+  (`providers/observability/openchoreo/provider.go`, `search`). The cursor
+  holds a time and how many lines at that time were already returned.
+  The logs adapter sorts by timestamp with no tiebreak, and the stores
+  keep microseconds.
+  - **Lines that share a microsecond** are counted in the order the store
+    returns them. If the store returns tied lines in a different order
+    on the next query, a page boundary inside the tie can repeat one line
+    and skip another.
+  - **A tie group larger than one answer (1,000 lines)** is passed on as
+    far as it fits, then skipped, and the page says `truncated`.
+- **Why accepted:** a page boundary has to fall inside a tie for either
+  to matter, and a thousand lines in one microsecond from one Deployment
+  doesn't happen with ordinary logging. Lines from different targets are
+  never confused: ties keep the targets' order.
+- **Mitigation:** a source that answered in full is never trusted below
+  its oldest line; the next round starts there. Tests cover ties across
+  targets and page sizes from 1 up, with the end bound inclusive and
+  exclusive.
+- **Revisit:** if the adapter gains a tiebreak or a cursor of its own
+  (T001 found none), use it.
+
+## RP-059 — A re-created platform object hides its predecessor's logs
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006.
+- **What:** the adapters scope by the UIDs of the OpenChoreo Component,
+  Project and Environment (spike finding 5). Serendip resolves them from
+  the live objects (`scope.go`). If one is deleted and re-created under
+  the same name, by hand or by a reconciler repairing it, it gets a new
+  UID, and lines stored under the old one aren't found any more. They
+  age out with retention (3 days).
+  - **For up to a minute after a re-creation,** resolved UIDs are
+    cached, so searches still use the old UID and miss the new object's
+    lines. That's narrower, never wider.
+- **Why accepted:** Serendip never re-creates these objects in normal
+  use, and widening the scope to find them would break the rule that a
+  query never reads beyond its targets.
+- **Revisit:** if a repair path that re-creates the objects is added.
+
+## RP-060 — Fluent Bit's read-position file stays on the node
+
+- **Kind:** operability. **Status:** Accepted, 2026-11-14.
+  **Found:** spec 023 T006, live on `serendip-t018`.
+- **What:** the logs module's Fluent Bit keeps how far it has read each
+  container log in `/var/lib/fluent-bit/db` on the node (a hostPath).
+  Uninstall deletes the namespace, but not that directory. On
+  `serendip-t018` it dated from T001's install two days earlier.
+  - **On a reinstall,** Fluent Bit resumes where it stopped, so lines
+    written while the package was installed before aren't stored again
+    (the old store went with the namespace), and only new lines arrive.
+  - **On a node that never had the package,** `Read_from_Head` reads
+    every container log there (43,507 records in T001).
+- **Why accepted:** it's a few kilobytes, and removing it needs a
+  privileged pod on each node, which the package shouldn't need.
+  Resuming also spares a reinstalled package re-reading every log on
+  the node.
+- **Revisit:** if a reinstall should bring back earlier logs, or the
+  node agent (`serendip-agent`) gains a clean-up step for packages.
+
+## RP-061 — Reported disk use lags, and leaves out the newest data
+
+- **Kind:** honesty of a reported number. **Status:** Accepted,
+  2026-11-14. **Found:** spec 023 T006, live on `serendip-t018`.
+- **What:** `GET /v1/packages` shows the package's current disk use
+  (`usage.go`). The kubelet doesn't measure local-path volumes (T002),
+  so each store is asked:
+  - **Prometheus** reports its blocks and WAL, which match its volume;
+  - **OpenObserve** reports its streams' stored and index sizes. It
+    updates them every 10 minutes, and they leave out its write-ahead
+    log (the newest minutes of lines) and its metadata database (about
+    5 MiB). On a fresh install with the bench's loggers running, they
+    read 0 for the first 8 minutes; at 13 minutes they read 0.49 MiB,
+    exactly the stored files, while 7.3 MiB was on the volume (5.2 MiB
+    of it the metadata database, 1.4 MiB the write-ahead log).
+- **Why accepted:** the number is a guide next to a stated budget; the
+  volumes' sizes and retention bound the real use. Measuring the volume
+  itself needs a `du` from a privileged pod or an exec into the store,
+  which the product shouldn't need.
+- **Mitigation:** the console (T011) labels it as reported by the
+  stores. T012 compares it with a `du` after 2 hours under load.
+- **Revisit:** if a store exposes its on-disk size, or local-path is
+  replaced by a CSI provisioner whose volumes the kubelet measures.
+
+## RP-062 — OpenObserve's SSRF guard is off
+
+- **Kind:** security. **Status:** Accepted, 2026-11-14. **Found:** spec
+  023 T012, on a fresh `bench-t470`.
+- **What:** OpenObserve v0.92.2 refuses alert destinations at private
+  addresses (its SSRF guard). The logs module's setup Job creates one,
+  OpenChoreo's webhook at `http://logs-adapter:9098`, a ClusterIP, so
+  on a fresh store the Job fails and the install never becomes Ready.
+  `serendip-t018` didn't show it, because its destination already
+  existed from the first install. The installer now sets
+  `ZO_SSRF_ALLOW_LOOPBACK=true`, as the module's newer releases do. At
+  v0.92.2 that skips the create-time check entirely, not only for
+  loopback (checked live: the destination was then created).
+- **Why accepted:** only Serendip (with the admin Secret, kept in the
+  cluster) and the chart's Job can reach OpenObserve's API: the plane's
+  NetworkPolicies admit only pods in its namespace, plus the node rule
+  to the ingest port. No person or AI creates OpenObserve destinations;
+  alerts are spec 024's, through Serendip's API. OpenObserve has no
+  allow-list at v0.92.2 to admit only `logs-adapter`.
+- **Mitigation:** the policies above; spec 024 must validate any
+  destination a person sets before it reaches OpenObserve.
+- **Revisit:** when OpenObserve has an allow-list of hosts or CIDRs (a
+  chart PR mentioned `ZO_SSRF_ALLOWED_HOSTS`; not in v0.92.2), or when
+  spec 024 adds notification channels.
+
+## RP-063 — The stated disk growth is a 2-hour slope, extrapolated
+
+- **Kind:** honesty of a reported number. **Status:** Accepted,
+  2026-11-14. **Found:** spec 023 T012 (go-reviewer).
+- **What:** the observability package states 496 MiB a day: the
+  volumes' growth over the benchmark's 2-hour disk phase, scaled to 24
+  hours, under T002's synthetic load (five loggers, 10 lines a second
+  each). A fresh store's first hours aren't steady state: the 31-minute
+  load phase before it scaled to 727 MiB a day, as the logs store
+  compacted its first data. Neither phase reaches the 3-day retention,
+  so the ~1.5 GiB level the note states is growth × retention, not a
+  measurement. A real cluster's logging rate can be far higher or lower.
+- **Why accepted:** a multi-day run per package is out of proportion
+  for v1. The figure only informs the person installing, and the
+  package's own volumes (5 GiB logs, 3 GiB metrics, Prometheus capped at
+  2 GB) bound the real use whatever the rate. `GET /v1/packages` reports
+  the measured current use beside the stated figure.
+- **Revisit:** in the full test pass after v1, with a run past the
+  retention window on reference hardware.
+
+## RP-064 — Fluent Bit's monitoring port answers any pod on the node
+
+- **Kind:** security (information exposure). **Status:** Fixed in spec
+  023 T014 (2026-11-14); accepted in T013 until then. **Found:** spec
+  023 T001 (noted in plan.md), checked on `serendip-t018` in T013
+  (criterion 9).
+- **Fix (T014, the user's choice of option 1):** Fluent Bit runs off the
+  host network (`fluent-bit.hostNetwork=false`, `dnsPolicy=ClusterFirst`),
+  so the plane chart's policy, which admits only pods in the namespace,
+  covers `:2020`. That needed Serendip's own copy of the chart's config
+  (RP-065). The node rule `serendip-allow-node-to-openobserve` is gone:
+  Fluent Bit's flushes now come from a pod in the namespace. **Checked on
+  `serendip-t018`:** from a workload pod, `:2020` timed out by Service and
+  by pod IP, and the node's address refused it; the DaemonSet's probes
+  pass; a Component's lines were searchable through the API about a
+  second after they were written, scoped by its UID.
+  - **Not handled:** an install from before T014 would keep the node rule
+    until the namespace is removed. Spec 023 was never released, so no
+    such install exists outside the test clusters, whose namespace was
+    removed first.
+
+The text below is the T013 record.
+- **What:** the logs module's Fluent Bit runs with `hostNetwork`, so the
+  plane's NetworkPolicies don't apply to it, and its HTTP server listens
+  on `0.0.0.0:2020`. From a workload pod in another Project,
+  `fluent-bit.openchoreo-observability-plane:2020` answered
+  `/api/v1/metrics` (records and bytes per input, filter and output),
+  `/api/v2/metrics` (the same as Prometheus text, with the node's host
+  name), `/api/v1/uptime` and the version. No log lines, labels or
+  pod names. Every other part of the plane (OpenObserve, Prometheus,
+  the Observer, both adapters, kube-state-metrics) timed out, by
+  Service and by pod IP.
+- **Why accepted:** it isn't cheap to close. The DaemonSet's own liveness
+  and readiness probes use that port, and on the host network the
+  kubelet probes the node's address, so turning `HTTP_Server` off or
+  listening on `127.0.0.1` would break them. What leaks is how much the
+  node logs, which a workload can roughly see from its own node anyway.
+- **Mitigation:** none beyond the content being counters only.
+- **Revisit:** if the chart lets the probes be exec-based or the server
+  bind to a node-local address; or on a multi-tenant edge profile where
+  a tenant's log volume is itself sensitive.
+
+## RP-065 — Serendip carries the logs chart's Fluent Bit config
+
+- **Kind:** maintenance; performance (not re-measured). **Status:**
+  Accepted, 2026-11-14. **Found:** spec 023 T014, fixing RP-064.
+- **What:**
+  - **The copy:** the logs module 0.8.0 hard-codes the kubernetes
+    filter's `Use_Kubelet true`, with `Kubelet_Host` at its default of
+    127.0.0.1, so off the host network it can't reach the kubelet. Serendip
+    embeds the chart's render of its Fluent Bit ConfigMap verbatim
+    (`providers/observability/openchoreo/fluent-bit/`), edits two lines
+    (`Use_Kubelet false`, `tls.verify On`), applies it as
+    `serendip-fluent-bit`, and points the chart at it. Every chart upgrade
+    must re-render it; the tests fail if an edited line moved, and
+    `Install` refuses rather than the binary panicking at start.
+  - **The API server instead of the kubelet:** each Fluent Bit pod GETs a
+    pod's metadata from kube-apiserver the first time it tails that pod's
+    log, then caches it (no watch). On a single-node edge that is a small
+    burst after a restart or a large rollout. T012's footprint
+    (`requirements.go`) was measured with the kubelet lookup and wasn't
+    re-run.
+  - **Drift:** an edited or deleted copy is re-applied within a resync and
+    Fluent Bit's pods are restarted (checked live: about 10 s). A
+    deliberate change rolls the DaemonSet through a config-hash pod
+    annotation.
+- **Why accepted:** the alternatives were the kubelet on the node's
+  address (also a copy, plus repeating the chart's four credential `env`
+  entries, since Helm replaces the list) or leaving RP-064 open.
+- **Revisit:** when the logs module makes the kubelet host or
+  `Use_Kubelet` configurable (then drop the copy); and in the post-v1
+  full test pass, re-run the T012 package benchmark to confirm the
+  footprint.
+
+## RP-066 — The plane chart's alert-rule CRD outlives the package's removal
+
+- **Kind:** footprint. **Status:** Decided, 2026-11-15. **Found:** spec
+  023 T001 (plan "Spike findings" 16).
+- **What:** uninstalling the observability package deletes the
+  `ObservabilityPlane`, the three Helm releases and the namespace, but
+  Helm leaves the plane chart's `observabilityalertrules` CRD. The
+  Prometheus Operator's 10 CRDs, which kept kube-apiserver's memory up
+  after removal (plan 023 decision 3), aren't installed at all (plain Prometheus, ADR 0021).
+- **Why decided:** the CRD is small, and deleting a CRD deletes every
+  object of its kind, which a person's own use could depend on. Same
+  reasoning as RP-039's Argo CRDs.
+- **Revisit:** if spec 024 (alerts) creates objects of this kind, so
+  removal must say what it leaves; or if a re-install with a newer chart
+  finds the old CRD's schema in the way.
+
+## RP-067 — Stored logs keep what pods print, secrets included
+
+- **Kind:** data exposure. **Status:** Accepted, 2026-11-15. **Found:**
+  spec 023 plan (Risks).
+- **What:** with the observability package installed, everything a
+  container prints is kept in OpenObserve for 3 days, including any
+  secret a workload or a build step prints. Live pod logs already showed
+  it, but only while the pod lived.
+- **Mitigation:**
+  - **Stored logs need `serendip/components/logs/read`,** the same action
+    as live logs, which the read-only and access-management roles leave
+    out (`authorization.md`). An Application's search reads only the
+    Deployments the caller may read.
+  - **Bounded:** 3-day retention, and removing the package deletes the
+    store's volume.
+  - **The store itself** is reachable only from its namespace
+    (NetworkPolicy; RP-054), and its admin credentials live only in a
+    cluster Secret.
+- **Residual:** no redaction. A secret printed once is searchable for 3
+  days by anyone holding Log Reader on that Deployment, and in the
+  volume's files on the node.
+- **Revisit:** if a profile needs redaction or a shorter retention for
+  some Projects, or when Fluent Bit filters become configurable per
+  Project.
+
+## RP-068 — A noisy Component can fill the logs volume before retention acts
+
+- **Kind:** availability, capacity. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 023 plan (Risks).
+- **What:** retention drops logs older than 3 days, not by size. A
+  Component logging far beyond the benchmark's load (about 496 MiB a day
+  for five loggers, RP-063) could fill OpenObserve's 5 Gi volume first.
+  Then new logs stop being stored (RP-053's dropped lines) until
+  compaction frees space. Prometheus has a size cap (2 GB of its 3 Gi)
+  as well as its 3 days.
+- **Mitigation:** the volumes are bounded, so the node's disk isn't
+  filled; the package reports current use (`usage` on
+  `GET /v1/packages`, the Packages page) against the stated budget.
+- **Residual:** no alert when use nears the budget (spec 024's alerts),
+  and the reported use lags (RP-061).
+- **Revisit:** with spec 024 (an alert on the package's own disk use), or
+  if a size-based cap for the logs store becomes settable in the logs
+  module.

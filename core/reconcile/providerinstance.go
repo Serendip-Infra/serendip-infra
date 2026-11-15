@@ -27,6 +27,9 @@ const (
 	ReasonInstalling    = "Installing"
 	ReasonInstalled     = "Ready"
 	ReasonInstallFailed = "InstallFailed"
+	// ReasonRemoving: the package's ProviderInstance is deleted and its
+	// uninstall is running (spec 023 T013).
+	ReasonRemoving = "Removing"
 	// ReasonUnavailable: the package isn't available in this build yet.
 	ReasonUnavailable = "Unavailable"
 	// ReasonDuplicate: another ProviderInstance already provides the
@@ -52,6 +55,22 @@ type PackageState struct {
 type PackageInstaller interface {
 	Install(ctx context.Context, inst resource.ProviderInstance) (PackageState, error)
 	Uninstall(ctx context.Context, instanceID string) error
+}
+
+// DiskUsage is how much of its volumes an installed package uses now
+// (specs/023-observability plan decision 8). CapacityMiB zero means the
+// capacity isn't known; UsedMiB can exceed it on volumes that don't
+// enforce their size.
+type DiskUsage struct {
+	UsedMiB     int       `json:"usedMiB"`
+	CapacityMiB int       `json:"capacityMiB"`
+	ReadAt      time.Time `json:"readAt"`
+}
+
+// PackageUsage is optional on a PackageInstaller whose package keeps
+// data: it reads the package's current disk use.
+type PackageUsage interface {
+	Usage(ctx context.Context) (DiskUsage, error)
 }
 
 // Package is one installable package: the provider that offers an
@@ -358,6 +377,9 @@ func (r *ProviderInstanceReconciler) UninstallCleanup() CleanupFunc {
 		case busy:
 			return fmt.Errorf("%w: removing %s waits for its install to finish", ErrPackageBusy, p.Provider)
 		case !done:
+			// Not ready from the moment it's removed, so nothing queries a
+			// package being torn down (spec 023 T013).
+			report(p.Capability, false, ReasonRemoving, "the "+p.Provider+" package is being removed")
 			return fmt.Errorf("%w: removing %s", ErrPackageBusy, p.Provider)
 		case job.err != nil:
 			return job.err

@@ -5,6 +5,7 @@ import { SafeLink } from "./Data";
 import { ReconciliationPath } from "./ReconciliationPath";
 import { conditionKind, ReadyStatus, StatusText } from "./Status";
 import { match } from "../lib/router";
+import { logTime, LogView } from "./LogView";
 
 afterEach(cleanup);
 
@@ -89,5 +90,21 @@ describe("match", () => {
     ["/", "/", {}],
   ])("%s ~ %s", (pattern, path, want) => {
     expect(match(pattern, path)).toEqual(want);
+  });
+});
+
+describe("LogView", () => {
+  it("shows a line's time in local time, like the charts, with the UTC timestamp as its title", () => {
+    const time = "2026-11-14T14:37:53.411Z";
+    render(<LogView lines={[{ time, instance: "i1", line: "hello" }]} label="Logs" following={false} />);
+    const el = screen.getByText(logTime(time));
+    expect(el.getAttribute("title")).toBe(time);
+    const local = new Date(time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
+    expect(logTime(time)).toBe(local);
+  });
+
+  it("keeps a time it can't read as it came, and shows nothing for none", () => {
+    expect(logTime("not a time")).toBe("not a time");
+    expect(logTime(undefined)).toBe("");
   });
 });

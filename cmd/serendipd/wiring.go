@@ -25,6 +25,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/providers/identity/oidc"
 	"github.com/serendip-infra/serendip-infra/providers/identity/thunderid"
 	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
+	obsplane "github.com/serendip-infra/serendip-infra/providers/observability/openchoreo"
 	"github.com/serendip-infra/serendip-infra/providers/secrets/openbao"
 	"github.com/serendip-infra/serendip-infra/providers/storage/localpath"
 )
@@ -51,10 +52,13 @@ type kubeWiring struct {
 	// platformView describes the platform, once it's ready.
 	platformView *lazyPlatformView
 	// builds runs builds while the builds package is Ready (spec 022).
-	builds    *lazyBuilds
-	authn     *lazyAuthenticator
-	login     *lazyLogin
-	directory *lazyDirectory
+	builds *lazyBuilds
+	// observability reads stored logs and metrics while the observability
+	// package is Ready (spec 023).
+	observability *lazyObservability
+	authn         *lazyAuthenticator
+	login         *lazyLogin
+	directory     *lazyDirectory
 	// issuer is the human issuer once identity is set up, or "".
 	issuer func() string
 	plan   setupPlan
@@ -125,6 +129,10 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	if err != nil {
 		return nil, fmt.Errorf("builds: %w", err)
 	}
+	obsInstaller, err := obsplane.NewInstaller(client, kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("observability: %w", err)
+	}
 	identityDeployer.SetConsoleRedirects(thunderid.ConsoleRedirects{Callback: console.callback, PostLogout: console.postLogout})
 	// The issuer depends on the gateway's endpoint, known only once the
 	// gateway is up, but a malformed override is a config error: fail now.
@@ -142,6 +150,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	directory := &lazyDirectory{}
 	login := &lazyLogin{}
 	builds := &lazyBuilds{}
+	observability := &lazyObservability{}
 	// verifier is the identity setup's token verifier, shared with the
 	// console's relying party (one key cache).
 	var verifier atomic.Pointer[oidc.Verifier]
@@ -330,10 +339,12 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	// is gone, or deleting a built Component would wait for ever.
 	buildProvider := buildplane.NewBuilds(client)
 	cleaners[resource.KindBuild] = reconcile.BuildCleanup(buildProvider)
-	packages := packageCatalogue(buildInstaller)
-	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages,
-		onReadiness{capBuild: buildHandle(registry, builds, buildProvider)})
-	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer}, nil
+	packages := packageCatalogue(buildInstaller, obsInstaller)
+	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages, onReadiness{
+		capBuild:         buildHandle(registry, builds, buildProvider),
+		capObservability: observabilityHandle(registry, observability, obsplane.NewProvider(client)),
+	})
+	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer}, nil
 }
 
 // ensureGatewayReady ensures the shared gateway and treats "not programmed

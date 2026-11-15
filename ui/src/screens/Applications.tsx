@@ -16,6 +16,7 @@ import { usePoll, useNow } from "../hooks/usePoll";
 import { accessPath, action } from "../lib/permissions";
 import { Link, navigate } from "../lib/router";
 import { formatAge } from "../lib/time";
+import { ApplicationLogSearch } from "./Observability";
 import { dnsLabelError, UpdatedLine } from "./common";
 
 export function ApplicationList() {
@@ -244,6 +245,8 @@ export function ApplicationDetail({ id }: { id: string }) {
           </div>
         )}
       </section>
+
+      <ApplicationLogSearch app={a} comps={comps.data} />
 
       <section className="section" aria-labelledby="app-conditions">
         <h2 id="app-conditions" className="section-title">

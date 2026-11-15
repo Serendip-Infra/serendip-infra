@@ -12,12 +12,307 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-09
+Last updated: 2026-11-15 (after spec 023 T015)
 
 ## Current phase
 
+**Spec 023 (observability package): all 15 tasks done (2026-11-15).
+Left: the GitHub close-out (push `spec-023`, the PR with `Closes #64`,
+epic #64's body rewritten to DONE, the merge), paced beside the
+backfill run (see "GitHub" below). Then the next spec: 024 (alerts),
+whose tasks must include validating alert destinations itself (RP-062).**
+- **T015 (closes #90):** docs and close-out (tasks.md T015).
+  - **Docs:** `application-platform.md` "Observability (spec 023)" and
+    the package readiness reasons (`Removing`); `provider-model.md`
+    (`Disk`, `PackageUsage`); `authorization.md` (stored logs and
+    `serendip/observability/read`).
+  - **Risk register:** RP-066 (alert-rule CRD left), RP-067 (secrets in
+    stored logs), RP-068 (logs volume filling before retention). Every
+    RP the plan names is indexed.
+  - **docs-keeper:** four drift items fixed, one of them in code: the
+    catalogue's description no longer promises traces and alerts.
+- **T014 (`3f81280` and the commit after it, closes #89):** reviews done
+  (tasks.md T014).
+  - **RP-064 fixed:** Fluent Bit is off the host network, on Serendip's
+    copy of the chart's config (`fluentbit.go`, `fluent-bit/`). The node
+    rule is gone. Checked live on `serendip-t018`.
+  - **RP-065:** the copy must be re-rendered on every logs-chart upgrade.
+    The API-server lookup wasn't re-measured; re-run T012's benchmark in
+    the post-v1 test pass.
+  - **go-reviewer:** fixed: drift restarts Fluent Bit, and a moved chart
+    line fails `Install`.
+  - **contract-guardian:** pass. **security-review:** no findings at
+    confidence 8 or above.
+  - **`serendip-t018` now:** the package is installed (ProviderInstance
+    `observability`), and `serendipd` runs from this session's
+    scratchpad build on :8088. The T013 binary `serendipd-t013c.exe` was
+    stopped to free the port.
+- **T013 (`d4c7a9e`, closes #88):** `specs/023-observability/verification.md`
+  has evidence for criteria 1, 3–11 and 13 on `serendip-t018`, through
+  the console (headless Chrome), CLI and MCP (CLI signed in as `admin`).
+  - **Fixed:**
+    - F1: log times UTC beside local-time charts;
+    - F2: a finished build whose pods were gone gave no lines, not its
+      stored ones;
+    - F3: Argo executor lines in stored build logs;
+    - F4: policy Approvals' `decision.at` was year 1 (spec 019's bug);
+    - F5: new readiness reason `Removing` during the uninstall.
+  - **RP-064 (fixed in T014; T013's plan for it):** Fluent Bit's `:2020`
+    answered counters to any pod. **The user chose option 1:** run the
+    logs module's Fluent Bit without `hostNetwork`, so the plane's
+    NetworkPolicies cover `:2020`.
+    - **Check first:** that the chart exposes the setting (oss-researcher),
+      and that nothing needs the host network (the kubernetes filter's
+      `Use_Kubelet`, DNS policy).
+    - **Then:** set it in `values.go` with a test. Drop
+      `serendip-allow-node-to-openobserve` if it's no longer needed
+      (`policies.go`).
+    - **Verify live on `serendip-t018`:** logs still flow, the
+      DaemonSet's probes pass, and `:2020` times out from a workload pod.
+    - **Then** close RP-064 and update `verification.md` criterion 9.
+    - **Rejected:** binding to 127.0.0.1 and dropping the HTTP probes
+      (loses hang detection); exec probes (the image has no shell); a
+      node firewall.
+  - **Tooling, kept outside the repo** in `C:/Users/malit/.serendip-t018/`:
+    `cdp.mjs` (headless Chrome driver, signs in on ThunderID), `t023-*.sh`
+    (start script, API helper), `t023api.py`, `t023-mcp.py`, the keys
+    file (`t023-keys.env`), the store (`t023.db`) and `t023-evidence/`.
+  - **The ThunderID admin password showed once in a screenshot** (the
+    first script clicked "show password"). The image was deleted.
+    Rotating it is offered to the user, not done.
+  - **Commits not pushed;** #87 and #88 close when spec 023's PR merges.
+- **T012 (`3024f1c`, closes #87):** `providers/observability/openchoreo/requirements.go`
+  from `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`
+  (README there): idle 608 MiB / 21 mcores, peak 967 MiB / 372 mcores,
+  disk 496 MiB a day, 3 days kept, budget 8192 MiB (`capacityMiB`). The
+  catalogue points at it, so the package is installable;
+  `GET /v1/packages` checked live. Resync +0.87 mcores. No regression
+  without the package (vs spec 022).
+  - **Found and fixed:** a fresh install never finished, because
+    OpenObserve's SSRF guard refused the logs chart's in-cluster webhook
+    (`serendip-t018` hid it). Now `ZO_SSRF_ALLOW_LOOPBACK=true`
+    (**RP-062**). **Spec 024 must validate alert destinations itself**
+    (put it in its tasks when it's written; contract-guardian asked).
+  - **RP-063:** the daily disk growth is a 2-hour slope, extrapolated.
+  - **Harness:** observability load and disk phases, new
+    `--package-load-*`/`--package-disk-*` flags, `--package` refuses an
+    unknown provider, an interrupted phase marks the summary incomplete.
+    go-reviewer's findings fixed, including a test that the load is
+    stopped however a run ends (`TestRunLoadAlwaysStopsTheLoad`).
+- **T011 (the console):** `ui/src/screens/Observability.tsx` plus a
+  shared `ui/src/components/MetricChart.tsx`.
+  - **Component screen:** the Observability tab shows CPU and memory
+    charts against request and limit, "not available" items, a stored-log
+    search with "Show older lines", and traces and alerts as "Not
+    available yet".
+  - **Application screen:** a log search per Environment, with the
+    `omitted` notice.
+  - **Packages page:** the disk line (`requirements.disk`) and disk in
+    use (`usage`).
+  - **Charts** follow the dataviz skill: the `--chart-series` token
+    passes the validator and `check-contrast.mjs`, and the charts were
+    rendered in headless Edge in both themes at 360 and 560 px. The live
+    screenshot is still T013's.
+  - **`apiFetch`** takes a timeout: 25 s for these queries, which the
+    server gives 20 s.
+  - **Checks:** 150 UI tests pass, and the build is 103.9 KiB gz
+    (tasks.md T011).
+- **GitHub runs:** see "GitHub (2026-11-14)" below.
+- **T010 (CLI and MCP tests):** `cmd/serendip/observability_test.go`
+  (via a new `newWorldWith`): the three commands' requests and usage
+  errors, real calls, and the MCP metrics tool on a 24-hour range
+  giving at most 60 points a series plus a summary over all 288. An
+  assistant's `summary: false` is refused (tasks.md T010).
+- **T009 (edge-case tests):** cursors across ranges, an empty ready
+  package, not ready mid-request, and the query caps. No bug found;
+  `begin`'s release is now idempotent (tasks.md T009).
+- **T008 (the API):** `api/observability_handler.go` serves
+  `GET /v1/deployments/{id}/logs/search`,
+  `GET /v1/applications/{id}/logs/search?environment=` and
+  `GET /v1/deployments/{id}/metrics`, wired by `api.WithObservability`.
+  - **Readiness is checked first** (503 with `Retry-After`, saying not
+    installed, installing or not ready). Then come 3 slots per caller
+    and 20 in all, and a 20 s deadline per query.
+  - **An Application's search** reads only the Deployments whose logs
+    the caller may read; `omitted` counts the rest.
+  - **Metrics** come with per-series summaries, and `summary=true` keeps
+    60 points. The MCP tool always sends it (`catalog.Operation.MCPQuery`).
+  - **Expired build logs** come from the store (`"stored": true`).
+  - **`GET /v1/packages`** shows `usage`.
+  - **CLI commands:** `serendip logs search`,
+    `serendip logs search-application` and `serendip metrics`.
+  - **Tests:** `api/spec023_acceptance_test.go` (criteria 3, 5–8 and 11)
+    and `observability_internal_test.go`. go-reviewer's findings are
+    fixed (tasks.md T008).
+- **T007 (wiring in `serendipd`):** the `openchoreo-observability-plane`
+  catalogue entry has its installer and decision 13's removal wording.
+  `Requirements` stays nil until T012, so the package is offered but
+  can't be installed. A generic `packageHandle[T]` now backs both
+  `buildHandle` and `observabilityHandle`. `lazyObservability` is in
+  `lazy.go`, and `kubeWiring.observability` is the handle T008's API
+  reads. Disk use: the catalogue's `Installer` is `*obsplane.Installer`,
+  which implements `reconcile.PackageUsage`, so T008 reads it by type
+  assertion. Tested through the real engine
+  (`TestObservabilityInstallReachesHandle`).
+- **T006 (the client and the provider):** `providers/observability/openchoreo/`
+  `observer.go` (the adapters through the Service proxy), `scope.go`,
+  `provider.go` (`SearchLogs`, `BuildLogs`, `Metrics`) and `usage.go`,
+  tested against an `httptest` API server, then **checked live on
+  `serendip-t018`** with the opt-in `live_test.go` (`OBS_LIVE_KUBECONFIG`,
+  `OBS_LIVE_DB`, `OBS_LIVE_BUILD`). That run installed, removed and
+  re-installed the package through the real installer, and confirmed
+  scopes, answer shapes, paging, units, build-run scope and disk use.
+  - **Scopes** are UIDs read from the live OpenChoreo objects (names
+    repeated from the application and build providers), cached for a
+    minute. A target must hang together, and a gone one is skipped,
+    never widened. Returned lines are checked against all three UIDs.
+  - **Paging** is newest first by time and a seen count, up to 4 rounds a
+    page. A target that answered in full isn't trusted below its oldest
+    line. A page can be short or empty with `Next` set (noted on
+    `reconcile.LogPage`), so the API and UI must read on until `Next` is
+    empty.
+  - **Metrics:** millicores and MiB, whole-minute steps, at most 300
+    points; request metrics always "not available".
+  - **Disk use:** OpenObserve's streams API (sizes in MiB, matched to
+    the byte) over a **port-forward** with the admin Secret, because the
+    API server's Service proxy strips `Authorization`; Prometheus'
+    `/metrics` through the proxy. OpenObserve's stats lag and leave out
+    its WAL and metadata (RP-061).
+  - **The live check found and fixed:** OpenObserve downloading GeoIP
+    databases and LLM pricing even with telemetry off (now
+    `ZO_MMDB_DISABLE_DOWNLOAD`, and `ZO_MODEL_PRICING_ENABLED` through
+    `extraEnv`); a bare 500 from an empty store (clearer error); an
+    alarming message before Prometheus' first scrape; the end bound is
+    exclusive (already covered). Fluent Bit's position file stays on
+    the node after removal (RP-060).
+  - **Outside the package:** `kubernetes.ObjectMeta.UID` and
+    `kubernetes.ErrBodyTooLarge`.
+  - **Records:** plan.md "Findings from T006", VERSIONS.md (query shapes,
+    disk-use metrics), **RP-058** (tied timestamps) and **RP-059** (a
+    re-created object hides earlier logs), **RP-060** and **RP-061**.
+  - **Reviews:** `go-reviewer`'s findings are fixed, except sequential
+    scope resolution (cached; left as is). `contract-guardian` passed.
+- **T005 (the installer, `eacba73`):** `installer.go`, `values.go`,
+  `policies.go`, embedded `prometheus-values.yaml`, plus
+  `kubernetes.Client.PostRaw` and `ServiceProxyPath`.
+  - It installs in ADR 0021's order. An unchanged resync costs 6 GETs and
+    one metrics query, with no Helm run.
+  - Repairs run Helm only for the release at fault. Uninstall is
+    idempotent.
+  - **RP-057:** ThunderID's proxy calls drop a bearer token (latent).
+- **T004 (`1ebe9d8`):**
+  - `provider.Requirements.Disk`;
+  - `core/reconcile/observability.go`: the types, the caps as
+    constants, and `LogCursor`, which is versioned base64url, refuses any
+    other spelling, and encodes an empty cursor as the first page;
+  - `PackageUsage` and `DiskUsage`;
+  - `policy.ActionObservabilityRead`.
+  - **A test flake, not from T004:**
+    `TestEngine_RequeueAfter_BackoffCapsAtResync` (timing) fails about 1
+    run in 5 on unchanged code.
+- **ADR 0021** (`docs/decisions/0021-observability-backend.md`) chose
+  **OpenObserve for logs** and **plain Prometheus for metrics**, both
+  read through OpenChoreo's adapters. It was measured on the simulated
+  T470 (`bench-t470`) against OpenSearch and SigNoz. On top of the
+  platform, at idle and under load:
+
+  | Config | Idle | Under load |
+  |---|---|---|
+  | B: OpenObserve, metrics module as shipped | +832 MiB | +1,028 MiB |
+  | A: OpenSearch | +1,609 MiB | +1,659 MiB |
+  | C: SigNoz | +1,801 MiB | +2,068 MiB |
+
+  With plain Prometheus, B should be about 350–400 MiB at idle; T013
+  confirms it.
+  - **Results:**
+    `profiles/edge-1/bench/results/2026-11-12-spec023-backends/`.
+  - **Plan amended:** decisions 1–3 and 13, and a new section,
+    "Findings from T003":
+    - the node rule goes in before the logs module's install;
+    - passwords need a symbol;
+    - removing the metrics module's CRDs leaves kube-apiserver about
+      390 MiB higher.
+  - **The metrics module is installed for its adapter only**
+    (`kube-prometheus-stack.enabled=false`). Prometheus comes from
+    `prometheus-community/prometheus` 29.47.2, with
+    `profiles/edge-1/bench/observability-load/prometheus-plain-values.yaml`
+    (RP-056: it must keep matching the adapter).
+  - **New accepted risks:** RP-055 (OpenObserve's search slows as data
+    grows) and RP-056.
+  - **Docs updated:** `capability-model.md`, `overview.md`,
+    `build-vs-adopt.md` and `VERSIONS.md`.
+- **Telemetry off:**
+  - OpenObserve sends a heartbeat home by default; the installer sets
+    `ZO_TELEMETRY=false` (T005).
+  - SigNoz, not adopted, reports usage by default as well.
+- **Bench additions:**
+  - `observability-load/backends.sh`, `measure.sh`,
+    `signoz-query.env` and `prometheus-plain-values.yaml`.
+  - `load.sh` now passes the driver's env inside `--overrides`.
+  - `registry-cache.sh`: local pull-through image caches, wired into
+    new kind clusters by `kind-t470-setup.sh`. **Verified** by T012's
+    two fresh-cluster runs. **Stopped after T013** (`down`, volumes
+    kept; `down --purge` frees the disk).
+- **Clusters:**
+  - **`bench-t470`** (kind, simulated T470) is **stopped** (its
+    container), with T012's stack and the observability package. Delete
+    it with `kind-t470-setup.sh down bench-t470`; nothing needs it now.
+  - **`serendip-t018` is running,** with the builds package and **without
+    the observability package** (T013 removed it last). `serendipd` from
+    T013's last build runs on `127.0.0.1:8088` against
+    `C:/Users/malit/.serendip-t018/t023.db`
+    (`t023-start.sh <binary>`). It was started by this session, so it
+    stops when the session's shell does.
+  - **Spec 022 T014's store** (the Serendip IDs for `serendip-t018`'s
+    T014 app) is copied to `C:\Users\malit\.serendip-t018\t014.db`. Pass
+    a copy of it as `OBS_LIVE_DB`. The repo's `serendip.db` holds no
+    Deployments.
+  - **The console isn't served by Docker:** after `docker start`, the UI
+    needs `serendipd` running on the host, and login needs ThunderID via
+    `identity.localhost:30080`. The user will look at it later.
+- **Next:** T014 (reviews), then T015.
+- **GitHub (2026-11-14):** paced background scripts in the previous
+  session's scratchpad `prs/` folder, plus `epics/` in session
+  `d193d427-...`'s scratchpad. Check their `*.log` files before any
+  other GitHub write. Never two such runs at once.
+  - **Done:** `run.sh` (PRs #26–#45); `track.sh` (epics #46–#74, #21–#23
+    closed); `setup.sh` (setup PR #77, merged by hand on the website
+    since serendipinfra's token lacks the `workflow` scope; labels; the
+    board's fields; spec 023's tasks #82–#90 under epic #64, T007–T011
+    closed); `epics/epics.sh` (all 22 epics for specs 002–023 rewritten
+    in epic #1's layout, each in its phase milestone; #64 open in "v1
+    GA"). Spec 023's task issues: T012 #87 (closed by `3024f1c` once
+    it reaches GitHub), T013 #88, T014 #89, T015 #90.
+  - **Running: `backfill.sh`**, started 2026-11-14 09:17 UTC: about 770
+    writes (35 Epic types, then 245 older tasks × create, link and
+    close), one every 90 s, with a 6-hour rest after every 200, ending
+    around early Monday. At 14:21 UTC it reached 200 writes and began
+    its first 6-hour rest, as designed. It stops at the first failed write and resumes from
+    `backfill.state` if re-run (`bash <prs>/backfill.sh`), after
+    checking the log's last line. A keep-awake process runs beside it.
+    The user set the lid action to "do nothing" and idle sleep to never
+    for this run. When it finishes, remind them to restore sleep:
+    `powercfg /change standby-timeout-ac 15` and
+    `standby-timeout-dc 3` (prefix `MSYS_NO_PATHCONV=1` in Git Bash).
+- **Maybe, to do (not scheduled):**
+  - **Hardware tiers.** Propose how the user's low, medium, high and
+    custom spec installs fit with the topology profiles, as a spec or
+    ADR (`deployment-profiles.md`, open questions).
+  - **The full test pass after v1:** every feature, on real hardware,
+    with upgrades and long runs.
+  - **After v1 GA (the user's choice, 2026-11-14):** releases (git
+    tags, semver, a changelog) and branch protection on `main`
+    (required CI checks, no direct pushes). Not before.
+- **Plan leanings carried forward:**
+  - `provider.Requirements` gains an optional disk part;
+  - a core `ObservabilityProvider` with a lazy handle like builds';
+  - queries are narrowed to the caller's permitted Deployments, and
+    always carry all three UIDs;
+  - no side door: NetworkPolicies, with Serendip using the API server's
+    Service proxy (RP-054).
+
 **Spec 022 (builds, the workflow-plane package): COMPLETE** (T001–T016,
-2026-10-24 → 2026-11-09). **Next: choose the next spec** (below).
+2026-10-24 → 2026-11-09).
 - **Records:**
   - `specs/022-builds/`: spec, plan (decisions, T001 spike findings, two
     T013 amendments), tasks (a "Done as" note per task), and

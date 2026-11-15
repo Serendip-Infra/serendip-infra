@@ -19,6 +19,29 @@ type Requirements struct {
 	Results string `json:"results"`
 	// Note says plainly how the package fits, written from the benchmark.
 	Note string `json:"note,omitempty"`
+	// Disk is what a package that keeps data writes to disk, nil for one
+	// that keeps none (specs/023-observability plan decision 8).
+	Disk *DiskRequirements `json:"disk,omitempty"`
+}
+
+// DiskRequirements is a package's measured disk use: how fast its data
+// grows under the benchmark's load, how long it's kept, and the most it
+// can take. All three are stated, or Disk is left nil.
+type DiskRequirements struct {
+	GrowthMiBPerDay int `json:"growthMiBPerDay"`
+	RetentionDays   int `json:"retentionDays"`
+	BudgetMiB       int `json:"budgetMiB"`
+}
+
+// Validate checks every part is stated.
+func (d DiskRequirements) Validate() error {
+	switch {
+	case d.GrowthMiBPerDay < 0 || d.RetentionDays < 0 || d.BudgetMiB < 0:
+		return errors.New("disk requirements can't be negative")
+	case d.GrowthMiBPerDay == 0 || d.RetentionDays == 0 || d.BudgetMiB == 0:
+		return errors.New("disk requirements must state growth per day, retention and budget")
+	}
+	return nil
 }
 
 // Validate checks the numbers are stated and traceable to a measurement.
@@ -32,6 +55,9 @@ func (r Requirements) Validate() error {
 		return errors.New("peak memory isn't stated")
 	case r.MeasuredOn == "" || r.Results == "":
 		return errors.New("requirements must say where they were measured, and name the results")
+	}
+	if r.Disk != nil {
+		return r.Disk.Validate()
 	}
 	return nil
 }

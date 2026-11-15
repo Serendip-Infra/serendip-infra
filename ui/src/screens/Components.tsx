@@ -3,7 +3,8 @@ import { apiFetch, apiList, ApiError, isShown, NetworkError } from "../api/clien
 import type { Application, Component, DependenciesView, Secret } from "../api/types";
 import { Tabs } from "../components/Tabs";
 import { DeployTab } from "./Deploy";
-import { BuildsTab, ObservabilityTab, RuntimeTab } from "./Runtime";
+import { BuildsTab, RuntimeTab } from "./Runtime";
+import { ObservabilityTab } from "./Observability";
 import { ApiEquivalent, type ApiRequest } from "../components/ApiEquivalent";
 import { ConditionsTable, KeyValueList, SafeLink } from "../components/Data";
 import { DeleteConfirm } from "../components/Delete";
@@ -108,8 +109,8 @@ export function ComponentDetail({ appId, id, tab = "overview" }: { appId: string
       {tab === "deploy" && app.data && <DeployTab app={app.data} comp={c} />}
       {tab === "runtime" && app.data && <RuntimeTab app={app.data} comp={c} />}
       {tab === "builds" && <BuildsTab comp={c} />}
-      {tab === "observability" && <ObservabilityTab />}
-      {(tab === "deploy" || tab === "runtime") && !app.data && (app.error ? <RequestError error={app.error} what="application" /> : <LoadingState what="the application" />)}
+      {tab === "observability" && app.data && <ObservabilityTab app={app.data} comp={c} />}
+      {(tab === "deploy" || tab === "runtime" || tab === "observability") && !app.data && (app.error ? <RequestError error={app.error} what="application" /> : <LoadingState what="the application" />)}
       {!tabs.slice(1).some((t) => t.id === tab) && (
         <>
           <section className="section panel" aria-labelledby="comp-path">

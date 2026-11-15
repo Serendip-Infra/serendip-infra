@@ -110,6 +110,35 @@ the process list shows it:
 - **MCP tools answer once,** so `deployments_logs` and `builds_logs` read
   recent lines and have no `follow`.
 
+## Stored logs and metrics (the observability package)
+
+- **Searching stored logs:** `serendip logs search <deployment-id>`, or
+  across an Application's Components in one Environment,
+  `serendip logs search-application <application-id> --environment <id>`.
+  Both take `--q` (a plain phrase), `--from` and `--to` (RFC 3339; the
+  last hour by default) and `--limit` (up to 500 a page). Lines come
+  newest first, and include lines from instances that are gone.
+  - **Paging:** pass a page's `next` as `--before` for the next, older
+    page. A page can be short, even empty, with `next` set; only an empty
+    `next` ends a search.
+  - **An Application's search** reads only the Deployments whose logs
+    you may read; `omitted` counts the rest, without naming them. With
+    none readable it's 403.
+  - Stored logs need the same permission as recent ones.
+- **Metrics:** `serendip metrics <deployment-id> [--from] [--to]`: CPU in
+  millicores and memory in MiB, at least 15 minutes and at most the
+  retention period, with requests, limits, and min, average, max and
+  latest per series. Metrics need `serendip/observability/read`, which
+  Reader has. `--summary` keeps at most 60 points a series; the
+  `deployments_metrics` tool always does.
+- **A finished build's logs** stay readable after its run expires, from
+  the store (`"stored": true` in the answer).
+- **Without the package ready,** these answer 503, saying whether it's
+  not installed, installing or not ready. `serendip packages list` shows
+  an installed package's current disk use (`usage`).
+- **Limits:** at most 3 queries at once per person and 20 per server,
+  each stopped after 20 seconds.
+
 ## Packages and builds
 
 - **`serendip packages list`** shows each optional package's measured
@@ -271,6 +300,9 @@ tools.
 | `serendip incidents get <id>` | — | `GET /v1/incidents/{id}` | Get one Incident |
 | `serendip incidents list` | — | `GET /v1/incidents` | List incidents the caller may read |
 | `serendip incidents update <id>` | — | `PUT /v1/incidents/{id}` | Replace a Incident's spec (send the version read, for a conflict check) |
+| `serendip logs search <id>` | `deployments_logs_search` | `GET /v1/deployments/{id}/logs/search` | Search a Deployment's stored log lines, newest first, including lines from instances that are gone. One page per call: pass next as before for the next page; only an empty next ends a search (a page can be short). Logs can hold sensitive data, so they need their own permission. Needs the observability package |
+| `serendip logs search-application <id>` | `applications_logs_search` | `GET /v1/applications/{id}/logs/search` | Search the stored log lines of an Application's Components in one Environment, newest first, paged like deployments_logs_search. Only the Deployments whose logs you may read are searched; omitted counts the others. Needs the observability package |
+| `serendip metrics <id>` | `deployments_metrics` | `GET /v1/deployments/{id}/metrics` | A Deployment's CPU (millicores) and memory (MiB) over a time range (the last hour by default, at least 15 minutes), against its requests and limits, with min, average, max and latest per series. What can't be measured is listed as unavailable, with why. Needs the observability package |
 | `serendip nodes create` | — | `POST /v1/nodes` | Create a Node |
 | `serendip nodes delete <id>` | — | `DELETE /v1/nodes/{id}` | Delete a Node. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip nodes get <id>` | — | `GET /v1/nodes/{id}` | Get one Node |

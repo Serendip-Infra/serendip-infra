@@ -213,6 +213,13 @@ func routeTable() map[string]rule {
 		"GET /v1/builds/{id}/events":      {action: action(resource.KindBuild, "read"), target: targetResource, kind: resource.KindBuild},
 		"GET /v1/builds/{id}/logs":        {action: policy.Action{Name: policy.ActionComponentLogsRead}, target: targetResource, kind: resource.KindBuild},
 
+		// Stored logs and metrics (spec 023 plan decision 11). An
+		// Application's search reads the Application here; its handler
+		// keeps only the Deployments whose logs the caller may read.
+		"GET /v1/deployments/{id}/logs/search":  {action: policy.Action{Name: policy.ActionComponentLogsRead}, target: targetResource, kind: resource.KindDeployment},
+		"GET /v1/applications/{id}/logs/search": {action: action(resource.KindApplication, "read"), target: targetResource, kind: resource.KindApplication},
+		"GET /v1/deployments/{id}/metrics":      {action: policy.Action{Name: policy.ActionObservabilityRead}, target: targetResource, kind: resource.KindDeployment},
+
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
 	}

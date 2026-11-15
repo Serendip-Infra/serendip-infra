@@ -27,6 +27,13 @@ up)
   node="$name-control-plane"
   docker update --cpus "$SIM_CPUS" --cpuset-cpus "$SIM_CPUSET" "$node" > /dev/null
   kind get kubeconfig --name "$name" > "$out"
+  # Local image caches (registry-cache.sh), when they're running: pulls
+  # then come from this machine after the first time.
+  if "$here/registry-cache.sh" running; then
+    "$here/registry-cache.sh" wire "$name"
+  else
+    echo "image caches not running (registry-cache.sh up): pulling from the internet"
+  fi
   echo "applied limits (from docker inspect):"
   docker inspect "$node" --format '  NanoCpus={{.HostConfig.NanoCpus}} CpusetCpus={{.HostConfig.CpusetCpus}} Memory={{.HostConfig.Memory}}'
   echo "kubeconfig written to $out"

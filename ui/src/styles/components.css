@@ -721,3 +721,146 @@ legend {
   padding: var(--space-2);
   resize: vertical;
 }
+
+/* ---- Metric chart (spec 023, the dataviz method) ---- */
+.chart {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.chart-title {
+  font-weight: 600;
+}
+
+.chart-meta {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.chart-box {
+  width: 100%;
+  overflow: hidden;
+}
+
+.chart-svg {
+  display: block;
+  touch-action: pan-y;
+}
+
+.chart-svg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-axis,
+.chart-ref-label,
+.chart-tip-label {
+  fill: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A name over the data keeps a surface halo, like a marker's ring. */
+.chart-ref-label {
+  paint-order: stroke;
+  stroke: var(--surface-raised);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--chart-series);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-area {
+  fill: var(--chart-series);
+  fill-opacity: 0.1;
+}
+
+/* Request and limit are thresholds on the same axis: neutral ink, the
+   request dashed so the two differ without colour. */
+.chart-ref {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+}
+
+.chart-ref--request {
+  stroke-dasharray: 4 3;
+}
+
+.chart-dot {
+  fill: var(--chart-series);
+  stroke: var(--surface-raised);
+  stroke-width: 2;
+}
+
+.chart-crosshair {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+}
+
+.chart-tip {
+  fill: var(--surface-raised);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.chart-tip-value {
+  fill: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.chart-table {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.chart-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: var(--space-4);
+}
+
+/* Filters in one row above what they scope (spec 023). */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.form-row > .field {
+  flex: 0 1 260px;
+}
+
+.plain-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A chart being read again keeps its frame, dimmed. */
+.chart-grid-2--stale {
+  opacity: 0.6;
+}

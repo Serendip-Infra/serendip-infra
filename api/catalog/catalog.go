@@ -98,6 +98,12 @@ type Operation struct {
 	// SecretValue marks an operation that reads or writes a Secret's
 	// value: an MCP server can leave these out altogether.
 	SecretValue bool
+	// MCPQuery is query parameters an MCP tool always sends, such as
+	// metrics' summary=true, so an assistant gets a summary (specs/023
+	// plan decision 11). The parameters they set should be CLI-only.
+	MCPQuery map[string]string
+	// fixed is MCPQuery once ForMCP has made the operation a tool's.
+	fixed map[string]string
 	// body builds the JSON body when fields alone can't express it. Its
 	// args have been checked by Request already.
 	body func(args map[string]any) (any, error)
@@ -176,6 +182,9 @@ func (o Operation) Request(args map[string]any) (Request, error) {
 	case len(fields) > 0:
 		body = fields
 	}
+	for k, v := range o.fixed {
+		query.Set(k, v)
+	}
 	req := Request{Method: o.Method, Path: path}
 	if len(query) > 0 {
 		req.Path += "?" + query.Encode()
@@ -245,9 +254,11 @@ func scalar(v any) (string, error) {
 }
 
 // ForMCP is the operation as an MCP tool offers it: without CLI-only
-// parameters, so neither its schema nor its requests can use them.
+// parameters, so neither its schema nor its requests can use them, and
+// with its MCPQuery on every request.
 func (o Operation) ForMCP() Operation {
 	o.Params = slices.DeleteFunc(slices.Clone(o.Params), func(p Param) bool { return p.CLIOnly != "" })
+	o.fixed = o.MCPQuery
 	return o
 }
 

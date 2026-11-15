@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -19,6 +21,20 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "render" {
 		if err := runRender(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "bench-edge1 render:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "sample" {
+		if err := runSample(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bench-edge1 sample:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "delta" {
+		if err := runDelta(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bench-edge1 delta:", err)
 			os.Exit(1)
 		}
 		return
@@ -76,11 +92,24 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&o.pkg.fullHelm, "package-full-helm", true, "run the package's full Helm command once, for comparison with the fingerprint path")
 	fs.DurationVar(&o.pkg.installTimeout, "package-install-timeout", 20*time.Minute, "how long the package may take to become Ready")
 	fs.DurationVar(&o.pkg.buildTimeout, "package-build-timeout", 20*time.Minute, "how long one build may take")
+	fs.StringVar(&o.pkg.loadScript, "package-load-script", "profiles/edge-1/bench/observability-load/load.sh", "observability package: the load script (plan decision 9), run with bash")
+	fs.IntVar(&o.pkg.loadSamples, "package-load-samples", 180, "observability package: samples under load, every package-idle-interval (180 at 10 s is about 30 minutes)")
+	fs.IntVar(&o.pkg.diskSamples, "package-disk-samples", 121, "observability package: disk-phase samples under load, every package-disk-interval, with the du probe at both ends (121 at 60 s spans 2 hours; 0 skips it)")
+	fs.DurationVar(&o.pkg.diskInterval, "package-disk-interval", time.Minute, "observability package: time between disk-phase samples")
+	fs.BoolVar(&diskProbe, "disk-probe", true, "measure host-path volumes (local-path) with a short-lived du pod at the start and end of each phase; the kubelet reports no usage for them")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
 	if o.serendipd == "" || o.kubeconfig == "" {
 		return o, fmt.Errorf("--serendipd and --kubeconfig are required")
+	}
+	if _, ok := packageKinds[o.pkg.provider]; o.pkg.provider != "" && !ok {
+		return o, fmt.Errorf("--package %q: the harness measures only %s", o.pkg.provider, strings.Join(slices.Sorted(maps.Keys(packageKinds)), ", "))
+	}
+	if kindOf(o.pkg.provider).capability == observabilityCapability {
+		if err := checkLoadFlags(o.pkg); err != nil {
+			return o, err
+		}
 	}
 	for _, s := range strings.Split(o.notSimulated, ";") {
 		if s = strings.TrimSpace(s); s != "" {
@@ -280,9 +309,15 @@ func measure(ctx context.Context, o options, cl *cluster, nodeName string, d *da
 	return nil
 }
 
+// diskProbe turns the host-path volume probe on (spec 023 T002), from
+// -disk-probe.
+var diskProbe = true
+
 // samplePhase takes n readings, interval apart, of the cluster and of
 // serendipd's host process. serendipd exiting mid-phase is an error, not a
-// silently empty process series (which would read as zero usage).
+// silently empty process series (which would read as zero usage). A
+// failed disk probe is only logged: disk is auxiliary, and the phase's
+// memory and CPU samples stand without it.
 func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n int, interval time.Duration) ([]Sample, []procSample, error) {
 	var samples []Sample
 	var procs []procSample
@@ -292,21 +327,37 @@ func samplePhase(ctx context.Context, cl *cluster, nodeName string, d *daemon, n
 				return samples, procs, err
 			}
 		}
-		select {
-		case <-d.done:
-			return samples, procs, fmt.Errorf("serendipd exited during sampling (%v)", d.exitErr)
-		default:
+		if d != nil {
+			select {
+			case <-d.done:
+				return samples, procs, fmt.Errorf("serendipd exited during sampling (%v)", d.exitErr)
+			default:
+			}
 		}
 		s, err := cl.summary(ctx, nodeName)
 		if err != nil {
 			return samples, procs, err
 		}
-		samples = append(samples, sampleFrom(s))
-		p, err := readProcess(d.pid())
-		if err != nil {
-			return samples, procs, fmt.Errorf("read serendipd process: %w", err)
+		smp := sampleFrom(s)
+		if diskProbe && (i == 0 || i == n-1) {
+			u, err := cl.hostPathUsage(ctx, nodeName)
+			if err != nil {
+				log.Printf("  disk probe failed, sample %d has no host-path volumes: %v", i+1, err)
+			}
+			addHostPathUsage(&smp, u)
 		}
-		procs = append(procs, p)
+		// When the reading was taken, after any probe: growth per day uses
+		// the real span, not the sample count (the probe takes seconds).
+		smp.At = time.Now().UTC()
+		samples = append(samples, smp)
+		// No daemon (bench-edge1 sample): the cluster only.
+		if d != nil {
+			p, err := readProcess(d.pid())
+			if err != nil {
+				return samples, procs, fmt.Errorf("read serendipd process: %w", err)
+			}
+			procs = append(procs, p)
+		}
 		log.Printf("  sample %d/%d: node %.0f MiB, %.0f mcores", i+1, n, mib(samples[i].NodeWorkingSetBytes), millicores(samples[i].NodeNanoCores))
 	}
 	return samples, procs, nil
@@ -373,6 +424,7 @@ func runCompare(args []string) error {
 		}
 	}
 	fmt.Print(renderComparison(compareRuns(rs[0], rs[1])))
+	fmt.Print(renderVolumeGrowth(compareVolumes(rs[0], rs[1])))
 	return nil
 }
 
@@ -409,4 +461,22 @@ func runRender(args []string) error {
 	}
 	out := filepath.Join(filepath.Dir(args[0]), "summary.md")
 	return os.WriteFile(out, []byte(renderSummary(r)), 0o644)
+}
+
+// checkLoadFlags refuses load and disk phases that can't give a cost, and
+// a load script that isn't there, before a 20-minute install rather than
+// after it.
+func checkLoadFlags(po packageOptions) error {
+	switch {
+	case po.loadSamples < 1:
+		return fmt.Errorf("--package-load-samples %d: at least 1", po.loadSamples)
+	case po.diskSamples < 0 || po.diskSamples == 1:
+		return fmt.Errorf("--package-disk-samples %d: 0 to skip the disk phase, or at least 2 to measure growth", po.diskSamples)
+	case po.diskSamples > 1 && po.diskInterval <= 0:
+		return fmt.Errorf("--package-disk-interval %s: must be positive", po.diskInterval)
+	}
+	if _, err := os.Stat(po.loadScript); err != nil {
+		return fmt.Errorf("--package-load-script: %w", err)
+	}
+	return nil
 }

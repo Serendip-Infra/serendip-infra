@@ -15,6 +15,26 @@ import (
 	buildplane "github.com/serendip-infra/serendip-infra/providers/build/openchoreo"
 )
 
+// For the observability package (specs/023-observability T012) the work
+// is plan decision 9's load: a load phase, then a disk phase still under
+// load, whose volumes' growth is the package's stated disk use.
+
+// packageKind is what the harness knows about one optional package: the
+// capability it provides and the group its own pods are counted in.
+type packageKind struct {
+	capability, group string
+}
+
+var packageKinds = map[string]packageKind{
+	"openchoreo-workflow-plane":      {capability: buildCapability, group: GroupBuilds},
+	"openchoreo-observability-plane": {capability: observabilityCapability, group: GroupObservability},
+}
+
+// kindOf returns provider's kind. An unknown provider is refused when
+// the flags are parsed, so the zero value only shows up in a hand-edited
+// result.
+func kindOf(provider string) packageKind { return packageKinds[provider] }
+
 // The package run (specs/022-builds T013) measures one optional package
 // on top of the platform: its install, its idle cost, its peak while it
 // works (for builds, while a build runs), its resync cost, and, for
@@ -31,6 +51,11 @@ type packageOptions struct {
 	fullHelm           bool
 	installTimeout     time.Duration
 	buildTimeout       time.Duration
+	// The observability package's load (plan decision 9).
+	loadScript   string
+	loadSamples  int
+	diskSamples  int
+	diskInterval time.Duration
 }
 
 // PackageRun is what the package run measured.
@@ -42,8 +67,11 @@ type PackageRun struct {
 	// Idle is the cluster with the package installed and nothing built
 	// yet, and SerendipdIdle serendipd over the same window, resyncing the
 	// package on the fingerprint path.
-	Idle          Aggregate    `json:"idle"`
-	IdleSamples   []Sample     `json:"idleSamples"`
+	Idle        Aggregate `json:"idle"`
+	IdleSamples []Sample  `json:"idleSamples"`
+	// IdleInterval is the time between idle samples, so the volumes'
+	// growth can be put per day.
+	IdleInterval  float64      `json:"idleIntervalSeconds,omitempty"`
 	SerendipdIdle ProcessStats `json:"serendipdIdle"`
 	// ResyncMillicores is serendipd's idle CPU with the package minus
 	// without it, in the same run: the fingerprint path's cost.
@@ -51,6 +79,14 @@ type PackageRun struct {
 	Builds           []BuildRun `json:"builds"`
 	Poller           *PollerRun `json:"poller,omitempty"`
 	FullHelm         *HelmRun   `json:"fullHelm,omitempty"`
+	// Load and Disk are the observability package's phases under load:
+	// Load for the peak, Disk (still under load, longer) for the volumes'
+	// growth. LoadQueries is the load driver's own account of its queries.
+	Load        *LoadRun `json:"load,omitempty"`
+	Disk        *LoadRun `json:"disk,omitempty"`
+	LoadQueries string   `json:"loadQueries,omitempty"`
+	// Incomplete is why the load or disk phase stopped short, if it did.
+	Incomplete string `json:"incomplete,omitempty"`
 	// Cost is the package's stated cost, derived from the above.
 	Cost PackageCost `json:"cost"`
 }
@@ -83,6 +119,15 @@ type PollerRun struct {
 	DeltaMillicores float64 `json:"deltaMillicores"`
 }
 
+// LoadRun is one phase sampled under load.
+type LoadRun struct {
+	Seconds         float64      `json:"seconds"`
+	IntervalSeconds float64      `json:"intervalSeconds"`
+	Cluster         Aggregate    `json:"cluster"`
+	Samples         []Sample     `json:"samples"`
+	Serendipd       ProcessStats `json:"serendipd"`
+}
+
 // HelmRun is the package's full Helm command run once by itself, the cost
 // every resync would pay without the fingerprint.
 type HelmRun struct {
@@ -110,6 +155,19 @@ type CostFigures struct {
 type PackageCost struct {
 	CostFigures
 	Own CostFigures `json:"own"`
+	// Disk is the package's volumes' growth in the disk phase, put per
+	// day, and their capacity: what Requirements.Disk states, with the
+	// retention the installer sets.
+	Disk *DiskCost `json:"disk,omitempty"`
+}
+
+// DiskCost is the package's volumes in the disk phase.
+type DiskCost struct {
+	GrowthMiB       float64 `json:"growthMiB"`
+	SpanSeconds     float64 `json:"spanSeconds"`
+	GrowthMiBPerDay int     `json:"growthMiBPerDay"`
+	CapacityMiB     int     `json:"capacityMiB"`
+	Volumes         int     `json:"volumes"`
 }
 
 // measurePackage runs the package phases after the platform's idle
@@ -123,7 +181,7 @@ func measurePackage(ctx context.Context, o options, cl *cluster, nodeName string
 	began := time.Now()
 	inst, err := a.do(ctx, http.MethodPost, "/v1/provider-instances", map[string]any{
 		"metadata": map[string]any{"name": po.provider},
-		"spec":     map[string]any{"capabilityId": buildCapability, "providerId": po.provider},
+		"spec":     map[string]any{"capabilityId": kindOf(po.provider).capability, "providerId": po.provider},
 	})
 	if err != nil {
 		return fmt.Errorf("install %s: %w", po.provider, err)
@@ -145,10 +203,22 @@ func measurePackage(ctx context.Context, o options, cl *cluster, nodeName string
 	log.Printf("package: idle, %d samples every %s", po.idleSamples, po.idleInterval)
 	samples, procs, err := samplePhase(ctx, cl, nodeName, d, po.idleSamples, po.idleInterval)
 	p.IdleSamples, p.Idle, p.SerendipdIdle = samples, aggregate(samples), processStatsOf(procs)
+	p.IdleInterval = po.idleInterval.Seconds()
 	if err != nil {
 		return fmt.Errorf("package idle sampling: %w", err)
 	}
 	p.ResyncMillicores = p.SerendipdIdle.CPUMillicores.Mean - res.Serendipd.CPUMillicores.Mean
+
+	if kindOf(po.provider).capability == observabilityCapability {
+		lerr := measureLoad(ctx, o, cl, nodeName, d, p)
+		if lerr != nil {
+			// The phases stop short, so their peak and growth aren't the
+			// package's: the summary says so, rather than a cost to copy.
+			p.Incomplete = lerr.Error()
+		}
+		p.Cost = packageCost(*p, res.Platform)
+		return lerr
+	}
 
 	// A source Component starts its first build when it's created.
 	w, comp, err := a.createSourceComponent(ctx, po)
@@ -211,8 +281,85 @@ func measurePackage(ctx context.Context, o options, cl *cluster, nodeName string
 	return nil
 }
 
-// buildCapability is the capability the builds package provides.
-const buildCapability = "build"
+// buildCapability and observabilityCapability are the capabilities the
+// two packages provide.
+const (
+	buildCapability         = "build"
+	observabilityCapability = "observability"
+)
+
+// loadFunc runs one of the load script's verbs (start, stop, latency).
+type loadFunc func(ctx context.Context, verb string) (string, error)
+
+// sampleFunc samples the cluster and serendipd n times, interval apart.
+type sampleFunc func(ctx context.Context, n int, interval time.Duration) ([]Sample, []procSample, error)
+
+// measureLoad starts decision 9's load, samples a load phase and then a
+// longer disk phase under the same load, and stops the load.
+func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d *daemon, p *PackageRun) error {
+	po := o.pkg
+	load := func(ctx context.Context, verb string) (string, error) {
+		cmd := exec.CommandContext(ctx, "bash", po.loadScript, verb)
+		// The kubeconfig goes in KUBECONFIG, not in KUBECTL's words, so a
+		// path with spaces survives load.sh's unquoted $k.
+		cmd.Env = append(os.Environ(), "KUBECTL=kubectl", "KUBECONFIG="+o.kubeconfigAbs)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return string(out), fmt.Errorf("load.sh %s: %w: %s", verb, err, strings.TrimSpace(string(out)))
+		}
+		return string(out), nil
+	}
+	sample := func(ctx context.Context, n int, interval time.Duration) ([]Sample, []procSample, error) {
+		return samplePhase(ctx, cl, nodeName, d, n, interval)
+	}
+	stopHint := fmt.Sprintf("KUBECONFIG=%s bash %s stop", o.kubeconfigAbs, po.loadScript)
+	return runLoad(ctx, po, load, sample, stopHint, p)
+}
+
+// runLoad is measureLoad's sequence, with the script and the sampler
+// passed in so a test can check the load is always stopped. stopHint is
+// the command that stops the load by hand, logged if stop fails.
+func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampleFunc, stopHint string, p *PackageRun) error {
+	log.Printf("package: starting the load (%s)", po.loadScript)
+	// Stopped whatever happens, even if start failed partway, on a
+	// context a cancelled run doesn't end, so the loggers don't keep
+	// writing, but with a limit, so a wedged cluster can't hold the
+	// harness open.
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		if _, err := load(sctx, "stop"); err != nil {
+			log.Printf("package: %v; the load may still be running: %s", err, stopHint)
+		}
+	}()
+	if _, err := load(ctx, "start"); err != nil {
+		return err
+	}
+	phase := func(name string, n int, interval time.Duration) (*LoadRun, error) {
+		log.Printf("package: %s, %d samples every %s", name, n, interval)
+		start := time.Now()
+		samples, procs, err := sample(ctx, n, interval)
+		return &LoadRun{
+			Seconds: time.Since(start).Seconds(), IntervalSeconds: interval.Seconds(),
+			Samples: samples, Cluster: aggregate(samples), Serendipd: processStatsOf(procs),
+		}, err
+	}
+	var err error
+	if p.Load, err = phase("under load", po.loadSamples, po.idleInterval); err != nil {
+		return fmt.Errorf("load sampling: %w", err)
+	}
+	if po.diskSamples > 0 {
+		if p.Disk, err = phase("disk, still under load", po.diskSamples, po.diskInterval); err != nil {
+			return fmt.Errorf("disk sampling: %w", err)
+		}
+	}
+	if out, err := load(ctx, "latency"); err == nil {
+		p.LoadQueries = strings.TrimSpace(out)
+	} else {
+		log.Printf("package: %v", err)
+	}
+	return nil
+}
 
 // packageCost states the package's cost from the run, rounded up so the
 // stated figure is never below what was measured.
@@ -223,7 +370,8 @@ const buildCapability = "build"
 //     run's idle platform, without the package), never below the
 //     package's own pods.
 func packageCost(p PackageRun, platform Aggregate) PackageCost {
-	own := func(a Aggregate) GroupAggregate { return a.Groups[GroupBuilds] }
+	group := kindOf(p.Provider).group
+	own := func(a Aggregate) GroupAggregate { return a.Groups[group] }
 	idleMem, idleCPU := own(p.Idle).MemoryMiB.Mean, own(p.Idle).CPUMillicores.Mean
 	nodeIdleMem, nodeIdleCPU := p.Idle.NodeMemoryMiB.Mean, p.Idle.NodeCPUMillicores.Mean
 	if p.Poller != nil {
@@ -233,11 +381,20 @@ func packageCost(p PackageRun, platform Aggregate) PackageCost {
 		nodeIdleCPU = math.Max(nodeIdleCPU, p.Poller.Cluster.NodeCPUMillicores.Mean)
 	}
 	var peakMem, peakCPU, nodePeakMem, nodePeakCPU float64
+	var working []Aggregate
 	for _, b := range p.Builds {
-		peakMem = math.Max(peakMem, own(b.Cluster).MemoryMiB.Max)
-		peakCPU = math.Max(peakCPU, own(b.Cluster).CPUMillicores.Max)
-		nodePeakMem = math.Max(nodePeakMem, b.Cluster.NodeMemoryMiB.Max)
-		nodePeakCPU = math.Max(nodePeakCPU, b.Cluster.NodeCPUMillicores.Max)
+		working = append(working, b.Cluster)
+	}
+	for _, l := range []*LoadRun{p.Load, p.Disk} {
+		if l != nil {
+			working = append(working, l.Cluster)
+		}
+	}
+	for _, a := range working {
+		peakMem = math.Max(peakMem, own(a).MemoryMiB.Max)
+		peakCPU = math.Max(peakCPU, own(a).CPUMillicores.Max)
+		nodePeakMem = math.Max(nodePeakMem, a.NodeMemoryMiB.Max)
+		nodePeakCPU = math.Max(nodePeakCPU, a.NodeCPUMillicores.Max)
 	}
 	figures := func(idleMem, idleCPU, peakMem, peakCPU float64) CostFigures {
 		return CostFigures{
@@ -251,8 +408,38 @@ func packageCost(p PackageRun, platform Aggregate) PackageCost {
 		CostFigures: figures(
 			beyond(nodeIdleMem, baseMem, idleMem), beyond(nodeIdleCPU, baseCPU, idleCPU),
 			beyond(nodePeakMem, baseMem, peakMem), beyond(nodePeakCPU, baseCPU, peakCPU)),
-		Own: figures(idleMem, idleCPU, peakMem, peakCPU),
+		Own:  figures(idleMem, idleCPU, peakMem, peakCPU),
+		Disk: diskCost(p.Disk, group),
 	}
+}
+
+// diskCost sums the growth of group's volumes over the disk phase, put
+// per day (rounded up), and their capacity. It's nil without a disk phase,
+// or without volumes measured at both its ends.
+func diskCost(l *LoadRun, group string) *DiskCost {
+	if l == nil {
+		return nil
+	}
+	c := &DiskCost{}
+	var capacity float64
+	interval := time.Duration(l.IntervalSeconds * float64(time.Second))
+	for _, v := range l.Cluster.Volumes {
+		if v.Group != group || v.Intervals == 0 {
+			continue
+		}
+		c.Volumes++
+		c.GrowthMiB += v.LastUsedMiB - v.FirstUsedMiB
+		c.SpanSeconds = math.Max(c.SpanSeconds, v.Span(interval).Seconds())
+		capacity += v.CapacityMiB
+	}
+	if c.Volumes == 0 || c.SpanSeconds == 0 {
+		return nil
+	}
+	// A compaction can shrink the stores; that isn't negative growth.
+	c.GrowthMiB = math.Max(c.GrowthMiB, 0)
+	c.GrowthMiBPerDay = int(math.Ceil(c.GrowthMiB * 86400 / c.SpanSeconds))
+	c.CapacityMiB = int(math.Round(capacity))
+	return c
 }
 
 // createSourceComponent makes a Project, an Application in it and a
@@ -447,19 +634,34 @@ func writePackageSummary(b *strings.Builder, r Result) {
 	p := r.Package
 	fmt.Fprintf(b, "\n## Package: %s\n\n", p.Provider)
 	fmt.Fprintf(b, "Install (create → Ready, with image pulls): %s\n\n", fmtDur(p.Install))
-	writeGroupTable(b, fmt.Sprintf("Installed, idle (%d samples)", len(p.IdleSamples)), p.Idle)
+	writeGroupTable(b, fmt.Sprintf("Installed, idle (%d samples)", len(p.IdleSamples)), p.Idle, seconds(p.IdleInterval))
 	fmt.Fprintf(b, "\nserendipd with the package idle: %.1f MiB RSS, %.2f mcores mean (without the package, same run: %.1f MiB, %.2f mcores). Resync on the fingerprint path: **%+.2f mcores**.\n",
 		p.SerendipdIdle.RSSMiB.Mean, p.SerendipdIdle.CPUMillicores.Mean, r.Serendipd.RSSMiB.Mean, r.Serendipd.CPUMillicores.Mean, p.ResyncMillicores)
+	group := kindOf(p.Provider).group
 	for _, bd := range p.Builds {
-		g := bd.Cluster.Groups[GroupBuilds]
+		g := bd.Cluster.Groups[group]
 		fmt.Fprintf(b, "\n### Build: %s\n\n%s, commit `%.12s`, %s seen by the harness (%s running). %d samples.\n\n", bd.Label, bd.Phase, bd.Commit, fmtDur(bd.Duration), fmtDur(bd.Running), len(bd.Samples))
 		fmt.Fprintf(b, "| | Mean | Max |\n|---|---|---|\n| Builds group memory (MiB) | %.1f | %.1f |\n| Builds group CPU (mcores) | %.1f | %.1f |\n| Node memory (MiB) | %.1f | %.1f |\n| Node CPU (mcores) | %.1f | %.1f |\n| serendipd CPU (mcores) | %.2f | %.2f |\n",
 			g.MemoryMiB.Mean, g.MemoryMiB.Max, g.CPUMillicores.Mean, g.CPUMillicores.Max,
 			bd.Cluster.NodeMemoryMiB.Mean, bd.Cluster.NodeMemoryMiB.Max, bd.Cluster.NodeCPUMillicores.Mean, bd.Cluster.NodeCPUMillicores.Max,
 			bd.Serendipd.CPUMillicores.Mean, bd.Serendipd.CPUMillicores.Max)
 	}
+	for _, l := range []struct {
+		title string
+		run   *LoadRun
+	}{{"Under load", p.Load}, {"Disk phase, still under load", p.Disk}} {
+		if l.run == nil {
+			continue
+		}
+		b.WriteString("\n")
+		writeGroupTable(b, fmt.Sprintf("%s (%d samples over %.0f min)", l.title, len(l.run.Samples), l.run.Seconds/60), l.run.Cluster, seconds(l.run.IntervalSeconds))
+		fmt.Fprintf(b, "\nserendipd: %.1f MiB RSS, %.2f mcores mean.\n", l.run.Serendipd.RSSMiB.Mean, l.run.Serendipd.CPUMillicores.Mean)
+	}
+	if p.LoadQueries != "" {
+		fmt.Fprintf(b, "\nThe load driver's queries:\n\n```\n%s\n```\n", p.LoadQueries)
+	}
 	if pr := p.Poller; pr != nil {
-		g := pr.Cluster.Groups[GroupBuilds]
+		g := pr.Cluster.Groups[group]
 		fmt.Fprintf(b, "\n### Auto-build on (%.0f s)\n\nAutoBuild condition: %s. serendipd %.2f mcores mean (%+.2f against package idle). Builds group after the builds: %.1f MiB, %.1f mcores.\n",
 			pr.Seconds, pr.Condition, pr.Serendipd.CPUMillicores.Mean, pr.DeltaMillicores, g.MemoryMiB.Mean, g.CPUMillicores.Mean)
 	}
@@ -472,10 +674,17 @@ func writePackageSummary(b *strings.Builder, r Result) {
 		b.WriteString("\n")
 	}
 	c := p.Cost
+	if p.Incomplete != "" {
+		fmt.Fprintf(b, "\n> **Incomplete run, don't state these figures:** %s.\n", p.Incomplete)
+	}
 	fmt.Fprintf(b, "\n### Stated cost (Requirements)\n\nThe node's use beyond the platform phase above (%.0f MiB, %.0f mcores mean), never below the package's own pods.\n\n| | Idle memory | Idle CPU | Peak memory | Peak CPU |\n|---|---|---|---|---|\n| **Stated (node)** | %d MiB | %d mcores | %d MiB | %d mcores |\n| Package's own pods | %d MiB | %d mcores | %d MiB | %d mcores |\n",
 		r.Platform.NodeMemoryMiB.Mean, r.Platform.NodeCPUMillicores.Mean,
 		c.IdleMemoryMiB, c.IdleCPUMillicores, c.PeakMemoryMiB, c.PeakCPUMillicores,
 		c.Own.IdleMemoryMiB, c.Own.IdleCPUMillicores, c.Own.PeakMemoryMiB, c.Own.PeakCPUMillicores)
+	if dc := c.Disk; dc != nil {
+		fmt.Fprintf(b, "\nDisk: the package's %d volumes grew %.1f MiB over %.0f min of the disk phase, **%d MiB a day** extrapolated, of %d MiB capacity.\n",
+			dc.Volumes, dc.GrowthMiB, dc.SpanSeconds/60, dc.GrowthMiBPerDay, dc.CapacityMiB)
+	}
 }
 
 func fmtDur(d Duration) string { return time.Duration(d).Round(time.Second).String() }
