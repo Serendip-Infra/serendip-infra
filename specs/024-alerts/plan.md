@@ -385,6 +385,10 @@ release's.
        contract-guardian reviews this reading (T012).
      - The deferred paid types (SMS, voice) are separate accounts and
        products, so they can arrive as providers when they come.
+     - contract-guardian (T004): this reading holds only while there's
+       no Notification capability. If a second chat protocol ever
+       arrives as a pluggable provider, Telegram becomes a provider
+       detail then. ADR 0022 records the deviation (T013).
    - **One `http.Client`:**
      - its `Dialer.Control` checks the address actually dialed, which
        defeats DNS rebinding;
@@ -394,6 +398,11 @@ release's.
      - a 10 s timeout, and a 64 KiB cap on the response it reads.
    - **SMTP** uses `net/smtp` over the same checked dialer. STARTTLS is
      required (or implicit TLS on 465), and auth happens only after TLS.
+     An SMTP server has no private-destination allowance: it's a relay on
+     the internet, and a LAN mail server is out of scope (T004).
+   - **No connection pooling** (T004, go-reviewer): a pooled connection
+     skips the dial-time check, and one opened under a channel's private
+     allowance could carry another channel's send.
    - **The address check** (spec IN 9) refuses:
      - loopback, unspecified, private (RFC 1918, ULA), link-local, CGNAT
        (100.64/10), multicast and broadcast;

@@ -60,7 +60,23 @@ Dependency sketch:
   - the recorded answers parse in a scratch test;
   - no scratch pods are left, and the scratch bot token is revoked.
 
-## T002 — Core types: rules, Alerts, channels, SMTP servers, heartbeat [P]
+## T002 — Core types: rules, Alerts, channels, SMTP servers, heartbeat [P] ✅ 2026-11-15
+
+> **Done as:** `core/resource/alerting.go` (the five kinds, `Validate*`,
+> caps, `*Relationships` depends-on edges, `AlertStatus.AddDelivery`
+> keeping pending deliveries), `ops.go`'s placeholder gone. The 409 is in
+> the store: `store.ErrInUse` from `Delete` when a kind in
+> `resource.RefusesDeleteWhileUsed` (Secret, channel, SMTP server) is
+> still named from outside the delete, cascade included
+> (`inuse_test.go`); the approval reconciler fails such a delete as
+> `DeleteFailed`. `resourcePaths` and the catalogue carry `alertrules`,
+> `notificationchannels` and `smtpservers` (decision 12's paths, so the
+> action namespaces are `serendip/alertrules/*` and so on: **T003 uses
+> these, not decision 9's camelCase**); `alerts` is gone. Until T007
+> they're served by the generic handler with `WithPrepare` (validate,
+> derive edges); T003 adds the authorization rules beyond the generic
+> ones. Heartbeat has no route until T007.
+
 
 - **Do:**
   - the five kinds in `core/resource/alerting.go` (plan decisions 1, 3
@@ -97,7 +113,25 @@ Dependency sketch:
     Contributor in Project A denied a rule naming Project B's channel,
     and a Reader denied writing a rule.
 
-## T004 — The sender: address check, channel types, heartbeat [P]
+## T004 — The sender: address check, channel types, heartbeat [P] ✅ 2026-11-15
+
+> **Done as:** `core/notify` (`dialer.go`, `client.go`, `body.go`,
+> `telegram.go`, `smtp.go`, `sender.go`, `heartbeat.go`), stdlib only.
+> Every item of the Verify list has a test (`notify_test.go`, with a
+> stdlib fake SMTP server in `fake_test.go`). The card matches T001's
+> recording, so it reads "Summary: …" on its own line, not the summary
+> in bold. The caller composes the condition line (`Message.Detail`), so
+> `core/notify` knows nothing about conditions. go-reviewer's findings
+> fixed: **keep-alives off** (a pooled connection from a channel with
+> the private allowance could have carried another channel's send past
+> the check), DNS timeouts retryable, a cancel not counted as a failure,
+> Teredo, IPv4-compatible and 6to4-relay ranges refused, NAT64 and 6to4
+> addresses checked by the IPv4 address they carry, From and recipients
+> re-checked at send, HELO with the sender's domain. By design: an SMTP
+> server has no private allowance (the error says it must be public).
+> contract-guardian: pass; "Telegram" in `core/` stands under decision
+> 5's reading while no Notification capability exists (ADR 0022, T013).
+
 
 - **Do:** `core/notify` (plan decisions 5 and 6), standard library only:
   - the checked dialer, with every range in decision 5, IPv6 and

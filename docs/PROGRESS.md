@@ -12,13 +12,22 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024 approved; T001 cluster half done)
+Last updated: 2026-11-15 (spec 024: T001, T002 and T004 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
-approved by the user 2026-11-15. T001 (spike) done and committed on
-local branch `spec-024`.** Nothing pushed.
+approved by the user 2026-11-15. T001 (spike), T002 (core types) and
+T004 (`core/notify`) done and committed on local branch `spec-024`.**
+Nothing pushed.
+- **T002:** the five kinds in `core/resource/alerting.go`; `store.ErrInUse`
+  (409) for a Secret, channel or SMTP server still in use. Paths
+  `alertrules`, `notificationchannels`, `smtpservers`, so **T003's actions
+  are `serendip/alertrules/*` etc.** (path-derived), not decision 9's
+  camelCase. Generic routes serve them until T007.
+- **T004:** `core/notify`, stdlib only; card matches T001's recording.
+  go-reviewer's keep-alive finding fixed (pooling would have skipped the
+  address check). contract-guardian: pass.
 - **T001** (plan "Spike findings" 1–6; recordings in
   `providers/observability/openchoreo/testdata/condition-*.json` and
   `core/notify/testdata/`):
@@ -85,7 +94,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T002 and T004 (no cluster needed), then T003.
+- **Next:** T003 (authorization), then T005 (evaluator and delivery loop).
 
 **Spec 023 (observability package): done and closed out on GitHub
 (2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**
