@@ -284,3 +284,33 @@ func TestReferenceListsEveryOperation(t *testing.T) {
 		}
 	}
 }
+
+// MCPMax bounds a parameter on MCP and is sent when it's left out; the
+// CLI keeps Max and sends nothing (spec 024 plan decision 13).
+func TestMCPMax(t *testing.T) {
+	op := mustLookup(t, "alerts_list")
+	r, err := op.Request(nil)
+	if err != nil || r.Path != "/v1/alerts" {
+		t.Errorf("CLI: %q %v, want no limit", r.Path, err)
+	}
+	if _, err := op.Request(map[string]any{"limit": 500}); err != nil {
+		t.Errorf("CLI limit 500: %v", err)
+	}
+	mcp := op.ForMCP()
+	if r, err := mcp.Request(nil); err != nil || r.Path != "/v1/alerts?limit=50" {
+		t.Errorf("MCP: %q %v, want limit=50", r.Path, err)
+	}
+	if r, err := mcp.Request(map[string]any{"limit": 10.0}); err != nil || r.Path != "/v1/alerts?limit=10" {
+		t.Errorf("MCP limit 10: %q %v", r.Path, err)
+	}
+	if _, err := mcp.Request(map[string]any{"limit": 51.0}); err == nil {
+		t.Error("MCP limit 51 accepted")
+	}
+	limit := mcp.InputSchema()["properties"].(map[string]any)["limit"].(map[string]any)
+	if limit["maximum"] != 50 {
+		t.Errorf("MCP schema maximum = %v", limit["maximum"])
+	}
+	if op.Params[len(op.Params)-1].Max != 500 {
+		t.Error("ForMCP changed the shared operation")
+	}
+}

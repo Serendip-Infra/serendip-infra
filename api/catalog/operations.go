@@ -350,6 +350,12 @@ var operations = func() []Operation {
 	return append(ops, alertingOperations()...)
 }()
 
+// maxMCPAlerts caps alerts_list for an AI agent (plan decision 13): 50
+// Alerts with their deliveries stay well inside mcp.MaxResult, and an
+// agent wanting more narrows by Component, state or severity, or reads
+// alerts_summary.
+const maxMCPAlerts = 50
+
 // alertingOperations are spec 024's routes beyond the generic CRUD (plan
 // decisions 12, 13 and 15).
 func alertingOperations() []Operation {
@@ -364,7 +370,8 @@ func alertingOperations() []Operation {
 				{Name: "environmentId", In: InQuery, Description: "Only Alerts in this Environment"},
 				{Name: "state", In: InQuery, Enum: []string{"firing", "resolved"}, Description: "Only firing or only resolved Alerts"},
 				{Name: "severity", In: InQuery, Enum: severities, Description: "Only this severity"},
-				{Name: "limit", In: InQuery, Type: Integer, Max: 500, Description: "At most this many (default 100)"},
+				{Name: "limit", In: InQuery, Type: Integer, Max: 500, MCPMax: maxMCPAlerts,
+					Description: "At most this many (default 100 on the CLI; at most and by default 50 for an AI agent)"},
 			}, Hints: Hints{ReadOnly: true}},
 		{Name: "alerts_get", CLI: []string{"alerts", "get"}, MCP: true,
 			Summary: "One Alert", Method: "GET", Path: "/v1/alerts/{id}",

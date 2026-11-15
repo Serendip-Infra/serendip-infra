@@ -430,7 +430,8 @@ func describe(item map[string]any) (id, name, status string) {
 	if verb := str(item, "spec", "action", "verb"); verb != "" {
 		name = fmt.Sprintf("%s %s/%s", verb, str(item, "spec", "action", "target", "kind"), str(item, "spec", "action", "target", "id"))
 	}
-	status = str(item, "status", "phase")
+	// An Alert's status is its state: firing or resolved.
+	status = cmpOr(str(item, "status", "phase"), str(item, "status", "state"))
 	if st, _ := item["status"].(map[string]any); status == "" && st != nil {
 		if conds, ok := st["conditions"].([]any); ok {
 			for _, c := range conds {

@@ -139,6 +139,28 @@ the process list shows it:
 - **Limits:** at most 3 queries at once per person and 20 per server,
   each stopped after 20 seconds.
 
+## Alerts and notifications
+
+- **Alerts:** `serendip alerts list [--state firing|resolved]
+  [--severity] [--componentId|--applicationId|--environmentId]
+  [--limit]` (newest first, 100 by default, at most 500), `alerts get`,
+  `alerts ack <id>` and `alerts summary`. **The `alerts_list` tool
+  answers at most 50**, by default and whatever it asks; an agent
+  narrows with the filters, or reads `alerts_summary`.
+- **Rules:** `serendip alertrules create|list|get|update|delete`, and
+  `silence <id> --until <RFC 3339> --reason <why>` / `unsilence <id>`.
+  These are MCP tools too, under the agent's roles.
+- **Channels, SMTP servers and the heartbeat:**
+  `serendip channels create|list|get|update|delete|test`,
+  `serendip smtp create|list|get|update|delete`,
+  `serendip heartbeat set|get|test|delete` (`create`, `update` and `set`
+  take `--file`). **CLI only:** people set these up, since they name
+  Secrets and where alert content leaves the laptop (RP-070). An agent
+  reads channels through `resources_list` and `resources_get`.
+- **Tokens and passwords stay in their Secrets.** A channel, SMTP server
+  or heartbeat shows only which of its Secrets are set (`secretSet`);
+  a failed test send names the host, never the token or the URL's path.
+
 ## Packages and builds
 
 - **`serendip packages list`** shows each optional package's measured

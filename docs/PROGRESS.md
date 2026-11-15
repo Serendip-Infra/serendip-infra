@@ -12,15 +12,22 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T007 done)
+Last updated: 2026-11-15 (spec 024: T001–T008 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
-loop), T006 (condition queries, built-in disk rule) and T007 (the API)
-done and committed on local branch `spec-024`.** Nothing pushed.
+loop), T006 (condition queries, built-in disk rule), T007 (the API) and
+T008 (CLI and MCP) done and committed on local branch `spec-024`.**
+Nothing pushed.
+- **T008:** the commands and tools came from T007's catalogue; T008
+  added `Param.MCPMax` (an MCP-only bound and default: `alerts_list`
+  answers at most 50), Alert state in CLI tables,
+  `cmd/serendip/alerts_test.go` (every command's request and usage
+  errors, the cap, and the bot token in no CLI or MCP output) and
+  `docs/cli-and-mcp.md`'s "Alerts and notifications".
 - **T007:**
   - `api/alerts_handler.go` and `api/notifications_handler.go`. Every
     plan-decision-12 and -15 route is registered, and `pendingRoutes` is
@@ -122,7 +129,8 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1` (hashes change
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 (its
+      commit, after `92ac3a1`) (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over
       `main..spec-024`, or `git rebase --exec`.
@@ -163,7 +171,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T008 (CLI and MCP from the catalogue: the MCP cap of 50 Alerts on `alerts_list`, and a test that no channel token reaches CLI or MCP output) ∥ T009 (the console).
+- **Next:** T009 (the console), then T010 (live check on serendip-t018).
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").

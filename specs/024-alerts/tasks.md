@@ -431,7 +431,29 @@ Dependency sketch:
   - Alerts scoped to the caller's Projects;
   - an acknowledgement audited with its actor and interface.
 
-## T008 — CLI and MCP [P] [A]
+## T008 — CLI and MCP [P] [A] ✅ 2026-11-15
+
+> **Done as:** the commands and tools were already built from T007's
+> catalogue entries; T008 adds the cap and the tests.
+> - **The cap:** a catalogue `Param.MCPMax` (`api/catalog/catalog.go`)
+>   is the parameter's bound on MCP and the value an MCP tool sends when
+>   it's left out. `alerts_list`'s `limit` has `MCPMax: 50`; the CLI keeps
+>   the API's 100 default and 500 bound. No `mcp/` change was needed.
+> - **CLI tables** show an Alert's state (`firing`, `resolved`) as its
+>   status.
+> - **Tests** (`cmd/serendip/alerts_test.go`, against the real API
+>   handler): every decision-13 command's request (dry run) and 14 usage
+>   errors, none of which sends anything; the commands against the
+>   server (list, get, ack, summary, silence, unsilence); 60 Alerts → 50
+>   through MCP, 51 refused, the CLI gets 60; and the token test: the
+>   bot token, read by the sender during a test send, appears in none of
+>   nine CLI outputs or five MCP calls, while each shows the channel.
+>   `TestMCPMax` in `api/catalog`.
+> - `docs/cli-and-mcp.md`: "Alerts and notifications".
+> - **"Summarised"** in decision 13 is `alerts_summary` plus the cap: 50
+>   Alerts, each with at most `MaxAlertDeliveries` deliveries, stay
+>   well inside `mcp.MaxResult`, so no MCP-only view was added.
+> - No `core/` or `providers/` change, so no contract-guardian review.
 
 - **Do:** the commands and tools of plan decision 13, built from the
   catalogue, with the MCP results capped.
