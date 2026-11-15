@@ -1,27 +1,8 @@
 package resource
 
-import "time"
-
-const (
-	KindAlert    Kind = "Alert"
-	KindIncident Kind = "Incident"
-)
-
-// AlertSpec describes a single detected anomaly (resource-model.md:
-// "a metric threshold, log pattern, synthetic check failure, ...").
-// Types only in spec 001 -- no lifecycle logic (spec.md Scope OUT).
-type AlertSpec struct {
-	Source   string `json:"source,omitempty"` // what produced this alert (observability backend, synthetic check, ...)
-	Rule     string `json:"rule,omitempty"`
-	Severity string `json:"severity,omitempty"`
-}
-
-type AlertStatus struct {
-	Status
-	FiredAt time.Time `json:"firedAt,omitzero"`
-}
-
-type Alert = Resource[AlertSpec, AlertStatus]
+// KindIncident is the operational kind operations.md correlates Alerts
+// into (specs 028 and 029). KindAlert lives in alerting.go (spec 024).
+const KindIncident Kind = "Incident"
 
 // IncidentSpec captures what's declared about an Incident up front.
 // Diagnosis and the approval/action trail (docs/architecture/operations.md

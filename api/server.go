@@ -374,7 +374,17 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	instances.Register(apiMux)
 	(&PackageHandler{catalogue: opts.packages, instances: instStore}).Register(apiMux)
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
-	mountResource[resource.AlertSpec, resource.AlertStatus](apiMux, db, bus, resource.KindAlert, "alerts")
+	// Alerting (spec 024). Alerts are written only by serendipd, so they
+	// get no generic routes; the heartbeat is a singleton with its own.
+	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](
+		sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus), "alertrules").
+		WithPrepare(prepareAlertRule).Register(apiMux)
+	NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](
+		sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus), "notificationchannels").
+		WithPrepare(prepareNotificationChannel).Register(apiMux)
+	NewResourceHandler[resource.SMTPServerSpec, resource.SMTPServerStatus](
+		sqlite.NewStore[resource.SMTPServerSpec, resource.SMTPServerStatus](db, resource.KindSMTPServer).SetBus(bus), "smtpservers").
+		WithPrepare(prepareSMTPServer).Register(apiMux)
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")
 	// Not mountResource -- SecretHandler isn't the generic
 	// ResourceHandler[S,St] (its Delete and value routes need

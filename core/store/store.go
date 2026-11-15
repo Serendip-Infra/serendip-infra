@@ -20,6 +20,13 @@ var ErrConflict = errors.New("store: resource version conflict")
 // "Relationships"). Retry with cascade=true to delete them too.
 var ErrHasChildren = errors.New("store: resource has children; delete rejected without cascade")
 
+// ErrInUse is returned by Delete when the resource, or one a cascade
+// would remove, is of a kind that refuses deletion while used
+// (resource.RefusesDeleteWhileUsed) and something outside the delete
+// still depends on it: a Secret or SMTP server a channel names, or a
+// channel a rule names (specs/024-alerts plan decision 1).
+var ErrInUse = errors.New("store: resource is in use")
+
 // ErrDuplicate is returned by Create when a resource of the same kind
 // already holds the new one's unique key (specs/022-builds plan decision
 // 9): the store's guarantee, behind any check a caller made first.

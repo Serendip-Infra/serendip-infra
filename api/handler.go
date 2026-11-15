@@ -35,6 +35,18 @@ type ResourceHandler[S, St any] struct {
 	// checkMeta, when set, checks metadata on create and update, before
 	// validate. Its error answers 400 (wrap resource.ErrValidation).
 	checkMeta func(m resource.Metadata) error
+	// prepare, when set, checks the whole resource on create and update,
+	// after checkMeta and validate, and may set what's derived from its
+	// spec (its depends-on relationships). Its error answers 400 (wrap
+	// resource.ErrValidation).
+	prepare func(r *resource.Resource[S, St]) error
+}
+
+// WithPrepare makes the handler check and complete each resource with p
+// before storing it.
+func (h *ResourceHandler[S, St]) WithPrepare(p func(r *resource.Resource[S, St]) error) *ResourceHandler[S, St] {
+	h.prepare = p
+	return h
 }
 
 // WithMetadataCheck makes the handler check metadata with c before storing.
@@ -78,6 +90,12 @@ func (h *ResourceHandler[S, St]) Create(w http.ResponseWriter, r *http.Request) 
 	}
 	if h.validate != nil {
 		if err := h.validate(r.Context(), "", res.Spec); err != nil {
+			h.writeStoreError(w, r, err)
+			return
+		}
+	}
+	if h.prepare != nil {
+		if err := h.prepare(&res); err != nil {
 			h.writeStoreError(w, r, err)
 			return
 		}
@@ -145,6 +163,12 @@ func (h *ResourceHandler[S, St]) Update(w http.ResponseWriter, r *http.Request) 
 	}
 	if h.validate != nil {
 		if err := h.validate(r.Context(), res.Metadata.ID, res.Spec); err != nil {
+			h.writeStoreError(w, r, err)
+			return
+		}
+	}
+	if h.prepare != nil {
+		if err := h.prepare(&res); err != nil {
 			h.writeStoreError(w, r, err)
 			return
 		}

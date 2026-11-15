@@ -237,11 +237,11 @@ tools.
 | `serendip access roles delete <id>` | — | `DELETE /v1/authorization/roleDefinitions/{id}` | Delete a custom role definition |
 | `serendip access roles get <id>` | `access_roles_get` | `GET /v1/authorization/roleDefinitions/{id}` | One role definition |
 | `serendip access roles list` | `access_roles_list` | `GET /v1/authorization/roleDefinitions` | Role definitions, built-in and custom |
-| `serendip alerts create` | — | `POST /v1/alerts` | Create a Alert |
-| `serendip alerts delete <id>` | — | `DELETE /v1/alerts/{id}` | Delete a Alert. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
-| `serendip alerts get <id>` | — | `GET /v1/alerts/{id}` | Get one Alert |
-| `serendip alerts list` | — | `GET /v1/alerts` | List alerts the caller may read |
-| `serendip alerts update <id>` | — | `PUT /v1/alerts/{id}` | Replace a Alert's spec (send the version read, for a conflict check) |
+| `serendip alertrules create` | — | `POST /v1/alertrules` | Create a AlertRule |
+| `serendip alertrules delete <id>` | — | `DELETE /v1/alertrules/{id}` | Delete a AlertRule. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip alertrules get <id>` | — | `GET /v1/alertrules/{id}` | Get one AlertRule |
+| `serendip alertrules list` | — | `GET /v1/alertrules` | List alertrules the caller may read |
+| `serendip alertrules update <id>` | — | `PUT /v1/alertrules/{id}` | Replace a AlertRule's spec (send the version read, for a conflict check) |
 | `serendip applications create` | `applications_create` | `POST /v1/applications` | Create a Application |
 | `serendip applications delete <id>` | `applications_delete` | `DELETE /v1/applications/{id}` | Delete a Application. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip applications get <id>` | `applications_get` | `GET /v1/applications/{id}` | Get one Application |
@@ -308,6 +308,11 @@ tools.
 | `serendip nodes get <id>` | — | `GET /v1/nodes/{id}` | Get one Node |
 | `serendip nodes list` | — | `GET /v1/nodes` | List nodes the caller may read |
 | `serendip nodes update <id>` | — | `PUT /v1/nodes/{id}` | Replace a Node's spec (send the version read, for a conflict check) |
+| `serendip notificationchannels create` | — | `POST /v1/notificationchannels` | Create a NotificationChannel |
+| `serendip notificationchannels delete <id>` | — | `DELETE /v1/notificationchannels/{id}` | Delete a NotificationChannel. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip notificationchannels get <id>` | — | `GET /v1/notificationchannels/{id}` | Get one NotificationChannel |
+| `serendip notificationchannels list` | — | `GET /v1/notificationchannels` | List notificationchannels the caller may read |
+| `serendip notificationchannels update <id>` | — | `PUT /v1/notificationchannels/{id}` | Replace a NotificationChannel's spec (send the version read, for a conflict check) |
 | `serendip organizations create` | — | `POST /v1/organizations` | Create a Organization |
 | `serendip organizations delete <id>` | — | `DELETE /v1/organizations/{id}` | Delete a Organization. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip organizations get <id>` | — | `GET /v1/organizations/{id}` | Get one Organization |
@@ -340,6 +345,11 @@ tools.
 | `serendip secrets value get <id>` | `secrets_read_value` (value) | `GET /v1/secrets/{id}/value` | Read a Secret's value. Needs the secrets value data permission |
 | `serendip secrets update <id>` | `secrets_update` | `PUT /v1/secrets/{id}` | Replace a Secret's spec (send the version read, for a conflict check) |
 | `serendip secrets value set <id>` | `secrets_write_value` (value) | `POST /v1/secrets/{id}/value` | Write a Secret's value, replacing the old one. Needs the secrets value data permission |
+| `serendip smtpservers create` | — | `POST /v1/smtpservers` | Create a SMTPServer |
+| `serendip smtpservers delete <id>` | — | `DELETE /v1/smtpservers/{id}` | Delete a SMTPServer. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip smtpservers get <id>` | — | `GET /v1/smtpservers/{id}` | Get one SMTPServer |
+| `serendip smtpservers list` | — | `GET /v1/smtpservers` | List smtpservers the caller may read |
+| `serendip smtpservers update <id>` | — | `PUT /v1/smtpservers/{id}` | Replace a SMTPServer's spec (send the version read, for a conflict check) |
 | `serendip whoami` | `session_get` | `GET /v1/session` | Who the caller is, and how they signed in |
 | `serendip sites create` | — | `POST /v1/sites` | Create a Site |
 | `serendip sites delete <id>` | — | `DELETE /v1/sites/{id}` | Delete a Site. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
