@@ -219,6 +219,27 @@ never printed: they were read from files and compared in memory.
 
 Criteria 7's measurements and 13 (footprint) are T011's.
 
+## Final end-to-end run (after the fixes)
+
+At the user's request, one alert through every channel type on the
+fixed build (13:37–13:43). A new Component, `t024-final`, logged
+`T024-FINAL-ERROR` every 5 s. One rule (more than 3 lines in 2 min,
+warning) named Telegram, Gmail, the outside webhook (a fresh tunnel),
+the critical-only webhook and the LAN receiver. Before it: a test send
+to the outside and LAN webhooks and a heartbeat test, all `sent`.
+- **Fired** at 13:38:47 at 18 lines: Telegram message 87, the Gmail
+  email, and signed `firing` bodies at the outside and LAN receivers
+  (13:39:04). The critical-only channel recorded `belowMinSeverity`.
+- **Resolved** at 13:42:17, about 2 minutes after the pod went idle:
+  Telegram message 88 (a reply to 87), the email resolution, and signed
+  `resolved` bodies at both receivers. Every delivery took one attempt.
+- **One more F4 case:** the heartbeat test's times were still `+05:30`.
+  The API's notifications handler had its own `time.Now` clock. It's UTC
+  now (`api/server.go`), and the repeated test recorded
+  `13:43:43…Z`.
+- Then the heartbeat, rule and workload were deleted, and the tunnel,
+  receiver and image removed.
+
 ## Findings, all fixed in T010
 
 - **F1: one unreachable address used up the whole send.** The
@@ -243,8 +264,9 @@ Criteria 7's measurements and 13 (footprint) are T011's.
   (`api/catalog/operations.go`). **Carried:** the silent drop itself
   (sub-task below).
 - **F4: times in local offsets.** The evaluator's and heartbeat's
-  clocks, and the test-send time, were stored as `+05:30` beside UTC
-  everywhere else. They're UTC now, as every other reconciler's are.
+  clocks, the test-send time and (found in the final run) the API's
+  heartbeat-test time were stored as `+05:30` beside UTC everywhere
+  else. They're UTC now, as every other reconciler's are.
 - **F5: the allowance's hint promised an in-cluster receiver.** The
   form said "May reach a private address (in the cluster or on the
   LAN) … For an in-cluster receiver". It now says on the LAN, and that

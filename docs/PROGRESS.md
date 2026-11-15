@@ -170,8 +170,8 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 (its
-      commit, after `da3484a`) (hashes change
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`
+      and the `fix(api)` heartbeat-UTC commit after it (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over
       `main..spec-024`, or `git rebase --exec`.

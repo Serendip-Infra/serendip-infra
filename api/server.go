@@ -394,8 +394,9 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		notifier:     opts.notifier,
 		read:         opts.notifySecrets,
 		recordDenied: recordDeniedIn(db),
-		now:          time.Now,
-		sending:      make(chan struct{}, maxTestSends),
+		// UTC, as every other stored time is (spec 024 T010 F4).
+		now:     func() time.Time { return time.Now().UTC() },
+		sending: make(chan struct{}, maxTestSends),
 	}
 	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](ruleStore, "alertrules").
 		WithServerStatus().
