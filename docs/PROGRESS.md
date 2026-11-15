@@ -33,13 +33,26 @@ writes, done or pending: check the epics).
   isn't used (its metric rules need the Prometheus Operator and
   Alertmanager ADR 0021 removed; its Observer would send to person-typed
   URLs, RP-062). ADR 0022 at close-out.
-- **Channels (all free, outbound only):** webhook in four formats
-  (Serendip signed JSON, Slack-compatible, Discord, Teams Workflows),
-  email via `SMTPServer`, ntfy (urgent priority as the free "page") and
-  Telegram. Deferred: SMS, voice, WhatsApp Cloud API, Pushover. Rejected:
-  unofficial WhatsApp clients. OTP is a later identity spec (TOTP and
-  passkeys first; ThunderID's Custom SMS sender could point at
-  `serendipd`). All in `build-vs-adopt.md`.
+- **Channels (all free, outbound only), settled 2026-11-15:** Telegram
+  first (cards with a "View in console" URL button, resolution threaded
+  as a reply), email through any SMTP relay (Gmail app password or Brevo;
+  no SES, no mail server on the laptop), and the signed webhook as the
+  integration point (n8n, Node-RED, Apprise API). Each channel has a
+  `minSeverity`. Slack, Discord, Teams and ntfy formats are deferred and
+  reached through the webhook for now. Phone calls and SMS go through a
+  webhook tool (Twilio, about 3 US cents a minute; none are free).
+  Unofficial WhatsApp clients are rejected.
+- **Heartbeat (dead man's switch)** added: `serendipd` pings an outside
+  monitor every minute, only while it can alert. Suggested monitors:
+  healthchecks.io (free, Telegram), or Gatus on a second device. All the
+  outside tools are suggestions, not dependencies (plan "Suggested
+  outside tools").
+- **ThunderID (checked at v1.1.0, repo now `thunder-id/thunderid`):**
+  email and SMS OTP as a second factor, yes; TOTP, no; passkeys exist but
+  aren't documented. A Telegram OTP relay through its Custom SMS sender is
+  possible but a workaround (plan "ThunderID OTP"). **ThunderID released
+  v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
+  version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
 - **Next:** on approval, the epic's body to IN PROGRESS and the task
   issues as one paced batch, then T001 (spike on `serendip-t018`).

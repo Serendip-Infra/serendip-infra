@@ -26,14 +26,18 @@ Dependency sketch:
        the Deployment's ReplicaSets;
      - whether a crash-looping pod's count rises within a minute.
   4. **Each query's latency** at the current store size.
-  5. **Real services:** send one message each to a scratch Slack
-     channel, Discord webhook, Teams Workflow, `ntfy.sh` topic and
-     Telegram bot. Record:
-     - the accepted body;
-     - the answer to a malformed one;
-     - each service's rate-limit headers.
+  5. **Telegram, with a scratch bot:**
+     - a card with a URL button, accepted;
+     - whether Telegram refuses a `localhost` or plain-`http` console
+       URL in the button;
+     - a reply threaded to the firing (`reply_parameters`);
+     - the answer to a malformed body and to an over-rate burst
+       (`retry_after`);
+     - reading a `chatId` with one `getUpdates` call.
+  6. **Email:** one send through a Gmail app password and one through
+     Brevo, recording their TLS mode and any sending limits shown.
 
-     Delete the test channels afterwards.
+  Revoke the scratch bot's token and delete the test senders afterwards.
 - **Files:** `plan.md` ("Spike findings", amending decisions where the
   facts differ), and recorded answers in
   `providers/observability/openchoreo/testdata/` and
@@ -42,14 +46,17 @@ Dependency sketch:
   - every item has a finding in `plan.md`, with the command or output it
     came from;
   - the recorded answers parse in a scratch test;
-  - no scratch pods, webhooks or topics are left.
+  - no scratch pods are left, and the scratch bot token is revoked.
 
-## T002 — Core types: rules, Alerts, channels, SMTP servers [P]
+## T002 — Core types: rules, Alerts, channels, SMTP servers, heartbeat [P]
 
 - **Do:**
-  - the four kinds in `core/resource/alerting.go` (plan decisions 1, 3
-    and 6), with validation, the caps (200 rules, 1–60 minutes,
-    `above` ≤ 999, 20 recipients) and graph edges;
+  - the five kinds in `core/resource/alerting.go` (plan decisions 1, 3
+    and 6): `AlertRule`, `Alert`, `NotificationChannel` (with
+    `minSeverity`), `SMTPServer` and the `Heartbeat` singleton;
+  - their validation, the caps (200 rules, 1–60 minutes, `above` ≤ 999,
+    20 recipients, a heartbeat interval of 1–10 minutes) and graph
+    edges;
   - remove `ops.go`'s placeholder `AlertSpec`;
   - store wiring: the kinds and `resourcePaths` (not `Alert`), and deletes
     refused with 409 while something uses them.
@@ -67,7 +74,8 @@ Dependency sketch:
     Contributor's `NotActions`;
   - the rule that writing a rule needs read on each channel it names;
   - a route-table row for every route of decision 12;
-  - deletes of the three kinds through Approvals (decision 10).
+  - deletes of the four kinds (rules, channels, SMTP servers, the
+    heartbeat) through Approvals (decision 10).
 - **Files:** `core/policy/builtins.go`, `api/authz*.go`, the route-table
   test, and `core/reconcile/approval.go` (targets).
 - **Verify:**
@@ -77,15 +85,18 @@ Dependency sketch:
     Contributor in Project A denied a rule naming Project B's channel,
     and a Reader denied writing a rule.
 
-## T004 — The sender: address check and channel types [P]
+## T004 — The sender: address check, channel types, heartbeat [P]
 
 - **Do:** `core/notify` (plan decisions 5 and 6), standard library only:
   - the checked dialer, with every range in decision 5, IPv6 and
     IPv4-mapped;
   - no redirects, no proxy, TLS 1.2 or later;
-  - the four webhook formats, SMTP, ntfy and Telegram, with escaping and
-    no mentions;
-  - the signed `serendip.alert.v1` body;
+  - Telegram (the card, the URL button, threading, HTML escaping), email
+    (text and HTML parts, threading headers) and the signed
+    `serendip.alert.v1` webhook;
+  - severity routing (`minSeverity`);
+  - the heartbeat sender (plan decision 15), gated on the evaluator,
+    the delivery loop and the store;
   - `Retry-After`;
   - errors cleaned down to the host.
 - **Files:** `core/notify/*.go` and tests, and `testdata/` from T001.
@@ -98,8 +109,14 @@ Dependency sketch:
   - `HTTPS_PROXY` set;
   - the allowance skipping private ranges only;
   - the signature, checked by a reference implementation in the test;
-  - each format's body matching T001's recording;
-  - `@everyone` and `<!channel>` neutralised;
+  - the Telegram body matching T001's recording, with a summary holding
+    `<b>`, `&` and `</a>` escaped;
+  - `retry_after` honoured;
+  - an email resolution carrying `In-Reply-To` for its firing;
+  - an alert below a channel's `minSeverity` recorded as
+    `belowMinSeverity`, not sent;
+  - the heartbeat sending while healthy, and sending nothing once the
+    evaluator stalls or the store fails;
   - SMTP refusing plain auth;
   - no token or URL path in any returned error.
 
@@ -184,8 +201,9 @@ Dependency sketch:
 
 - **Do:** plan decision 14: alerts in the Observability tab, the
   Application view, the bell and the Alerts page, and Settings ›
-  Notifications, with each channel type's form and the ntfy topic
-  warning (RP-069). Each view gets its "Same request through the API".
+  Notifications: each channel type's form (with the Telegram "Find chat"
+  step and the notice that alert content leaves the laptop, RP-070), SMTP
+  servers, and the heartbeat with its last result. Each view gets its "Same request through the API".
 - **Files:** `ui/src/screens/Observability.tsx`, `Alerts.tsx`,
   `Notifications.tsx`, the top bar, and tests.
 - **Verify:**
@@ -203,7 +221,12 @@ Dependency sketch:
   - every channel type delivering:
     - a webhook to an in-cluster receiver (with the allowance) and to an
       outside one;
-    - real Slack, Discord, Teams, ntfy and Telegram targets;
+    - a real Telegram chat (cards, the button, threading), and an n8n
+      flow following `docs/guides/alert-integrations.md`;
+    - a channel with `minSeverity: critical` skipping a warning;
+  - the heartbeat to healthchecks.io: pings arrive, stopping
+    `serendipd` makes healthchecks.io alert, and so does stalling the
+    evaluator (criterion 11);
     - email to a test SMTP server;
   - a failing receiver, and a 429;
   - each refused destination;
@@ -258,16 +281,20 @@ Dependency sketch:
 - **Do:**
   - `operations.md`: rules, Alerts, channels, the bodies and the
     signature;
+  - `docs/guides/alert-integrations.md`: the n8n recipe and the heartbeat
+    monitors;
   - `resource-model.md`, `capability-model.md`,
     `application-platform.md` ("Alerts (spec 024)"), `authorization.md`
     and `approvals.md`;
   - ADR 0022;
   - `build-vs-adopt.md`:
-    - adopted: the four webhook formats, ntfy and Telegram, as protocols;
+    - adopted: Telegram's Bot API, SMTP relays and the webhook, as
+      protocols; healthchecks.io, Uptime Kuma and n8n as suggested
+      outside tools (not dependencies);
     - rejected: OpenChoreo's alerting path, Alertmanager, unofficial
       WhatsApp clients and email-to-SMS;
     - open: SMS, voice, WhatsApp Cloud and OTP;
-  - the risk register: RP-069 to RP-073 added, and RP-062, RP-066 and
+  - the risk register: RP-069 to RP-074 added, and RP-062, RP-066 and
     RP-068 updated;
   - `docs-keeper`, then `docs/PROGRESS.md`.
 - **Files:** as listed.

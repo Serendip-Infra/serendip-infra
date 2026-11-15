@@ -2,6 +2,11 @@
 
 Status: Reviewed, 2026-11-15; amended the same day with the plan.
 - **Email stays in scope.**
+- **Telegram is the main chat channel** (the user, 2026-11-15). Other chat
+  services and push apps are reached through the signed webhook (for
+  example via n8n) until they get their own formats.
+- **Added at review:** a minimum severity per channel, and a heartbeat to
+  an outside monitor (the dead man's switch).
 - **Traces moved to spec 025** (beside Hubble's request metrics), with
   trace-based alert conditions.
 - **cs-tools' alert services** are adopted as design, not code.
@@ -124,17 +129,25 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
 7. **A `NotificationChannel` resource,** at the platform or a Project.
    Every type is free to use, sends outbound only, and needs no public URL
    on the laptop (plan "Channel research"). The types:
-   - **webhook:** an HTTPS POST to a URL, in one of these formats:
-     - Serendip's documented JSON body, with an optional shared-secret
-       signature header;
-     - Slack-compatible (Slack, Mattermost, Rocket.Chat, Google Chat);
-     - Discord;
-     - Microsoft Teams Workflows;
-   - **email** through an SMTP server the Owner configures (host, port,
-     sender, credentials);
-   - **ntfy** push to a phone, through `ntfy.sh` or a self-hosted server,
-     with critical alerts at ntfy's urgent priority;
-   - **Telegram,** a bot's message to a chat.
+   - **Telegram:** a bot's message to a chat, formatted as a card:
+     - the severity and state, shown at a glance;
+     - the rule's summary;
+     - the Component, Environment, value and threshold;
+     - a "View in console" button, which only opens a link, so Telegram
+       never calls back into Serendip.
+   - **email,** through an SMTP server the Owner configures (host, port,
+     sender, credentials). Any SMTP relay works, such as Gmail with an app
+     password, Brevo or Resend. No mail server runs on the laptop.
+   - **webhook:** an HTTPS POST of Serendip's documented JSON body, with
+     an optional shared-secret signature header. It is also how anything
+     else is reached: an n8n or Node-RED flow can turn an alert into a
+     WhatsApp message, an SMS, a phone call or a Slack card. The docs
+     carry that recipe.
+
+   Each channel has a **minimum severity.** A rule's alert goes only to
+   the channels it names (or the Project's defaults) whose minimum it
+   meets, so critical alerts can go to Telegram and everything else to
+   email.
 
    A rule names its channels; a Project can set default channels for
    rules that name none.
@@ -166,9 +179,25 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
       failed, not dropped.
     - Both the firing and its resolution are sent.
 
+### Heartbeat (the dead man's switch)
+
+12. **A heartbeat to an outside monitor.** An alert can't be sent by a
+    laptop that has crashed, lost power or lost its network, or by a
+    `serendipd` that has stopped. So an Owner can set one heartbeat URL:
+    - `serendipd` sends a request to it every minute;
+    - it sends only while its own alert evaluation and delivery are
+      working;
+    - the outside monitor (healthchecks.io's free tier, Uptime Kuma, an
+      n8n flow on another machine) alerts the person when the requests
+      stop.
+
+    The URL is a secret. It goes through the same destination check as
+    channels, and its last result shows in the console. Serendip doesn't
+    host the monitor: it has to run somewhere other than the laptop.
+
 ### Removing the package
 
-12. **Removal states what's lost** (spec 023's removal, extended):
+13. **Removal states what's lost** (spec 023's removal, extended):
     - rules stop being evaluated and show as inactive;
     - open Alerts are resolved as "package removed";
     - channels stay.
@@ -178,26 +207,26 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
 
 ### Across all features
 
-13. **Authorization** (spec 017).
+14. **Authorization** (spec 017).
     - New actions for alert rules, for Alerts (read, acknowledge,
       silence) and for channels (read, write, test), scoped like
       everything else.
     - A rule's channels must be ones its author can use.
     - Channel and SMTP settings at `/` stay with Owners.
     - Every new route has a rule.
-14. **Deletes go through an Approval** (spec 019), like every other delete.
-15. **No way around Serendip** (spec 023's criterion 13). The backend's
+15. **Deletes go through an Approval** (spec 019), like every other delete.
+16. **No way around Serendip** (spec 023's criterion 13). The backend's
     alerting API doesn't answer people or workloads directly, and this
     spec opens no new path from workloads.
-16. **Audit** (constitution 8).
+17. **Audit** (constitution 8).
     - Every create, update and delete of rules and channels, every
       acknowledgement, silence and test send, with actor, interface and
       decision.
     - The notifications sent are recorded on the Alert.
-17. **Interface parity** (constitution 7): every console view is an API
+18. **Interface parity** (constitution 7): every console view is an API
     call shown in "Same request through the API", a CLI command and an
     MCP tool, and `api/catalog` covers them.
-18. **Assistant use.**
+19. **Assistant use.**
     - MCP tools read Alerts as capped, summarised results (diagnose
       freely, constitution 5).
     - An agent may acknowledge an Alert if its roles allow it.
@@ -226,12 +255,19 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
   clients are rejected outright (they break WhatsApp's terms, and accounts
   get banned).
 - **OTP codes for sign-in or approvals.** That is identity's job
-  (ThunderID), not alerting's: the plan records what was found for a later
-  spec.
+  (ThunderID), not alerting's. The plan records what was found, including
+  delivering codes through this spec's Telegram bot, for a later spec.
 - **Notifying people about pending Approvals.** Channels are built so that
   can use them later (spec 019 left notifications out).
 - **Alerts on Serendip's own health** (`serendipd`, the agent, nodes),
-  beyond the package's built-in disk rule.
+  beyond the package's built-in disk rule and the heartbeat.
+- **Telegram buttons that act** (acknowledge or silence from the chat) and
+  linking a Telegram account to a Serendip person. A small follow-up spec:
+  the bot can read the taps by polling, with no public URL.
+- **Other chat formats and push apps:** Slack, Discord and Teams cards,
+  Google Chat, ntfy. Each is a small format later; until then they're
+  reached through the webhook (n8n). Chat buttons that act need a public
+  URL on those services.
 - **Custom query languages** (PromQL, SQL) in rules.
 - **Bring-your-own alerting** (an existing Alertmanager). The `external`
   escape hatch stays planned.
@@ -246,8 +282,8 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
   - rule → Component or Application;
   - rule → channel;
   - alert → rule.
-- **A notification sender:** delivers webhooks, email, ntfy and Telegram,
-  with destination validation. Whether it lives in `core/` or as a provider of
+- **A notification sender:** delivers Telegram, email and webhooks, and
+  the heartbeat, with destination validation. Whether it lives in `core/` or as a provider of
   a Notification capability is a plan decision.
 - **The observability provider:** the condition queries, and the
   built-in rule.
@@ -276,14 +312,16 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
 3. **Built-in disk rule.** With the threshold lowered for the test, the
    package's disk rule fires and notifies the platform's default channel.
 4. **Delivery on every channel type.**
-   - A webhook receiver gets the documented body with a valid signature.
-   - Each webhook format is accepted by a real Slack, Discord and Teams
-     channel (or a recorded capture of their documented schema).
-   - An SMTP test server gets the email.
-   - An ntfy topic and a Telegram chat each get the firing and the
-     resolution, with a critical alert at ntfy's urgent priority.
-   - A 429 from a service is honoured (its `Retry-After`).
+   - A Telegram chat gets the firing and the resolution as cards, and the
+     console button opens the Alert.
+   - An SMTP test server gets the email, and so does a real relay
+     (Gmail or Brevo).
+   - A webhook receiver gets the documented body with a valid signature,
+     and an n8n flow following the documented recipe forwards it.
+   - A 429 from Telegram is honoured (its `retry_after`).
    - A failing receiver shows retries and then "failed" on the Alert.
+   - A channel with a minimum of `critical` gets the critical alert and
+     not the warning.
 5. **Destination validation.** Creating, updating or test-sending a
    channel to any of these is refused with a plain reason:
    - `127.0.0.1`;
@@ -321,16 +359,22 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
    - an agent uses its own roles.
 10. **No side door.** From a pod in a workload namespace, nothing new
     answers. Checked on the real cluster.
-11. **Removal** needs an Approval (spec 023) and the console states what's
+11. **Heartbeat.**
+    - With a heartbeat URL set, the outside monitor receives a request
+      every minute.
+    - Stopping `serendipd`, or stalling its evaluator in a test, stops
+      the requests, and the monitor raises its alert.
+    - The console shows the last result.
+12. **Removal** needs an Approval (spec 023) and the console states what's
     lost. Afterwards:
     - rules read inactive;
     - open Alerts are resolved;
     - channels remain.
-12. **Footprint.** edge-1 with the package installed and the rule cap
+13. **Footprint.** edge-1 with the package installed and the rule cap
     configured: the idle and evaluation cost is recorded, with no
     regression against spec 023's run otherwise. Findings go in
     `docs/risk-register.md`.
-13. **Nothing else breaks.** Existing tests, the bench harness and a
+14. **Nothing else breaks.** Existing tests, the bench harness and a
     real-cluster run on `serendip-t018` pass.
 
 ## Open questions (answered in plan.md)
@@ -347,4 +391,5 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
    delivery records on SQLite.
 5. **RP-066:** whether this spec creates `observabilityalertrules`
    objects.
-6. **Which channel types v1 ships:** researched; the answer is in IN 7.
+6. **Which channel types v1 ships:** researched and settled at review:
+   Telegram, email and the webhook (IN 7).

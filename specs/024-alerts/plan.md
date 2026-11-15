@@ -66,28 +66,36 @@ Its ingestion mappings aren't needed, because nothing is ingested.
 
 ## Channel research (spec IN 7, open question 6)
 
-Each v1 type is free, outbound only, a plain `net/http` POST or a
-`net/smtp` send, and needs no public URL.
+**v1 ships three types, Telegram first** (the user, 2026-11-15: "if we can
+just use Telegram then that's fine"). Each is free, sends outbound only,
+is a plain `net/http` POST or a `net/smtp` send, and needs no public URL.
 
 | Type | Free use | Notes |
 |---|---|---|
-| Webhook, Serendip format | yes | Signed JSON body |
-| Webhook, Slack-compatible | yes | `{"text": …}`. Reaches Slack, Mattermost, Rocket.Chat and Google Chat (Google Chat needs a Workspace account) |
-| Webhook, Discord | yes | `content` and `embeds`. About 30 requests a minute per webhook (unofficial); honours 429 |
-| Webhook, Teams | yes | Office 365 connectors stopped working in May 2026. Teams' replacement is a Workflows "when a webhook request is received" flow, taking an Adaptive Card |
-| Email (SMTP) | yes | Through a relay, for example Gmail with an app password, Brevo (300 a day, no card) or Resend (100 a day) |
-| ntfy | yes | `ntfy.sh` or self-hosted. Priority 5 ("urgent") overrides a phone's quiet mode: the free stand-in for a page |
-| Telegram bot | yes | `sendMessage`, about one message a second per chat. Needs only outbound HTTPS |
+| Telegram bot | yes | `sendMessage` with HTML formatting and an inline keyboard. A **URL button** only opens a link, so it needs no callback. About one message a second per chat, 20 a minute per group, 30 a second overall; a 429 carries `retry_after`. The bot token is the credential, and it sits in the URL path |
+| Email (SMTP) | yes | Through a relay. **Gmail with an app password** is about 500 a day and needs no domain. **Brevo** allows 300 a day with no card. **Resend** allows 100 a day and 3,000 a month, but needs a domain. SES is cheap (about $0.10 per 1,000) but needs an AWS account and approval to leave its sandbox, so it isn't needed. A mail server on the laptop is ruled out: home IP addresses are on blocklists, port 25 is often blocked, and there's no reverse DNS |
+| Webhook (Serendip's signed JSON) | yes | Also the integration point: n8n or Node-RED turns an alert into anything else |
 
-**Deferred, as opt-in channel types for a later spec** (spec OUT):
-- **SMS:** Twilio (UK about $0.056 a segment), an Android phone as a
-  gateway (sms-gate, costing only the SIM), Sri Lankan gateways (about
-  LKR 0.6–1.0 a message);
-- **voice calls:** no free API exists. Twilio Voice in the UK is about
-  3¢ a minute, and ntfy's `X-Call` is on Pro plans only;
-- **the WhatsApp Cloud API:** messages outside the 24-hour window are
-  paid templates, and it needs Meta Business verification;
-- **Pushover** ($4.99 once), **Matrix** and **Gotify** (free, self-hosted).
+**Through the webhook (n8n or Node-RED) until they get their own formats:**
+- **Slack, Discord, Teams and Google Chat:** each accepts cards on a plain
+  incoming webhook (Block Kit, embeds, Adaptive Cards, cards).
+  - Teams' old connector URLs stopped working in May 2026. Its
+    replacement is a Workflows flow.
+  - Buttons that act need a public URL on Slack and Teams. Discord
+    webhooks can't have buttons at all.
+- **ntfy:** a free push app, which can break through a phone's silent
+  mode.
+- **Phone calls:** Twilio Voice from an n8n flow, at about 3¢ a minute in
+  the UK. No API places calls for free.
+  - **WhatsApp:** Meta's Business Calling API needs the user's opt-in, a
+    live audio session and per-minute pricing (Research: unverified), so
+    it isn't a "ring and read the alert" API.
+  - **n8n's WhatsApp node** sends messages, and those are paid templates
+    outside WhatsApp's 24-hour window.
+- **SMS:**
+  - Twilio, at about $0.056 a segment in the UK;
+  - an Android phone acting as a gateway (sms-gate), costing only the SIM;
+  - Sri Lankan gateways, at about LKR 0.6–1.0 a message.
 
 **Rejected:**
 - **whatsmeow and other unofficial WhatsApp clients:** they break
@@ -95,24 +103,20 @@ Each v1 type is free, outbound only, a plain `net/http` POST or a
 - **email-to-SMS gateways:** gone in the UK;
 - **Textbelt's free tier:** one message a day.
 
-**OTP, for a later identity spec (not 024):**
-- the free options deliver nothing: TOTP authenticator apps, and passkeys
-  (ThunderID has a passkey executor);
-- email OTP goes through ThunderID's own SMTP setting;
-- ThunderID's SMS senders are Twilio, Vonage and a "Custom" sender that
-  POSTs to a URL. `serendipd` could be that URL, to send codes over
-  Telegram or an Android gateway (Research: the request shape is
-  unchecked);
-- Telegram Gateway costs $0.01 a code.
-
-These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
+**OTP, for a later identity spec (not 024):** see "ThunderID OTP" below.
+The free options deliver nothing: TOTP authenticator apps, and passkeys.
+The candidate for codes by message is ThunderID's "Custom" SMS sender
+pointed at `serendipd`, which relays the code through this spec's
+Telegram bot. Telegram Gateway is the paid fallback, at $0.01 a code.
 
 ## Spec amendments (agreed with this plan)
 
 - **Already folded into spec.md:**
   - traces moved to spec 025;
   - AC 7 reads "status and measured cost", not "backend repaired";
-  - the channel types are set.
+  - the channel types are set: Telegram, email and the webhook;
+  - a minimum severity per channel, and the heartbeat (spec IN 12), were
+    added at review.
 - **Open questions 1–6** are answered by the decisions below.
 
 ## Decisions
@@ -142,6 +146,7 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
    - **`NotificationChannel`:**
      - at the platform (no owner) or owned by a Project;
      - `type` and its settings (decision 6);
+     - `minSeverity` (`info`, `warning` or `critical`; default `info`);
      - `default` (bool);
      - `allowPrivateDestination` and `allowPlainHTTP`, each with a
        `reason`.
@@ -151,6 +156,13 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
        plain), `from`, `usernameSecretId` and `passwordSecretId`;
      - it's a separate kind so Projects can create email channels
        without holding SMTP credentials.
+   - **`Heartbeat`:**
+     - platform-only, and at most one (the store's unique key);
+     - fields: `urlSecretId`, `host`, `interval` (1–10 minutes, default
+       1), and `allowPrivateDestination` with a reason, for a monitor
+       elsewhere on the LAN;
+     - status: `lastSent` and `lastResult`, with conditions (decision
+       15).
    - **Graph edges:**
      - rule → Component or Application, and rule → channel;
      - Alert → rule;
@@ -189,7 +201,7 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
    - **When the package isn't Ready, or is removed:**
      - rules read `active: false, PackageNotReady`;
      - on removal, open Alerts resolve with `packageRemoved`, and that
-       resolution is delivered (spec IN 12).
+       resolution is delivered (spec IN 13).
    - **The interface:** `ObservabilityProvider` gains
      `EvaluateCondition(ctx, LogTarget, Condition, window) (Value,
      error)`. `core/` passes a condition in its own terms, and the
@@ -222,8 +234,9 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
 
 5. **The sender** (`core/notify`, standard library only; open question
    2).
-   - **Why in `core/`:** webhooks, SMTP, ntfy and Telegram are protocols
-     or public HTTPS APIs, not infrastructure products Serendip installs.
+   - **Why in `core/`:** webhooks, SMTP and Telegram's Bot API are
+     protocols or public HTTPS APIs, not infrastructure products Serendip
+     installs.
      They're Serendip-owned delivery formats, like the webhook body.
      - Constitution 1's rule is about vendors in the domain model.
        `core/notify` names the formats it speaks, as `core/jsonschema`
@@ -260,40 +273,64 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
        even then: an in-house receiver is reached by its own address, not
        through the cluster.
    - **`allowPlainHTTP`** needs the same action and a reason.
-   - **Rate limits:** a 429 with `Retry-After` is honoured, up to 15
-     minutes. Each channel has its own send rate (decision 7).
+   - **Rate limits:** a 429 with `Retry-After` (or Telegram's
+     `retry_after`) is honoured, up to 15 minutes. Each channel has its
+     own send rate (decision 7).
 
 6. **Channel types and their settings.** Every value that grants access
    is a `Secret` reference (spec 009), like builds' `credentialSecret`.
 
    | Type | Settings | Secret |
    |---|---|---|
-   | `webhook` | `format` (`serendip`, `slack`, `discord` or `teams`), `url` | `urlSecretId`: the whole URL, for Slack, Discord and Teams, whose URLs are the token; or `signingSecretId` for the `serendip` format |
+   | `telegram` | `chatId` (a user, group or channel). The host is fixed to `api.telegram.org`, so no person-typed address is involved | `botTokenSecretId` |
    | `email` | `smtpServerId`, `to[]` (at most 20) | the SMTP server's |
-   | `ntfy` | `server` (default `https://ntfy.sh`) | `topicSecretId`: on `ntfy.sh` a topic name is effectively its password; optional `tokenSecretId` |
-   | `telegram` | `chatId` | `botTokenSecretId`; the host is fixed to `api.telegram.org` |
+   | `webhook` | `url` | `signingSecretId`; `urlSecretId` instead of `url` when the URL itself holds a token (an n8n webhook's path, for example) |
 
-   - **When the URL is a Secret,** the channel stores its host only, for
-     display and for the address check before the value is read.
-   - **The bodies:**
-     - **`serendip`** is `serendip.alert.v1`: `{version, event
-       (firing|resolved|test), alert{id, rule, severity, summary, state,
-       project, application, component, environment, startedAt,
-       resolvedAt, value, threshold, consoleUrl}}`, documented in
-       `operations.md`. Its signature is `X-Serendip-Signature:
-       t=<unix>,v1=<hex HMAC-SHA256(secret, t + "." + body)>`, so
-       receivers can refuse replays.
-     - **`slack`, `discord` and `teams`** get a short text from the same
-       fields (an Adaptive Card for Teams), with the console link.
-     - **ntfy** gets a title and message. Severity sets the priority
-       (critical 5, warning 4, info 3) and a tag; the console link is in
-       `Click`.
-     - **Telegram** gets `sendMessage` with HTML formatting. Any value
-       from a rule or a Component is escaped.
-   - **Text from people** (a summary, a Component's name) is escaped for
-     each format. A summary can't inject a mention (`@everyone`, `<!channel>`):
-     Discord's `allowed_mentions` is empty, and Slack's `<!…>` and `<@…>`
-     sequences are escaped.
+   - **When the URL is a Secret,** the channel stores only its host. The
+     host is shown, and checked against the address rules before the value
+     is read.
+   - **The Telegram card** (`sendMessage`, `parse_mode=HTML`):
+     - a first line with a severity marker and the state, for example
+       "🔴 CRITICAL · firing" or "✅ resolved";
+     - the summary in bold;
+     - Component · Environment · Project;
+     - the value against the threshold, and when it started (or how long
+       it lasted);
+     - an inline keyboard with one URL button, "View in console", opening
+       the Alert.
+
+     If Telegram refuses the console's URL (T001 checks `localhost` and
+     plain `http`), the link goes in the text instead.
+     - Every value from a rule or a Component is HTML-escaped.
+     - A firing and its resolution are sent as replies in one thread
+       (`reply_parameters` to the firing's `message_id`, kept on the
+       delivery). A chat reads as one line per alert.
+   - **The email:**
+     - a subject of "[CRITICAL] firing: <summary>";
+     - a plain-text body and a small HTML part, with the same fields and
+       the console link;
+     - `Message-ID` and `In-Reply-To`, so the resolution threads under the
+       firing in mail clients.
+   - **The webhook body** is `serendip.alert.v1`, documented in
+     `operations.md`:
+     - fields: `{version, event (firing|resolved|test), alert{id, rule,
+       severity, summary, state, project, application, component,
+       environment, startedAt, resolvedAt, value, threshold,
+       consoleUrl}}`;
+     - its signature: `X-Serendip-Signature: t=<unix>,v1=<hex
+       HMAC-SHA256(secret, t + "." + body)>`, so receivers can refuse
+       replays.
+   - **The n8n recipe** (`docs/guides/alert-integrations.md`):
+     - a Webhook node that checks the signature in a Code node;
+     - three example branches: a Slack card, a Twilio Voice call for
+       `critical`, and an ntfy push;
+     - which of these cost money.
+
+     It's checked once, live, in T010.
+   - **Severity routing:** an alert goes to the rule's channels (or the
+     Project's defaults) whose `minSeverity` it meets. Silences and
+     routing are both recorded on the delivery (`silenced`,
+     `belowMinSeverity`), so "why wasn't I told" has an answer.
 
 7. **Delivery** (cs-tools' separate loop).
    - **Pending deliveries** live on the Alert (`deliveries[]`), so a
@@ -301,8 +338,9 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
    - **Retries:** up to 5 attempts, backing off 10 s, 30 s, 1 min, 5 min
      and 15 min. After that the delivery is `failed`, with the last error
      (spec IN 11). A 4xx other than 408 and 429 isn't retried.
-   - **Per-channel rate:** at most one send a second (Telegram and Slack
-     limits), and 20 a minute for Discord. When more are queued for the
+   - **Per-channel rate:** at most one send a second, and 20 a minute to
+     a Telegram group. Telegram's `retry_after` is honoured, up to 15
+     minutes. When more are queued for the
      same channel, firings and resolutions are folded into one digest
      ("3 alerts firing, 1 resolved"), as cs-tools does for chat.
    - **Silences** suppress deliveries, not Alerts (spec AC 8). A
@@ -313,21 +351,22 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
      the send.
    - API responses show `secretSet: true|false`.
    - Errors are cleaned before they're stored:
-     - only the host is kept, so a Telegram token in a URL path, or a
-       token in a query, can't reach an Alert, an event or a log;
+     - only the host is kept, so the Telegram bot token in the URL path,
+       or a token in a query, can't reach an Alert, an event or a log;
      - Go's `url.Error` is unwrapped, because its message carries the
        whole URL.
    - **The check:** after a full run, the known values are searched for
      in the store, audit rows, events and `serendipd`'s log (T010).
 
-9. **Authorization** (spec IN 13). New actions:
+9. **Authorization** (spec IN 14). New actions:
    - `serendip/alertRules/{read,write,delete}` and
      `serendip/alertRules/silence/action`;
    - `serendip/alerts/read` and `serendip/alerts/acknowledge/action`;
    - `serendip/notificationChannels/{read,write,delete}`,
      `…/test/action` and `…/allowPrivateDestination/action`. The last is
      in Contributor's `NotActions`, so only Owner holds it;
-   - `serendip/smtpServers/{read,write,delete}`, at `/` only.
+   - `serendip/smtpServers/{read,write,delete}` and
+     `serendip/heartbeat/{read,write,delete}`, at `/` only.
 
    How they apply:
    - **Using channels:** writing a rule needs `notificationChannels/read`
@@ -376,6 +415,7 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
     - **Channels:** CRUD on `/v1/notificationchannels`, and
       `POST …/{id}/test`.
     - **SMTP servers:** CRUD on `/v1/smtpservers`.
+    - **Heartbeat:** decision 15.
 
 13. **CLI and MCP.**
     - **CLI commands:**
@@ -383,7 +423,8 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
       - `serendip alertrules
         create|list|show|update|delete|silence|unsilence`;
       - `serendip channels create|list|show|update|delete|test`;
-      - `serendip smtp create|list|show|update|delete`.
+      - `serendip smtp create|list|show|update|delete`;
+      - `serendip heartbeat set|show|test|delete`.
     - **MCP tools:**
       - read tools for Alerts and rules, summarised and capped at 50
         Alerts;
@@ -398,11 +439,133 @@ These findings go in `build-vs-adopt.md` and PROGRESS.md's "Maybe" list.
     - **The top bar:** a bell with firing counts by severity, linking to
       an Alerts page with filters.
     - **Settings › Notifications:**
-      - channels by type, with a test send, and the private and plain
-        HTTP allowances for Owners;
-      - SMTP servers, for Owners.
-    - **The Packages page:** the removal wording, extended (spec IN 12).
+      - channels by type, with their minimum severity, a test send, and the
+        private and plain-HTTP allowances for Owners. The Telegram form
+        explains finding a `chatId` (send the bot a message, then press
+        "Find chat", which reads `getUpdates` once);
+      - SMTP servers, for Owners, with notes on Gmail app passwords and
+        Brevo;
+      - the heartbeat, for Owners, with its last result.
+    - **The Packages page:** the removal wording, extended (spec IN 13).
     - **Every view** shows its "Same request through the API".
+
+15. **The heartbeat** (spec IN 12).
+    - **A loop in `serendipd`** sends `GET` (or `POST`, with an empty
+      body) to the heartbeat URL every `interval`, through the same
+      checked client as channels.
+    - **It sends only while Serendip can alert.** The evaluator must have
+      completed a tick within the last 2 minutes, the delivery loop must
+      have run, and the store must answer a read. If any of these fails,
+      it sends nothing, and the outside monitor's own timeout raises the
+      alarm.
+      - It never sends a "fail" signal. Sending one depends on the same
+        machine still working, so absence is the signal.
+      - Some monitors take an explicit failure (healthchecks.io's
+        `/fail`). That's left to the monitor's own grace period.
+    - **Status:**
+      - `lastSent`, `lastResult` and a `Sending` condition, shown on
+        Settings › Notifications;
+      - the reason when sending is paused because Serendip can't alert.
+    - **Compatible monitors:** healthchecks.io's free tier (a ping URL),
+      Uptime Kuma's push monitors, and an n8n Webhook node on another
+      machine, or Gatus (suggested tools above). `docs/guides/alert-integrations.md` covers setting each up, and
+      says plainly that the monitor must not run on the same laptop.
+    - **The API, CLI and MCP:** `PUT /v1/heartbeat` (the singleton), `GET`,
+      `DELETE` (through an Approval), and `POST /v1/heartbeat/test`;
+      `serendip heartbeat set|show|test|delete`.
+
+## Suggested outside tools (not dependencies)
+
+Serendip only sends a signed webhook and a heartbeat request, so any of
+these works. The guide (`docs/guides/alert-integrations.md`) suggests
+them with their free limits, as checked on 2026-11-15. None of them is
+installed, bundled or required.
+
+- **Heartbeat monitors** (decision 15). The monitor must not run on the
+  same laptop.
+  - **healthchecks.io**, the suggested default:
+    - its free tier has 20 checks, 5 SMS or WhatsApp a month, and
+      Telegram and email alerts;
+    - it supports any period with a grace time;
+    - it's BSD-3, so it can be self-hosted later.
+  - **Gatus,** for a second device (a Pi, or an Oracle Always Free VM):
+    - a single Go binary with a YAML config;
+    - its `external-endpoints` heartbeat alerts by Telegram, Twilio or
+      ntfy.
+  - **Uptime Kuma:** a friendlier UI and push monitors, but heavier
+    (Node.js).
+  - **Not suggested:**
+    - UptimeRobot's free tier (heartbeats and Telegram are paid);
+    - Better Stack's free tier (no Telegram; phone alerts are about $30 a
+      month);
+    - Cronitor (5 checks);
+    - Site24x7 (its free plan is email-only, and heartbeats seem to be
+      paid; unverified).
+- **Turning a webhook into other channels** (WhatsApp, SMS, calls,
+  Slack):
+  - **Apprise API:** a small relay to 150+ services, and the lightest. It
+    has no signature check, so it stays on a trusted network, or
+    something checks the signature in front of it.
+  - **Node-RED** (Apache-2.0, runs on a Pi): for flow logic.
+  - **n8n Community Edition:**
+    - it's fair-code under the Sustainable Use License, not open source;
+    - its vendors suggest 2–4 GB, which is heavy beside edge-1;
+    - n8n Cloud has a trial only.
+  - **Hosted, free:** Activepieces Cloud (1,000 runs a month, accepts
+    webhooks, MIT if self-hosted later), or Make (1,000 credits, two
+    scenarios). Zapier and Pipedream's free tiers can't take production
+    webhooks.
+
+## ThunderID OTP (for a later identity spec)
+
+From oss-researcher, 2026-11-15. It read ThunderID **v1.1.0**, whose repo
+is now `thunder-id/thunderid`. ThunderID has released since ADR 0006's
+watch note: v1.0.2 (Oct 27), v1.1.0 (Nov 2), v2.0.0-m1 (Nov 6). That
+also answers PROGRESS.md's "re-check by 2026-11-15" item.
+
+- **One-time codes: yes, as a second factor.** The `OTPExecutor` makes
+  and checks a code, and a separate `SMSExecutor` or `EmailExecutor`
+  sends it.
+  - They're chained in the flow builder (`/flows`), for example after
+    username and password, or in password recovery.
+  - Passwordless use isn't documented.
+  - Code length is 4–10 digits, valid for 30–600 s, with `maxAttempts`
+    3 per generation.
+  - No verify rate limit or resend cool-down was found.
+- **TOTP (authenticator apps): no,** at v1.1.0. **Passkeys:** a
+  `PasskeyAuthExecutor` exists, but isn't documented as a flow step.
+- **Email OTP** uses `email.smtp` in `deployment.yaml`: STARTTLS only
+  (port 587, not implicit TLS on 465), PLAIN auth, TLS 1.2 or later. So a
+  Gmail app password or Brevo works as-is, and it can be the same relay
+  as Serendip's `SMTPServer`.
+- **SMS senders:** Twilio, Vonage, or a **Custom** sender, created with
+  `POST /connections/sms-gateway`.
+  - **What the Custom sender sends:** it POSTs (or GETs) the **rendered
+    template text** to a URL, as JSON or as form lines. There are no
+    fixed fields and no signature, just any static headers you
+    configure.
+  - **Its limits:**
+    - those header values aren't stored as secrets;
+    - there's a 10 s timeout, and no retry on a non-2xx answer;
+    - the recipient isn't sent unless the template includes it
+      (`{{ctx(mobile_number)}}`);
+    - the destination must pass a phone-number pattern.
+- **Codes over Telegram is possible, but it's a workaround:**
+  - **How:** the SMS template carries the person's phone number and the
+    code. The Custom sender posts them to a small relay route on
+    `serendipd`. `serendipd` maps the phone number to that person's
+    linked Telegram chat, and sends the code through this spec's bot.
+  - **Costs:**
+    - it's a new inbound route into `serendipd`, kept cluster-internal
+      and guarded by a static header token that ThunderID stores in
+      plain text;
+    - every person needs a phone number on their ThunderID account;
+    - and it depends on Telegram account linking (the follow-up spec).
+- **The recommendation for that identity spec:**
+  1. email OTP through ThunderID's SMTP first (free, no Serendip code);
+  2. passkeys, once ThunderID documents them as a flow step;
+  3. TOTP, if a ThunderID release adds it (watch v2.0);
+  4. the Telegram relay, only if a person can't use email.
 
 ## Carried to spec 025 (traces)
 
@@ -448,8 +611,8 @@ decisions.
 - **`core/notify`:**
   - `dialer.go`: the address check;
   - `client.go`;
-  - `webhook.go`: the four formats;
-  - `smtp.go`, `ntfy.go`, `telegram.go`;
+  - `webhook.go`, `smtp.go`, `telegram.go`;
+  - `heartbeat.go`;
   - `body.go`, `escape.go`.
 - **`core/policy`:** `builtins.go`, for the actions and `NotActions`.
 - **`providers/observability/openchoreo`:**
@@ -467,6 +630,7 @@ decisions.
 - **`profiles/edge-1/bench`:** a rule-evaluation phase (200 rules).
 - **Docs:**
   - `operations.md`: rules, Alerts, channels, the webhook body;
+  - `docs/guides/alert-integrations.md`: the n8n recipe and heartbeat monitors;
   - `resource-model.md`, `capability-model.md` (its Alerting row),
     `application-platform.md`, `authorization.md`, `approvals.md`;
   - ADR 0022: Serendip evaluates alert rules and sends notifications
@@ -476,18 +640,22 @@ decisions.
 
 ## Risks (to the risk register as they're confirmed)
 
-- **RP-069:** an ntfy topic on `ntfy.sh` is readable by anyone who knows
-  it. It's kept as a Secret and never shown, but a person who picks a
-  guessable topic leaks their alerts. The console warns, and suggests a
-  generated name.
-- **RP-070:** Slack, Discord and Teams URLs are bearer tokens to post in
-  that channel. They're kept as Secrets; only `serendipd` and the
-  Secrets provider see them.
+- **RP-069:** the Telegram bot token is the whole credential. Anyone
+  holding it can read the bot's chats and send as it. It's kept as a
+  Secret, cleaned from errors, and seen only by `serendipd` and the
+  Secrets provider. BotFather can revoke it.
+- **RP-070:** alert content leaves the laptop for third parties:
+  Telegram's servers, and the mail relay. That's the summary, the names,
+  the values and a console link, but never log lines (decision 9). The
+  console says so on the channel form.
 - **RP-071:** resolved Alerts are removed after 30 days by system
   retention, with no Approval.
 - **RP-072:** evaluation polls, so:
   - a condition shorter than the interval can be missed;
   - a firing is seen up to one interval late (1 minute at best).
+- **RP-074:** the heartbeat proves only that Serendip can alert, not that
+  a message reached a person. A broken Telegram token is caught by
+  delivery failures on the Alert, not by the heartbeat.
 - **RP-073:** a `logMatch` threshold is capped at 999. The adapter's page
   limit is 1000, so "more than N lines" can't count higher.
 - **RP-062, revisited:** OpenObserve's guard stays off for the logs
@@ -510,4 +678,8 @@ Everything in the spec's Scope OUT, and also:
 - notification templates set by people: each body is fixed and
   versioned;
 - a Notification capability or provider registry entry (decision 5);
-- reading replies from Telegram or other chats (no acknowledge-by-chat).
+- reading replies or button taps from Telegram (a follow-up spec, with
+  account linking);
+- Slack, Discord, Teams, Google Chat and ntfy formats (reached through
+  the webhook for now);
+- hosting the heartbeat's monitor.
