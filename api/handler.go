@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -40,6 +41,51 @@ type ResourceHandler[S, St any] struct {
 	// spec (its depends-on relationships). Its error answers 400 (wrap
 	// resource.ErrValidation).
 	prepare func(r *resource.Resource[S, St]) error
+	// authorize, when set, makes checks beyond the route's rule that need
+	// the body (spec 024: naming a channel needs read on it), after
+	// prepare. current is the stored resource on update, nil on create.
+	// The returned context carries the checks' policy evidence. A
+	// *deployRefusal answers with its status; a 403 is audited.
+	authorize    func(ctx context.Context, res resource.Resource[S, St], current *resource.Resource[S, St]) (context.Context, error)
+	kind         resource.Kind
+	recordDenied dbForAudit
+}
+
+// WithAuthorize makes the handler run a's checks on each create and
+// update, auditing a refusal under kind through record.
+func (h *ResourceHandler[S, St]) WithAuthorize(kind resource.Kind, record dbForAudit,
+	a func(ctx context.Context, res resource.Resource[S, St], current *resource.Resource[S, St]) (context.Context, error)) *ResourceHandler[S, St] {
+	h.authorize, h.kind, h.recordDenied = a, kind, record
+	return h
+}
+
+// authorized runs the authorize hook, if any, answering a refusal itself.
+func (h *ResourceHandler[S, St]) authorized(w http.ResponseWriter, r *http.Request, res resource.Resource[S, St], update bool) (context.Context, bool) {
+	ctx := r.Context()
+	if h.authorize == nil {
+		return ctx, true
+	}
+	var current *resource.Resource[S, St]
+	if update {
+		got, err := h.store.Get(ctx, res.Metadata.ID)
+		if err != nil {
+			h.writeStoreError(w, r, err)
+			return ctx, false
+		}
+		current = &got
+	}
+	ctx, err := h.authorize(ctx, res, current)
+	if err == nil {
+		return ctx, true
+	}
+	var rf *deployRefusal
+	if errors.As(err, &rf) {
+		auditRefusal(r, rf, h.kind, h.recordDenied)
+		h.writeError(w, r, rf.status, rf.title, rf.detail)
+		return ctx, false
+	}
+	h.writeStoreError(w, r, err)
+	return ctx, false
 }
 
 // WithPrepare makes the handler check and complete each resource with p
@@ -100,7 +146,11 @@ func (h *ResourceHandler[S, St]) Create(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	created, err := h.store.Create(r.Context(), res)
+	ctx, ok := h.authorized(w, r, res, false)
+	if !ok {
+		return
+	}
+	created, err := h.store.Create(ctx, res)
 	if err != nil {
 		h.writeStoreError(w, r, err)
 		return
@@ -173,8 +223,11 @@ func (h *ResourceHandler[S, St]) Update(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-
-	updated, err := h.store.Update(r.Context(), res)
+	ctx, ok := h.authorized(w, r, res, true)
+	if !ok {
+		return
+	}
+	updated, err := h.store.Update(ctx, res)
 	if err != nil {
 		h.writeStoreError(w, r, err)
 		return

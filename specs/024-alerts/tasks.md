@@ -95,7 +95,49 @@ Dependency sketch:
     and channel type's validation, the caps, the edges and the 409;
   - `bash .claude/scripts/check-imports.sh` is clean.
 
-## T003 — Authorization: actions, roles and routes [P]
+## T003 — Authorization: actions, roles and routes [P] ✅ 2026-11-15
+
+> **Done as:** actions in `core/policy/builtins.go` (path-derived:
+> `serendip/alertrules/silence/action`, `serendip/alerts/acknowledge/action`,
+> `serendip/notificationchannels/{test,allowPrivateDestination}/action`;
+> the last in Contributor's `NotActions`). `api/authz.go`'s
+> `alertingRoutes()` has a rule for every route of decisions 12 and 15;
+> the ones T007 registers are listed in `authz_routes_test.go`'s
+> `pendingRoutes`, which the route and catalogue tests skip until then
+> (**T007 empties it**). `TestAlertingRouteRules` has a row per route.
+> Alerts and the heartbeat are in `nestedPaths` (actions, no generic
+> CRUD). SMTP server writes are decided at `/`, like a ProviderInstance's.
+> **Amended:** unsilence is `POST /v1/alertrules/{id}/unsilence`, not
+> `DELETE …/silence`: every DELETE route is a delete with an Approval
+> (and an agent's needs one), and unsilencing deletes nothing.
+> The heartbeat's `DELETE /v1/heartbeat` uses a new `targetSingleton`
+> target, so its Approval names the singleton's ID, and an approval
+> request may name the Heartbeat. The body-dependent checks are a
+> `WithAuthorize` hook on the generic handler (`api/alerting_authz.go`):
+> a rule's newly named channels need `notificationchannels/read` (a
+> platform default channel excepted; decided before existence, so an
+> unreadable missing channel is 403, not 400), and setting or changing an
+> allowance needs `allowPrivateDestination/action` at the channel and its
+> owners (`allowancesAt`, which T007 uses for the heartbeat's allowance at
+> `/`). Deletes of rules, channels and SMTP servers already went through
+> Approvals (the generic DELETE routes; `ErrInUse` fails an approval in
+> T002), now tested; `core/reconcile/approval.go` needed no change.
+> **Review fixes** (go-reviewer):
+> - a Contributor can't change where a channel with an allowance sends
+>   (the Owner allowed one destination);
+> - a channel's Secrets (bot token, URL, signing key) need
+>   `secrets/value/read` where they're newly named, as a build's
+>   credential does; the SMTP server an email channel names needs
+>   nothing, since SMTP servers are platform relays (decision 6);
+> - a rule moved to another owner names its channels anew;
+> - owners are compared as sets.
+>
+> **Accepted** (RP-075): the check-before-write window, telling a
+> platform default channel's ID apart, and custom wildcard roles covering
+> the allowance action. **By design:** a refused create's audit row has
+> no resource ID (none exists yet), as for other kinds. contract-guardian:
+> pass.
+
 
 - **Do:**
   - the actions of plan decision 9, with `allowPrivateDestination` in
@@ -223,7 +265,11 @@ Dependency sketch:
   - test send;
   - `api/catalog` entries;
   - an audit row for every mutation, acknowledgement, silence and test
-    send.
+    send;
+  - empty `authz_routes_test.go`'s `pendingRoutes` (T003) as the routes
+    are registered; the heartbeat's allowance checked with
+    `allowancesAt` at `/`, and keep the rule and channel handlers'
+    `WithAuthorize` checks (T003) when replacing the generic routes.
 - **Files:** `api/alerts_handler.go`, `api/notifications_handler.go`,
   `api/catalog/*.go`, `api/server.go`, and tests.
 - **Verify:** `go test ./api/...` passes, including the catalogue's

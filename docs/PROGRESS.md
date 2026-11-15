@@ -12,14 +12,26 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001, T002 and T004 done)
+Last updated: 2026-11-15 (spec 024: T001–T004 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
-approved by the user 2026-11-15. T001 (spike), T002 (core types) and
-T004 (`core/notify`) done and committed on local branch `spec-024`.**
-Nothing pushed.
+approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
+(authorization) and T004 (`core/notify`) done and committed on local
+branch `spec-024`.** Nothing pushed.
+- **T003:** actions in `core/policy/builtins.go`
+  (`allowPrivateDestination/action` Owner-only); `api/authz.go`
+  `alertingRoutes()` has every decision-12/15 route's rule, the
+  unregistered ones in `authz_routes_test.go`'s `pendingRoutes` (**T007
+  empties it**). Unsilence is now `POST …/unsilence` (plan amended: a
+  DELETE route is a delete with an Approval). `DELETE /v1/heartbeat` uses
+  `targetSingleton`. Body checks via the generic handler's
+  `WithAuthorize` (`api/alerting_authz.go`): a rule's channels need read
+  (platform defaults excepted), a channel's Secrets need
+  `secrets/value/read`, allowances (and changing an allowed channel's
+  destination) need the Owner action. **T007 must wire `allowancesAt`
+  for the heartbeat's allowance at `/`.** RP-075 accepted.
 - **T002:** the five kinds in `core/resource/alerting.go`; `store.ErrInUse`
   (409) for a Secret, channel or SMTP server still in use. Paths
   `alertrules`, `notificationchannels`, `smtpservers`, so **T003's actions
@@ -94,7 +106,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T003 (authorization), then T005 (evaluator and delivery loop).
+- **Next:** T005 (evaluator and delivery loop).
 
 **Spec 023 (observability package): done and closed out on GitHub
 (2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**

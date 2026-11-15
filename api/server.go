@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"maps"
 	"net/http"
@@ -73,7 +74,7 @@ func NewServer(db *sql.DB, bus event.Bus, apiKeys map[string]string, authn ident
 	engine, stopPolicy := newPolicyEngine(db, bus)
 	migrateAPIKeys(engine, db, bus, apiKeys)
 	approvals := sqlite.NewStore[resource.ApprovalSpec, resource.ApprovalStatus](db, resource.KindApproval).SetBus(bus)
-	apiMux := &authzMux{mux: http.NewServeMux(), a: newAuthorizer(engine, graph.NewSQLiteGraph(db), recordDeniedIn(db), approvals, resourceExistsIn(db))}
+	apiMux := &authzMux{mux: http.NewServeMux(), a: newAuthorizer(engine, graph.NewSQLiteGraph(db), recordDeniedIn(db), approvals, resourceExistsIn(db), singletonIn(db))}
 	registerAPI(apiMux, db, bus, engine, approvals, secretReconciler, providers, console, o)
 
 	topMux := http.NewServeMux()
@@ -376,12 +377,14 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
 	// Alerting (spec 024). Alerts are written only by serendipd, so they
 	// get no generic routes; the heartbeat is a singleton with its own.
+	channelStore := sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus)
 	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](
 		sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus), "alertrules").
-		WithPrepare(prepareAlertRule).Register(apiMux)
-	NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](
-		sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus), "notificationchannels").
-		WithPrepare(prepareNotificationChannel).Register(apiMux)
+		WithPrepare(prepareAlertRule).
+		WithAuthorize(resource.KindAlertRule, recordDeniedIn(db), channelUse{channels: channelStore}.check).Register(apiMux)
+	NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](channelStore, "notificationchannels").
+		WithPrepare(prepareNotificationChannel).
+		WithAuthorize(resource.KindNotificationChannel, recordDeniedIn(db), channelChecks).Register(apiMux)
 	NewResourceHandler[resource.SMTPServerSpec, resource.SMTPServerStatus](
 		sqlite.NewStore[resource.SMTPServerSpec, resource.SMTPServerStatus](db, resource.KindSMTPServer).SetBus(bus), "smtpservers").
 		WithPrepare(prepareSMTPServer).Register(apiMux)
@@ -441,6 +444,18 @@ func mountResource[S, St any](mux Mux, db *sql.DB, bus event.Bus, kind resource.
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// singletonIn finds a singleton kind's one resource (the heartbeat), for
+// targetSingleton routes.
+func singletonIn(db *sql.DB) func(ctx context.Context, kind resource.Kind) (string, bool, error) {
+	return func(ctx context.Context, kind resource.Kind) (string, bool, error) {
+		list, err := sqlite.NewStore[json.RawMessage, json.RawMessage](db, kind).List(ctx, store.ListOptions{})
+		if err != nil || len(list) == 0 {
+			return "", false, err
+		}
+		return list[0].Metadata.ID, true, nil
+	}
 }
 
 // resourceExistsIn says whether a resource of any kind exists in db.

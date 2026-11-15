@@ -1622,3 +1622,29 @@ The text below is the T013 record.
 - **Revisit:** with spec 024 (an alert on the package's own disk use), or
   if a size-based cap for the logs store becomes settable in the logs
   module.
+
+## RP-075 — Alerting authorization: checks made before the write, and wide custom roles
+
+- **Kind:** security. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T003 (go-reviewer).
+- **What:**
+  - A rule's channels and a channel's Secrets are checked against the
+    stored channel before the rule or channel is written, not in the
+    same transaction. If a channel's owner or `default` flag changes in
+    that window, a rule could name a channel its writer couldn't read a
+    moment later.
+  - A platform default channel can be named by anyone who may write a
+    rule (decision 9), so a caller can tell a platform default channel's
+    ID from any other ID they can't read.
+  - Only the built-in Contributor role leaves out
+    `serendip/notificationchannels/allowPrivateDestination/action`. A
+    custom role granting `serendip/notificationchannels/*` (or `*`)
+    includes it, as Azure's wildcards do.
+- **Mitigation:** the window is one request's length, and changing a
+  channel's owner or default flag needs write on it. Channel IDs are
+  random. Custom roles are made by access administrators, who see their
+  actions.
+- **Residual:** as above.
+- **Revisit:** if channels become shared across Projects other than
+  through platform defaults, or if a custom-role editor should warn about
+  wildcards covering Owner-only actions.

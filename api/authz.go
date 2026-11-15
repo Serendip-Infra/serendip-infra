@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -61,6 +62,11 @@ const (
 	// targetApprovalRead is the approval named by {id}: read on its
 	// target, or on the nearest owner that still exists.
 	targetApprovalRead
+	// targetSingleton is a kind's one resource, found by kind (the
+	// heartbeat): there's no {id} in the path, so a DELETE's approval
+	// names the singleton's ID as it stands. With none, it's decided at
+	// "/" and the handler answers 404.
+	targetSingleton
 )
 
 // rule is one route's authorization requirement.
@@ -111,8 +117,21 @@ var resourcePaths = map[resource.Kind]string{
 // generic create, update or delete routes of their own, but with their own
 // action namespace: serendip/{path}/{verb}. A Build is triggered on its
 // Component and goes with it (specs/022-builds plan decisions 5 and 11).
+//
+// Alerts are written only by serendipd, so they have reads and
+// acknowledge but no generic writes; the heartbeat is a singleton at "/"
+// with its own routes (specs/024-alerts plan decisions 9, 12 and 15).
 var nestedPaths = map[resource.Kind]string{
-	resource.KindBuild: "builds",
+	resource.KindBuild:     "builds",
+	resource.KindAlert:     "alerts",
+	resource.KindHeartbeat: "heartbeat",
+}
+
+// singletonKinds are the kinds with one resource per install, served by
+// targetSingleton routes. They can be named by an approval request, like
+// the kinds in resourcePaths.
+var singletonKinds = map[resource.Kind]bool{
+	resource.KindHeartbeat: true,
 }
 
 // actionPath is kind's action namespace, from resourcePaths or
@@ -225,6 +244,7 @@ func routeTable() map[string]rule {
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
 	}
+	maps.Copy(t, alertingRoutes())
 	for kind, path := range resourcePaths {
 		t["POST /v1/"+path] = rule{action: action(kind, "write"), target: targetParent, kind: kind}
 		t["GET /v1/"+path] = rule{list: true, action: action(kind, "read"), kind: kind}
@@ -242,7 +262,45 @@ func routeTable() map[string]rule {
 	for _, route := range []string{"POST /v1/" + pi, "PUT /v1/" + pi + "/{id}"} {
 		t[route] = rule{action: action(resource.KindProviderInstance, "write"), target: targetRoot, kind: resource.KindProviderInstance}
 	}
+	// SMTP servers are platform-only (their validation refuses an owner),
+	// so writing one is decided at "/" whatever the body names, as for a
+	// ProviderInstance.
+	smtp := resourcePaths[resource.KindSMTPServer]
+	for _, route := range []string{"POST /v1/" + smtp, "PUT /v1/" + smtp + "/{id}"} {
+		t[route] = rule{action: action(resource.KindSMTPServer, "write"), target: targetRoot, kind: resource.KindSMTPServer}
+	}
 	return t
+}
+
+// alertingRoutes are spec 024's routes beyond the generic CRUD on
+// alertrules, notificationchannels and smtpservers (plan decisions 9, 12
+// and 15). Writing a rule also needs read on each channel it names, and
+// a channel's allowances need ActionAllowPrivateDestination: both are
+// checked by the handlers (alerting_authz.go), which know the body.
+func alertingRoutes() map[string]rule {
+	rules, alerts := resource.KindAlertRule, resource.KindAlert
+	channels, hb := resource.KindNotificationChannel, resource.KindHeartbeat
+	return map[string]rule{
+		// Silencing changes a rule's status, so both directions are
+		// POSTs: a DELETE route is a delete, with its Approval.
+		"POST /v1/alertrules/{id}/silence":   {action: policy.Action{Name: policy.ActionAlertRuleSilence}, target: targetResource, kind: rules},
+		"POST /v1/alertrules/{id}/unsilence": {action: policy.Action{Name: policy.ActionAlertRuleSilence}, target: targetResource, kind: rules},
+
+		// Alerts: lists are filtered to what the caller may read, Alert by
+		// Alert (each inherits from its rule).
+		"GET /v1/alerts":                   {list: true, action: action(alerts, "read"), kind: alerts},
+		"GET /v1/alerts/summary":           {list: true, action: action(alerts, "read"), kind: alerts},
+		"GET /v1/alerts/{id}":              {action: action(alerts, "read"), target: targetResource, kind: alerts},
+		"POST /v1/alerts/{id}/acknowledge": {action: policy.Action{Name: policy.ActionAlertAcknowledge}, target: targetResource, kind: alerts},
+
+		"POST /v1/notificationchannels/{id}/test": {action: policy.Action{Name: policy.ActionChannelTest}, target: targetResource, kind: channels},
+
+		// The heartbeat, at "/" only.
+		"GET /v1/heartbeat":       {action: action(hb, "read"), target: targetRoot, kind: hb},
+		"PUT /v1/heartbeat":       {action: action(hb, "write"), target: targetRoot, kind: hb},
+		"DELETE /v1/heartbeat":    {action: action(hb, "delete"), target: targetSingleton, kind: hb},
+		"POST /v1/heartbeat/test": {action: action(hb, "write"), target: targetRoot, kind: hb},
+	}
 }
 
 // authorizer decides every /v1 request against the policy engine.
@@ -255,6 +313,8 @@ type authorizer struct {
 	// whether a resource is still there (an approval outlives its target).
 	approvals approvalReader
 	exists    func(ctx context.Context, kind resource.Kind, id string) (bool, error)
+	// singleton finds a singleton kind's one resource (targetSingleton).
+	singleton func(ctx context.Context, kind resource.Kind) (id string, ok bool, err error)
 }
 
 // approvalReader reads one approval.
@@ -273,8 +333,10 @@ type ownership interface {
 // dbForAudit writes the audit row of a refused mutation.
 type dbForAudit func(ctx context.Context, kind resource.Kind, resourceID, decision string) error
 
-func newAuthorizer(engine *policy.Engine, tree ownership, recordDenied dbForAudit, approvals approvalReader, exists func(ctx context.Context, kind resource.Kind, id string) (bool, error)) *authorizer {
-	return &authorizer{engine: engine, tree: tree, db: recordDenied, table: routeTable(), approvals: approvals, exists: exists}
+func newAuthorizer(engine *policy.Engine, tree ownership, recordDenied dbForAudit, approvals approvalReader,
+	exists func(ctx context.Context, kind resource.Kind, id string) (bool, error),
+	singleton func(ctx context.Context, kind resource.Kind) (string, bool, error)) *authorizer {
+	return &authorizer{engine: engine, tree: tree, db: recordDenied, table: routeTable(), approvals: approvals, exists: exists, singleton: singleton}
 }
 
 // authzMux registers routes on mux wrapped in their authorization check.
@@ -487,6 +549,22 @@ func (a *authorizer) checks(ctx context.Context, r *http.Request, ru rule) ([]ch
 	switch ru.target {
 	case targetRoot:
 		return []check{{ru.action, resource.RootScope}}, "", nil
+	case targetSingleton:
+		sid, ok, err := a.singleton(ctx, ru.kind)
+		if err != nil {
+			return nil, "", err
+		}
+		if !ok {
+			// Nothing to delete: decided at "/", and the handler answers
+			// 404 to whoever may delete it.
+			return []check{{ru.action, resource.RootScope}}, "", nil
+		}
+		out, err := a.deleteChecks(ctx, resource.Scope{Kind: ru.kind, ID: sid}, false)
+		if err != nil {
+			return nil, "", err
+		}
+		out[0].action = ru.action
+		return out, sid, nil
 	case targetGraph:
 		kind := resource.Kind(r.PathValue("kind"))
 		if _, ok := actionPath(kind); !ok {
@@ -673,7 +751,7 @@ func approvalBodyAction(r *http.Request) (resource.ApprovalAction, error) {
 	if err := resource.ValidateApprovalSpec(spec); err != nil {
 		return resource.ApprovalAction{}, &badBody{err}
 	}
-	if _, ok := resourcePaths[spec.Action.Target.Kind]; !ok {
+	if _, ok := resourcePaths[spec.Action.Target.Kind]; !ok && !singletonKinds[spec.Action.Target.Kind] {
 		return resource.ApprovalAction{}, &badBody{fmt.Errorf("%w: action.target.kind: %q can't be requested; only the kinds the API serves can",
 			resource.ErrValidation, spec.Action.Target.Kind)}
 	}

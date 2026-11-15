@@ -520,6 +520,11 @@ release's.
    - **Using channels:** writing a rule needs `notificationChannels/read`
      on each channel it names. So a Contributor in Project A can't route
      alerts to Project B's channel.
+   - **A channel's Secrets** (bot token, URL, signing key) need
+     `serendip/secrets/value/read` where they're newly named, as a
+     build's credential does (amended in T003). An email channel's SMTP
+     server needs nothing: SMTP servers are platform relays. Changing
+     where a channel with an allowance sends needs the allowance action.
    - **Platform `default` channels** can be named by any principal who
      can write a rule. Their settings are shown only to readers at `/`;
      everyone else sees "platform channel".
@@ -550,7 +555,9 @@ release's.
     - **Rules:**
       - the generic CRUD on `/v1/alertrules`;
       - `POST /v1/alertrules/{id}/silence` (`until`, `reason`), and
-        `DELETE …/silence`.
+        `POST /v1/alertrules/{id}/unsilence` (amended in T003: a DELETE
+        route is a delete, with its Approval, and unsilencing deletes
+        nothing).
     - **Alerts:**
       - `GET /v1/alerts`, filtered by `componentId`, `applicationId`,
         `environmentId`, `state` or `severity`;

@@ -46,6 +46,26 @@ const (
 	ActionObservabilityRead = "serendip/observability/read"
 )
 
+// Alerting actions beyond read, write and delete (specs/024-alerts plan
+// decision 9). The namespaces follow the API's paths, as every action's
+// does: serendip/alertrules/*, serendip/alerts/*,
+// serendip/notificationchannels/*, serendip/smtpservers/* and
+// serendip/heartbeat/*.
+const (
+	// ActionAlertRuleSilence silences and unsilences a rule.
+	ActionAlertRuleSilence = "serendip/alertrules/silence/action"
+	// ActionAlertAcknowledge acknowledges an Alert. It's a write, not a
+	// delete, so an agent needs no Approval for it.
+	ActionAlertAcknowledge = "serendip/alerts/acknowledge/action"
+	// ActionChannelTest sends a channel's test message.
+	ActionChannelTest = "serendip/notificationchannels/test/action"
+	// ActionAllowPrivateDestination sets a channel's (or the heartbeat's)
+	// allowance to reach a private address or to use plain HTTP. It's in
+	// Contributor's NotActions, so only an Owner holds it: the allowance
+	// lifts the check that keeps notifications off internal services.
+	ActionAllowPrivateDestination = "serendip/notificationchannels/allowPrivateDestination/action"
+)
+
 // builtInRoles mirror Azure's built-in roles of the same names and meaning
 // (spec.md "Built-in roles").
 var builtInRoles = map[string]resource.RoleDefinitionSpec{
@@ -56,10 +76,10 @@ var builtInRoles = map[string]resource.RoleDefinitionSpec{
 	},
 	ContributorRoleID: {
 		RoleName:    "Contributor",
-		Description: "Create, change and delete resources at the scope. Can't assign roles or read Secret values.",
+		Description: "Create, change and delete resources at the scope. Can't assign roles, read Secret values or let a notification channel reach a private address.",
 		Permissions: []resource.Permission{{
 			Actions:    []string{"*"},
-			NotActions: []string{"serendip/authorization/*/write", "serendip/authorization/*/delete"},
+			NotActions: []string{"serendip/authorization/*/write", "serendip/authorization/*/delete", ActionAllowPrivateDestination},
 		}},
 	},
 	ReaderRoleID: {
