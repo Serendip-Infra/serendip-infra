@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import type { AlertSummary } from "../api/types";
+import { bellCounts, bellLabel, severityWord } from "../lib/alerts";
 import { Link } from "../lib/router";
 import { Icon } from "./Icon";
 
@@ -9,6 +11,7 @@ const nav: Array<{ label: string; to?: string }> = [
   { label: "Approvals", to: "/approvals" },
   { label: "Platform", to: "/platform" },
   { label: "Packages", to: "/packages" },
+  { label: "Settings", to: "/settings/notifications" },
   // Shown so the shape of the product is honest, never as a working link
   // (constitution 6, spec 016 "labelled, not mocked").
   { label: "Volumes" },
@@ -24,6 +27,7 @@ export function Shell({
   onSignOut,
   banner,
   waiting,
+  alerts,
   children,
 }: {
   path: string;
@@ -31,6 +35,8 @@ export function Shell({
   onSignOut?: () => void;
   banner?: ReactNode;
   waiting?: string | undefined;
+  /** The caller's firing Alerts, for the top bar's bell; undefined while unknown. */
+  alerts?: AlertSummary | undefined;
   children: ReactNode;
 }) {
   const section = path === "/" ? "/" : "/" + (path.split("/")[1] ?? "");
@@ -68,12 +74,31 @@ export function Shell({
         )}
       </nav>
       <div className="main">
+        <div className="topbar">
+          <Bell summary={alerts} current={section === "/alerts"} />
+        </div>
         {banner}
         <main id="main" className="content" tabIndex={-1}>
           {children}
         </main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Bell: firing Alerts by severity, in words, linking to the Alerts page
+ * (spec 024 plan decision 14). Counts only what the caller can read.
+ */
+export function Bell({ summary, current }: { summary: AlertSummary | undefined; current: boolean }) {
+  const counts = bellCounts(summary);
+  return (
+    <Link to="/alerts?state=firing" className="bell" aria-current={current ? "page" : undefined} aria-label={summary ? `Alerts: ${bellLabel(summary)}` : "Alerts"}>
+      <Icon name="bell" size={16} />
+      <span aria-hidden="true">
+        {!summary ? "Alerts" : counts.length === 0 ? "No alerts firing" : counts.map((c) => `${c.count} ${severityWord[c.severity].toLowerCase()}`).join(" · ")}
+      </span>
+    </Link>
   );
 }
 

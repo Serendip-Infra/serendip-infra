@@ -30,6 +30,7 @@ type fakeNotifier struct {
 	sent   []notify.Message
 	beats  int
 	failed *notify.SendError
+	tokens []string
 }
 
 func newFakeNotifier() *fakeNotifier {
@@ -79,6 +80,14 @@ func (f *fakeNotifier) Beat(ctx context.Context, h notify.Health, spec resource.
 	}
 	f.beats++
 	return notify.HeartbeatResult{Sent: true}
+}
+
+// FindTelegramChats answers one chat, recording the token it was given.
+func (f *fakeNotifier) FindTelegramChats(_ context.Context, token string) ([]notify.TelegramChat, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tokens = append(f.tokens, token)
+	return []notify.TelegramChat{{ID: "-1001234", Type: "group", Title: "Ops"}}, nil
 }
 
 func noSecrets(context.Context, string) (string, error) {
@@ -315,4 +324,36 @@ func TestNotifications_WithoutASender(t *testing.T) {
 	w := newAuthzWorld(t, func(w *authzWorld) {})
 	id := w.mkAs("key-ci", "/v1/notificationchannels", webhookChannel("c", w.id["projA"], false, nil))
 	w.expect("key-ci", http.MethodPost, "/v1/notificationchannels/"+id+"/test", nil, http.StatusServiceUnavailable)
+}
+
+// The console's Find chat step reads the bot token for the caller, so it
+// needs the Secret's value read; the answer names chats, never the token.
+func TestNotifications_FindTelegramChats(t *testing.T) {
+	const token = "123456:AAH-very-secret-bot-token"
+	n := newFakeNotifier()
+	read := func(context.Context, string) (string, error) { return token, nil }
+	w := newAuthzWorld(t, func(w *authzWorld) {
+		w.grant("tok-admin", policy.OwnerRoleID, "/")
+		w.grant("tok-admin", policy.SecretsOfficerRoleID, "secret")
+		w.grant("tok-owner", policy.OwnerRoleID, "/")
+	}, api.WithNotifier(n, read))
+	path := "/v1/secrets/" + w.id["secret"] + "/telegramchats"
+	// An Owner without the data action can't have the token read for them.
+	w.expect("tok-owner", http.MethodPost, path, nil, http.StatusForbidden)
+	w.expect("tok-admin", http.MethodPost, path, nil, http.StatusConflict)
+	w.expect("tok-admin", http.MethodPost, "/v1/secrets/"+w.id["secret"]+"/value", map[string]any{"data": map[string]any{"value": token}}, http.StatusOK)
+	got := w.do("tok-admin", http.MethodPost, path, nil)
+	if got.Code != http.StatusOK {
+		t.Fatalf("find chats: %d %s", got.Code, got.Body)
+	}
+	if strings.Contains(got.Body.String(), "AAH-") {
+		t.Errorf("the answer shows the bot token: %s", got.Body)
+	}
+	chats := jsonDoc(t, got.Body.Bytes())["chats"].([]any)
+	if len(chats) != 1 || chats[0].(map[string]any)["id"] != "-1001234" {
+		t.Errorf("chats = %v", chats)
+	}
+	if len(n.tokens) != 1 || n.tokens[0] != token {
+		t.Errorf("tokens passed to the sender = %q", n.tokens)
+	}
 }

@@ -652,6 +652,12 @@ release's.
         Brevo;
       - the heartbeat, for Owners, with its last result.
     - **The Packages page:** the removal wording, extended (spec IN 13).
+    - **Amended in T009:** "Find chat" is `POST
+      /v1/secrets/{id}/telegramchats`, decided by the Secret's
+      `serendip/secrets/value/read` (the server reads the token for the
+      caller) and answering chats only; CLI `channels find-chat`, off MCP.
+      Acknowledge and silence are checked at the rule's scope, which an
+      Alert inherits.
     - **Every view** shows its "Same request through the API".
 
 15. **The heartbeat** (spec IN 12).

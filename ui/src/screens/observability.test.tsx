@@ -171,12 +171,13 @@ describe("observability tab", () => {
     expect(calls.some((u) => u.includes("/logs/search"))).toBe(false);
   });
 
-  it("says traces and alerts aren't available yet, without mocking them", async () => {
+  it("says traces aren't available yet, without mocking them, beside the Alerts section", async () => {
     goTo("/applications/app1/components/c1?tab=observability");
     mockFetch(base, { "/v1/deployments/d1/metrics": () => json(200, metrics), "/v1/deployments/d1/logs/search": () => json(200, { lines: [] }) });
     render(<App />);
-    const later = (await screen.findByRole("heading", { name: "Traces and alerts" })).closest("section")!;
+    const later = (await screen.findByRole("heading", { name: "Traces" })).closest("section")!;
     expect(within(later).getByText("Not available yet")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Alerts" })).toBeTruthy();
   });
 });
 

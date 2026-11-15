@@ -12,16 +12,27 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T008 done)
+Last updated: 2026-11-15 (spec 024: T001–T009 done)
 
 ## Current phase
 
 **Spec 024 (alert rules and notification channels; epic #65): plan
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
-loop), T006 (condition queries, built-in disk rule), T007 (the API) and
-T008 (CLI and MCP) done and committed on local branch `spec-024`.**
+loop), T006 (condition queries, built-in disk rule), T007 (the API),
+T008 (CLI and MCP) and T009 (the console) done and committed on local
+branch `spec-024`.**
 Nothing pushed.
+- **T009:** `ui/src/screens/Alerts.tsx` (Component and Application
+  sections, `/alerts`, `/alerts/{id}`), `Notifications.tsx`
+  (`/settings/notifications`), `lib/alerts.ts`, a top bar with the bell
+  in `Shell`, and Settings in the rail. **New route** `POST
+  /v1/secrets/{id}/telegramchats` for "Find chat" (Secret value read;
+  CLI `channels find-chat`; off MCP). Acknowledge is checked at the
+  rule's scope (the permissions route refuses `Alert/…`). Rule deletes
+  cascade to their Alerts. Package removal wording extended. Gzipped JS
+  104.1 → 118.7 KiB. The screens haven't been seen in a browser yet:
+  T010 does that.
 - **T008:** the commands and tools came from T007's catalogue; T008
   added `Param.MCPMax` (an MCP-only bound and default: `alerts_list`
   answers at most 50), Alert state in CLI tables,
@@ -129,8 +140,8 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 (its
-      commit, after `92ac3a1`) (hashes change
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 (its
+      commit, after `e107b49`) (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over
       `main..spec-024`, or `git rebase --exec`.
@@ -171,7 +182,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T009 (the console), then T010 (live check on serendip-t018).
+- **Next:** T010 (live check on serendip-t018, through the console in headless Chrome, the CLI and MCP).
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").

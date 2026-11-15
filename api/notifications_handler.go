@@ -28,6 +28,7 @@ type Notifier interface {
 	Beat(ctx context.Context, health notify.Health, spec resource.HeartbeatSpec, secrets notify.SecretReader, force bool) notify.HeartbeatResult
 	CheckURL(ctx context.Context, rawURL string, allowPrivate, plainHTTP bool) error
 	CheckHost(ctx context.Context, host string, allowPrivate bool) error
+	FindTelegramChats(ctx context.Context, token string) ([]notify.TelegramChat, error)
 }
 
 // WithNotifier lets the API test channels and the heartbeat, and check a
@@ -325,6 +326,55 @@ func (h *notificationsHandler) recordTest(ctx context.Context, id string, at tim
 	}
 }
 
+// findTelegramChats is the console's "Find chat" step (plan decision 14):
+// one getUpdates call with the bot token held by Secret {id}, answering
+// the chats the bot has seen a message from. The route's rule is the
+// Secret's value read, since the token is read for the caller; the token
+// itself is never answered.
+func (h *notificationsHandler) findTelegramChats(w http.ResponseWriter, r *http.Request) {
+	reqID := audit.RequestIDFrom(r.Context())
+	if h.notifier == nil || h.read == nil {
+		WriteProblem(w, http.StatusServiceUnavailable, "sending not configured", "this server has no notification sender (no cluster is configured)", reqID)
+		return
+	}
+	id := r.PathValue("id")
+	set, err := h.secretSet(r.Context(), id)
+	if err != nil {
+		writeStoreErr(w, r, err)
+		return
+	}
+	if !set {
+		if _, err := h.secrets.Get(r.Context(), id); err != nil {
+			writeStoreErr(w, r, err)
+			return
+		}
+		WriteProblem(w, http.StatusConflict, "no value", "the Secret has no value yet: write the bot token to it first", reqID)
+		return
+	}
+	if !h.sendSlot(w, r) {
+		return
+	}
+	defer func() { <-h.sending }()
+	ctx, cancel := context.WithTimeout(r.Context(), testTimeout)
+	defer cancel()
+	token, err := h.read(ctx, id)
+	if err != nil {
+		log.Printf("api: read Secret %s for Find chat (request %s): %v", id, reqID, err)
+		WriteProblem(w, http.StatusServiceUnavailable, "secret unavailable", "the Secret's value couldn't be read", reqID)
+		return
+	}
+	chats, err := h.notifier.FindTelegramChats(ctx, token)
+	if err != nil {
+		// core/notify's error, cleaned down to the host and Telegram's reason.
+		WriteProblem(w, http.StatusBadGateway, "Telegram refused", err.Error(), reqID)
+		return
+	}
+	if chats == nil {
+		chats = []notify.TelegramChat{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chats": chats})
+}
+
 // answerSend answers a test send: 200 when sent, 422 when the address
 // check refused the destination, 502 when the receiver failed. The error
 // is core/notify's, cleaned down to the host.
@@ -560,6 +610,7 @@ func (h *notificationsHandler) registerChannels(mux Mux, rh *ResourceHandler[res
 	mux.HandleFunc("PUT /v1/notificationchannels/{id}", rh.Update)
 	mux.HandleFunc("DELETE /v1/notificationchannels/{id}", rh.Delete)
 	mux.HandleFunc("POST /v1/notificationchannels/{id}/test", h.testChannel)
+	mux.HandleFunc("POST /v1/secrets/{id}/telegramchats", h.findTelegramChats)
 }
 
 func (h *notificationsHandler) registerHeartbeat(mux Mux) {

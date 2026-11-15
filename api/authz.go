@@ -294,6 +294,9 @@ func alertingRoutes() map[string]rule {
 		"POST /v1/alerts/{id}/acknowledge": {action: policy.Action{Name: policy.ActionAlertAcknowledge}, target: targetResource, kind: alerts},
 
 		"POST /v1/notificationchannels/{id}/test": {action: policy.Action{Name: policy.ActionChannelTest}, target: targetResource, kind: channels},
+		// Find chat reads the bot token for the caller, so it needs the
+		// Secret's value read, as naming it in a channel does.
+		"POST /v1/secrets/{id}/telegramchats": {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
 
 		// The heartbeat, at "/" only.
 		"GET /v1/heartbeat":       {action: action(hb, "read"), target: targetRoot, kind: hb},

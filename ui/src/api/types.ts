@@ -524,3 +524,143 @@ export interface Metrics {
   to: string;
   summary: Partial<Record<"cpu" | "memory", SeriesSummary>>;
 }
+
+// --- Alerting (spec 024): core/resource/alerting.go ---
+
+export type Severity = "info" | "warning" | "critical";
+
+export interface MetricCondition {
+  metric: "cpu" | "memory";
+  as: "value" | "percentOfRequest" | "percentOfLimit";
+  above: number;
+  forMinutes: number;
+}
+export interface CountCondition {
+  above: number;
+  windowMinutes: number;
+}
+export interface AlertCondition {
+  type: "metric" | "restarts" | "logMatch" | "packageDisk";
+  metric?: MetricCondition;
+  restarts?: CountCondition;
+  logMatch?: CountCondition & { text: string };
+  packageDisk?: { percentOfBudget: number };
+}
+
+export interface AlertRuleSpec {
+  environmentId?: string;
+  condition: AlertCondition;
+  severity: Severity;
+  summary: string;
+  channelIds?: string[];
+  intervalMinutes?: number;
+  enabled?: boolean;
+  builtIn?: boolean;
+}
+export interface AlertSilence {
+  by: string;
+  reason: string;
+  until: string;
+}
+export interface AlertRuleStatus extends BaseStatus {
+  active: boolean;
+  activeReason?: string;
+  lastEvaluated?: string;
+  lastValue?: number;
+  silence?: AlertSilence;
+}
+export type AlertRule = Resource<AlertRuleSpec, AlertRuleStatus>;
+
+export interface AlertSpec {
+  ruleId: string;
+  componentId?: string;
+  environmentId?: string;
+  severity: Severity;
+  summary: string;
+  fingerprint: string;
+}
+export interface AlertDelivery {
+  channelId: string;
+  event: "firing" | "resolved";
+  state: "pending" | "sent" | "failed" | "silenced" | "belowMinSeverity";
+  attempts?: number;
+  lastError?: string;
+  at: string;
+  nextAttempt?: string;
+}
+export interface AlertStatus extends BaseStatus {
+  state: "firing" | "resolved";
+  startedAt: string;
+  resolvedAt?: string;
+  resolvedReason?: string;
+  value: number;
+  threshold: number;
+  acknowledged?: { by: string; at: string };
+  deliveries?: AlertDelivery[];
+}
+export type Alert = Resource<AlertSpec, AlertStatus>;
+
+/** GET /v1/alerts/summary: the caller's firing Alerts. */
+export interface AlertSummary {
+  firing: Partial<Record<Severity, number>>;
+  total: number;
+  unacknowledged: number;
+}
+
+export type ChannelType = "telegram" | "email" | "webhook";
+export interface Allowance {
+  reason: string;
+}
+export interface NotificationChannelSpec {
+  type: ChannelType;
+  telegram?: { chatId: string; botTokenSecretId: string };
+  email?: { smtpServerId: string; to: string[] };
+  webhook?: { url?: string; urlSecretId?: string; host?: string; signingSecretId?: string };
+  minSeverity?: Severity;
+  default?: boolean;
+  allowPrivateDestination?: Allowance;
+  allowPlainHTTP?: Allowance;
+}
+export interface NotificationChannelStatus extends BaseStatus {
+  lastTest?: string;
+  lastTestResult?: string;
+}
+/** A channel as the API shows it: each Secret only as whether it holds a value. */
+export type NotificationChannel = Resource<NotificationChannelSpec, NotificationChannelStatus> & { secretSet?: Record<string, boolean> };
+/** A platform default channel shown below "/": its settings hidden. */
+export interface PlatformChannel {
+  metadata: Metadata;
+  spec: { type: ChannelType; minSeverity?: Severity; default: boolean };
+  platformChannel: true;
+}
+export type ChannelListItem = NotificationChannel | PlatformChannel;
+
+export interface SMTPServerSpec {
+  host: string;
+  port: number;
+  tls: "starttls" | "implicit";
+  from: string;
+  usernameSecretId: string;
+  passwordSecretId: string;
+}
+export type SMTPServer = Resource<SMTPServerSpec, BaseStatus> & { secretSet?: Record<string, boolean> };
+
+export interface HeartbeatSpec {
+  urlSecretId: string;
+  host: string;
+  method?: "GET" | "POST";
+  intervalMinutes?: number;
+  allowPrivateDestination?: Allowance;
+}
+export interface HeartbeatStatus extends BaseStatus {
+  lastSent?: string;
+  lastResult?: string;
+}
+export type Heartbeat = Resource<HeartbeatSpec, HeartbeatStatus> & { secretSet?: Record<string, boolean> };
+
+/** POST /v1/secrets/{id}/telegramchats: chats the bot has seen a message from. */
+export interface TelegramChat {
+  id: string;
+  type: string;
+  title: string;
+}

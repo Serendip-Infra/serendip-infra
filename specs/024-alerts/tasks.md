@@ -462,7 +462,46 @@ Dependency sketch:
   each command's request and usage errors, the MCP caps, and a test that
   a channel's token never appears in CLI or MCP output.
 
-## T009 — The console [P]
+## T009 — The console [P] ✅ 2026-11-15
+
+> **Done as:**
+> - **Screens:** `ui/src/screens/Alerts.tsx` (a Component's Alerts
+>   section on the Observability tab, an Application's firing Alerts and
+>   own rules, the Alerts page at `/alerts` with state and severity
+>   filters and the packages' built-in rules, and an Alert's page at
+>   `/alerts/{id}`, which the notifications' "View in console" opens,
+>   with each delivery's state in words) and
+>   `ui/src/screens/Notifications.tsx` (Settings › Notifications at
+>   `/settings/notifications`: channels with a form per type, test
+>   sends, SMTP servers with the Gmail and Brevo notes, and the
+>   heartbeat with its last result). Words in `ui/src/lib/alerts.ts`.
+> - **The top bar** is new in `Shell`: a bell with the firing counts in
+>   words (`GET /v1/alerts/summary`, every 30 s). The rail gains
+>   Settings. The Observability tab's "not available yet" is now Traces
+>   only.
+> - **New route, `POST /v1/secrets/{id}/telegramchats`** (plan decision
+>   14 amended): "Find chat" needs the server to read the bot token, and
+>   T007 had no route for `notify.FindTelegramChats`. Its rule is the
+>   Secret's `serendip/secrets/value/read` data action, as naming the
+>   token in a channel needs; it answers chats only. CLI `channels
+>   find-chat`; off MCP (`notifySettings`). Tests in
+>   `api/notifications_handler_test.go` and `cmd/serendip/alerts_test.go`.
+> - **Acknowledge is checked at the Alert's rule:** the permissions
+>   route takes only kinds in `resourcePaths`, which `Alert` isn't, and
+>   an Alert inherits its rule's access.
+> - **Rule deletes cascade** (`?cascade=true`): a rule owns its Alerts,
+>   so the confirm lists them. `DeleteConfirm` takes a fixed `path` for
+>   the heartbeat singleton.
+> - **The package's removal wording** (`cmd/serendipd/packages.go`)
+>   now says rules go inactive, open Alerts resolve as "package removed",
+>   the built-in disk rule goes and channels stay (spec IN 13).
+> - **Verified:** `pnpm typecheck`, `pnpm test` (171 tests, 15 new in
+>   `ui/src/screens/alerts.test.tsx`: the bell's counts, ack, silence,
+>   the rule form, why a notification wasn't sent, Owner-only
+>   allowances, Secrets shown only as set or not with no `/value` call,
+>   Find chat) and `pnpm build` pass. **Gzipped JS: 104.1 → 118.7 KiB
+>   (+14.6 KiB; budget 160).** `go test ./api/... ./cmd/...` pass. The
+>   screens are seen live in T010.
 
 - **Do:** plan decision 14: alerts in the Observability tab, the
   Application view, the bell and the Alerts page, and Settings ›

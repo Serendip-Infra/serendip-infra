@@ -17,6 +17,10 @@ const kindPaths: Record<string, string> = {
   Volume: "volumes",
   Deployment: "deployments",
   ProviderInstance: "provider-instances",
+  AlertRule: "alertrules",
+  Alert: "alerts",
+  NotificationChannel: "notificationchannels",
+  SMTPServer: "smtpservers",
 };
 
 export const resourcePath = (kind: string, id: string) => `/v1/${kindPaths[kind] ?? kind.toLowerCase()}/${encodeURIComponent(id)}`;
@@ -99,6 +103,7 @@ export function DeleteConfirm({
   cascade,
   noun = target.kind.toLowerCase(),
   note,
+  path: fixedPath,
   onDeleted,
   onCancel,
 }: {
@@ -108,13 +113,15 @@ export function DeleteConfirm({
   noun?: string;
   /** What else the delete takes with it, such as stored data. */
   note?: ReactNode;
+  /** The DELETE's path, for a singleton with no {id} in it (the heartbeat). */
+  path?: string;
   onDeleted: (approvalId: string | undefined) => void;
   onCancel: () => void;
 }) {
   const removed = useRemoved(target, cascade);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | NetworkError>();
-  const path = resourcePath(target.kind, target.id) + (cascade ? "?cascade=true" : "");
+  const path = fixedPath ?? resourcePath(target.kind, target.id) + (cascade ? "?cascade=true" : "");
   const secrets = (removed.refs ?? []).filter((r) => r.kind === "Secret").length;
 
   async function remove() {

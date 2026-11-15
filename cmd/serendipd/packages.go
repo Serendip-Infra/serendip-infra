@@ -26,10 +26,13 @@ const buildsRemoval = "Build history stays, but run logs and the stored images b
 	"Components running a built image keep running, but can't be rebuilt, or started on a node that doesn't have the image, until the package is back."
 
 // observabilityRemoval is what removing the observability package loses
-// (specs/023-observability plan decision 13), shown before the request to
+// (specs/023-observability plan decision 13, and specs/024-alerts spec
+// IN 13 for alerting), shown before the request to
 // remove it.
 const observabilityRemoval = "All stored logs and metrics history are deleted. Recent logs and events on the Runtime tab keep working. " +
-	"Finished builds' logs can no longer be read once their pods are gone."
+	"Finished builds' logs can no longer be read once their pods are gone. " +
+	"Alert rules stop being evaluated and show as inactive, open Alerts are resolved as \"package removed\", " +
+	"and the built-in disk rule goes with the package. Notification channels stay."
 
 // observabilityDiskRule is the observability package's built-in rule
 // (specs/024-alerts plan decision 4): stored data at 85% of its disk

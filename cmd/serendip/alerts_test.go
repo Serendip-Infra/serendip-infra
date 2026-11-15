@@ -48,6 +48,9 @@ func (*fakeNotifier) Beat(context.Context, notify.Health, resource.HeartbeatSpec
 }
 func (*fakeNotifier) CheckURL(context.Context, string, bool, bool) error { return nil }
 func (*fakeNotifier) CheckHost(context.Context, string, bool) error      { return nil }
+func (*fakeNotifier) FindTelegramChats(context.Context, string) ([]notify.TelegramChat, error) {
+	return []notify.TelegramChat{{ID: "42", Type: "private", Title: "Ops"}}, nil
+}
 
 type alertWorld struct {
 	*world
@@ -182,6 +185,7 @@ func TestAlertingCommands(t *testing.T) {
 		{[]string{"channels", "get", "ch1"}, "GET " + u + "/v1/notificationchannels/ch1"},
 		{[]string{"channels", "delete", "ch1"}, "DELETE " + u + "/v1/notificationchannels/ch1"},
 		{[]string{"channels", "test", "ch1"}, "POST " + u + "/v1/notificationchannels/ch1/test"},
+		{[]string{"channels", "find-chat", "s1"}, "POST " + u + "/v1/secrets/s1/telegramchats"},
 		{[]string{"smtp", "list"}, "GET " + u + "/v1/smtpservers"},
 		{[]string{"smtp", "get", "s1"}, "GET " + u + "/v1/smtpservers/s1"},
 		{[]string{"smtp", "delete", "s1"}, "DELETE " + u + "/v1/smtpservers/s1"},

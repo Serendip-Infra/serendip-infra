@@ -299,6 +299,7 @@ tools.
 | `serendip channels get <id>` | — | `GET /v1/notificationchannels/{id}` | Get one NotificationChannel |
 | `serendip channels list` | — | `GET /v1/notificationchannels` | List notificationchannels the caller may read |
 | `serendip channels test <id>` | — | `POST /v1/notificationchannels/{id}/test` | Send a test notification to a channel now, whatever its minimum severity, and record the result on it |
+| `serendip channels find-chat <id>` | — | `POST /v1/secrets/{id}/telegramchats` | List the Telegram chats a bot (its token in Secret `<id>`) has seen a message from, to find a channel's `chatId`. Send the bot a message first. Needs the Secret's value read |
 | `serendip channels update <id>` | — | `PUT /v1/notificationchannels/{id}` | Replace a NotificationChannel's spec (send the version read, for a conflict check) |
 | `serendip clusters create` | — | `POST /v1/clusters` | Create a Cluster |
 | `serendip clusters delete <id>` | — | `DELETE /v1/clusters/{id}` | Delete a Cluster. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
