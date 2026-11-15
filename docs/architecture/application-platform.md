@@ -347,8 +347,15 @@ Read live through `serendipd`'s own Kubernetes client (ADR 0019):
   - **Platform-wide:** writes are decided at `/`, and no owner is allowed.
   - **Readiness** is in `GET /v1/readiness`.
   - **Removal** goes through an Approval.
-  - **The builds package has an installer** since spec 022 ("Builds
-    (spec 022)" below); the observability package gets one in spec 023.
+  - **Both packages have installers:** builds since spec 022 ("Builds
+    (spec 022)" below), observability since spec 023 ("Observability
+    (spec 023)" below).
+  - **Package readiness reasons** in `GET /v1/readiness`
+    (`core/reconcile/providerinstance.go`):
+    `NotInstalled`, `Installing`, `Ready`, `InstallFailed`,
+    `InvalidSpec`, `Unavailable`, `Duplicate`, and `Removing` (spec 023 T013), set from
+    the moment a removal starts so nothing queries a package being torn
+    down.
 
 ### Verification (spec 020)
 
@@ -497,6 +504,114 @@ outlives a 10 s reconcile (RP-045):
   follow-up holds digest deploys and registry auth (RP-041), a build
   NetworkPolicy (RP-049), step limits (RP-052) and user namespaces
   (RP-038).
+
+## Observability (spec 023)
+
+The optional `observability` capability, installed as a package (the
+`openchoreo-observability-plane` catalogue entry): stored logs searchable
+past a pod's life, CPU and memory history per Deployment, and finished
+builds' logs after their pods are gone. ADR 0021 records the backend
+choice. Code: `core/reconcile/observability.go` (the interface, no
+product names), `api/observability_handler.go`, `cmd/serendipd/lazy.go`
+(`lazyObservability`) and `packages.go`, and
+`providers/observability/openchoreo/` (pinned versions in its
+`VERSIONS.md`).
+
+### What the package installs
+
+In `openchoreo-observability-plane`, through a background package job:
+
+1. **The observability-plane chart `1.3.1`** with `security.enabled=false`
+   and `gateway.enabled=false`. Its own `observability-plane-ingress`
+   policy admits only pods in the namespace; the installer's checks
+   require it.
+2. **The logs module `observability-logs-openobserve` 0.8.0:**
+   OpenObserve (5 Gi volume, 3-day retention, telemetry off), its logs
+   adapter, and Fluent Bit as a DaemonSet.
+   - **Fluent Bit runs off the host network** (T014, RP-064) on
+     Serendip's copy of the chart's config (`fluent-bit/`,
+     `fluentbit.go`), with pod metadata from the API server (RP-065).
+     So the namespace's policy covers its `:2020` too.
+   - **The admin credentials** are generated once and live only in the
+     `openobserve-admin-credentials` Secret, never in Serendip's store,
+     API or logs.
+   - **`ZO_SSRF_ALLOW_LOOPBACK=true`,** or the chart's in-cluster
+     webhook is refused and the install never finishes (RP-062).
+3. **Plain Prometheus** (`prometheus-community/prometheus` 29.47.2,
+   embedded `prometheus-values.yaml`; 3 Gi, 3 days or 2 GB), then the
+   metrics module `observability-metrics-prometheus` 0.9.3 for its
+   adapter only. No Prometheus Operator, so no CRDs (ADR 0021, RP-056).
+4. **The CA trust copy and `ObservabilityPlane/default`,** hand-built.
+   The `DataPlane` isn't edited: an omitted ref resolves to `default`.
+
+- **The query path:** `serendipd` queries the logs and metrics adapters
+  (not the Observer, whose API needs a token) through the API server's
+  Service proxy with its own credentials. Every query carries the
+  target's OpenChoreo UIDs (project, component, environment; or the
+  workflow run), and lines that aren't the target's are dropped. The
+  adapters have no authentication of their own (RP-054); the scope is
+  resolved from the live objects, so a re-created object hides its
+  predecessor's logs (RP-059).
+- **A cheap resync:** the fingerprint covers the charts and their
+  values, the CR and Fluent Bit's config. While it matches, a few GETs
+  check the pods, the DaemonSet, the CR and the policy, and repair drift.
+- **Measured cost** (`requirements.go`, T012): idle 608 MiB / 21
+  mcores, peak 967 MiB / 372 mcores, disk about 496 MiB a day, kept 3
+  days, budget 8192 MiB (RP-063). `GET /v1/packages` adds `usage`, the
+  volumes' current use from the kubelet (RP-061).
+- **Removal** shows the catalogue's sentence ("All stored logs and
+  metrics history are deleted. …"), goes through an Approval, and reads
+  `Removing` at once. Uninstall deletes the CR, the four releases in
+  reverse, then the namespace (volumes, Secrets, Fluent Bit's config).
+  Left behind: the plane chart's `observabilityalertrules` CRD (RP-066)
+  and Fluent Bit's read-position file on the node (RP-060). The data
+  plane and running Components are untouched, and builds keeps working.
+
+### Routes
+
+| Route | Action |
+|---|---|
+| `GET /v1/deployments/{id}/logs/search?q=&from=&to=&limit=&before=` | `serendip/components/logs/read` (Deployment) |
+| `GET /v1/applications/{id}/logs/search?environment=&...` | `serendip/applications/read`, then logs read per Deployment |
+| `GET /v1/deployments/{id}/metrics?from=&to=[&summary=true]` | `serendip/observability/read` (Deployment) |
+| `GET /v1/builds/{id}/logs` | unchanged; an expired run's logs come from the store (`"stored": true`) |
+
+- **Scoping happens before the query.** An Application's search reads
+  only the Deployments whose logs the caller may read and reports the
+  rest as `omitted: n`, unnamed; none allowed is 403. At most 20 targets
+  (more is 422), one adapter query each, merged newest first.
+- **Paging** is a time cursor (`before`): the oldest line's time and how
+  many lines at that time were returned (RP-058). Lines are capped at
+  500 a page and cut at 16 KiB.
+- **Metrics** are CPU (millicores) and memory (MiB) from cAdvisor, with
+  request and limit; HTTP metrics are "not available" (they'd need
+  request metrics, not installed). Ranges run from 15 minutes to the
+  retention period, at most 300 points a series; `summary=true` adds
+  min, average, max and latest per series and keeps 60 points. The MCP
+  tool always sends it.
+- **Caps:** 3 queries at once per caller and 20 in all, 20 s each.
+  **Not ready** is 503 with `Retry-After`, saying not installed,
+  installing, removing or not ready. Reads aren't audited.
+- **Every route is a CLI command** (`serendip logs search`,
+  `logs search-application`, `metrics`) and an MCP tool. The console
+  has an Observability tab on a Component (charts and a stored-log
+  search), a log search per Environment on an Application, and the disk
+  line on the Packages page (`ui/src/screens/Platform.tsx`).
+
+### Verification (spec 023)
+
+- **In process:** `api/spec023_acceptance_test.go` (criteria 3, 5–8 and
+  11), `cmd/serendip/observability_test.go`, and the provider's tests.
+- **Footprint:** `profiles/edge-1/bench/results/2026-11-14-spec023-simulated-t470/`.
+  No regression without the package against spec 022.
+- **On a real cluster:** `specs/023-observability/verification.md`
+  (`serendip-t018`): install from the console, stored-log search, an
+  Application search with `omitted`, metrics charts, an expired build's
+  stored logs, a Reader's 403 on logs, the adapters timing out from a
+  workload pod, Claude Code through `serendip mcp`, and a clean removal.
+- **Not done** (spec OUT): traces, alerts, HTTP metrics, a remote
+  observability plane, and Serendip-side authentication to the
+  adapters.
 
 ## Deployment foundation (spec 010)
 

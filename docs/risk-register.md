@@ -86,6 +86,9 @@ purpose), **Closed** (fixed).
 | RP-063 | The observability package's disk growth is a 2-hour slope under a synthetic load, extrapolated to a day | Honesty of a reported number | Accepted | Spec 023 T012 |
 | RP-064 | Fluent Bit's monitoring port (:2020, host network) answered any pod on the node: counters, no log content | Security (information) | Fixed (T014) | Spec 023 T013 |
 | RP-065 | Serendip carries a copy of the logs chart's Fluent Bit config, and pod metadata now comes from the API server (not re-measured) | Maintenance; performance | Accepted | Spec 023 T014 |
+| RP-066 | The observability plane chart's `observabilityalertrules` CRD outlives the package's removal | Footprint | Decided | Spec 023 T001 |
+| RP-067 | Stored logs keep what pods print, secrets included, for 3 days | Data exposure | Accepted | Spec 023 plan |
+| RP-068 | A noisy Component can fill the logs volume before retention acts | Availability, capacity | Accepted | Spec 023 plan |
 
 ---
 
@@ -1559,3 +1562,63 @@ The text below is the T013 record.
   `Use_Kubelet` configurable (then drop the copy); and in the post-v1
   full test pass, re-run the T012 package benchmark to confirm the
   footprint.
+
+## RP-066 — The plane chart's alert-rule CRD outlives the package's removal
+
+- **Kind:** footprint. **Status:** Decided, 2026-11-15. **Found:** spec
+  023 T001 (plan "Spike findings" 16).
+- **What:** uninstalling the observability package deletes the
+  `ObservabilityPlane`, the three Helm releases and the namespace, but
+  Helm leaves the plane chart's `observabilityalertrules` CRD. The
+  Prometheus Operator's 10 CRDs, which kept kube-apiserver's memory up
+  after removal (plan 023 decision 3), aren't installed at all (plain Prometheus, ADR 0021).
+- **Why decided:** the CRD is small, and deleting a CRD deletes every
+  object of its kind, which a person's own use could depend on. Same
+  reasoning as RP-039's Argo CRDs.
+- **Revisit:** if spec 024 (alerts) creates objects of this kind, so
+  removal must say what it leaves; or if a re-install with a newer chart
+  finds the old CRD's schema in the way.
+
+## RP-067 — Stored logs keep what pods print, secrets included
+
+- **Kind:** data exposure. **Status:** Accepted, 2026-11-15. **Found:**
+  spec 023 plan (Risks).
+- **What:** with the observability package installed, everything a
+  container prints is kept in OpenObserve for 3 days, including any
+  secret a workload or a build step prints. Live pod logs already showed
+  it, but only while the pod lived.
+- **Mitigation:**
+  - **Stored logs need `serendip/components/logs/read`,** the same action
+    as live logs, which the read-only and access-management roles leave
+    out (`authorization.md`). An Application's search reads only the
+    Deployments the caller may read.
+  - **Bounded:** 3-day retention, and removing the package deletes the
+    store's volume.
+  - **The store itself** is reachable only from its namespace
+    (NetworkPolicy; RP-054), and its admin credentials live only in a
+    cluster Secret.
+- **Residual:** no redaction. A secret printed once is searchable for 3
+  days by anyone holding Log Reader on that Deployment, and in the
+  volume's files on the node.
+- **Revisit:** if a profile needs redaction or a shorter retention for
+  some Projects, or when Fluent Bit filters become configurable per
+  Project.
+
+## RP-068 — A noisy Component can fill the logs volume before retention acts
+
+- **Kind:** availability, capacity. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 023 plan (Risks).
+- **What:** retention drops logs older than 3 days, not by size. A
+  Component logging far beyond the benchmark's load (about 496 MiB a day
+  for five loggers, RP-063) could fill OpenObserve's 5 Gi volume first.
+  Then new logs stop being stored (RP-053's dropped lines) until
+  compaction frees space. Prometheus has a size cap (2 GB of its 3 Gi)
+  as well as its 3 days.
+- **Mitigation:** the volumes are bounded, so the node's disk isn't
+  filled; the package reports current use (`usage` on
+  `GET /v1/packages`, the Packages page) against the stated budget.
+- **Residual:** no alert when use nears the budget (spec 024's alerts),
+  and the reported use lags (RP-061).
+- **Revisit:** with spec 024 (an alert on the package's own disk use), or
+  if a size-based cap for the logs store becomes settable in the logs
+  module.

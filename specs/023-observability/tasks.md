@@ -590,11 +590,11 @@ delete each before the next. Run the keep-awake beside long runs.
 >   makes an unescaped search phrase harmless upstream.
 > - `go test ./...` passes.
 
-## T015 [A] — Docs and close-out
+## T015 [A] — Docs and close-out ✅ 2026-11-15
 
 - **Do:**
   - `application-platform.md` ("Observability (spec 023)"),
-    `provider-model.md` (`Disk`) and `authorization.md
+    `provider-model.md` (`Disk`) and `authorization.md`;
   - the risk register (new RPs: the Observer's auth off, `hostNetwork`
     Fluent Bit, stored secrets in logs, disk, CRDs left behind, time
     cursors);
@@ -603,3 +603,25 @@ delete each before the next. Run the keep-awake beside long runs.
 - **Files:** those docs.
 - **Verify:** the `docs-keeper` reports no drift between the docs and the
   code; every RP the plan names exists in the register's index.
+
+> **Done as:**
+> - **Docs:** `application-platform.md` "Observability (spec 023)" (what
+>   the package installs, the query path, routes, verification) and the
+>   package readiness reasons, `Removing` included; `provider-model.md`
+>   "Disk, for a package that keeps data"; `authorization.md` (stored
+>   logs keep the logs action, metrics' new `serendip/observability/read`).
+>   `build-vs-adopt.md` already had spec 023's rows (T003, T014).
+> - **Risk register:** the plan's six named risks are all indexed. New:
+>   RP-066 (the alert-rule CRD left behind), RP-067 (secrets in stored
+>   logs), RP-068 (a noisy Component filling the logs volume). The
+>   others were already there: the adapters' auth off (RP-054),
+>   `hostNetwork` Fluent Bit (RP-064, fixed), time cursors (RP-058),
+>   disk numbers (RP-061, RP-063).
+> - **docs-keeper:** four drift items, then two more on the re-check
+>   (`InvalidSpec` in the readiness list, a broken backtick here), all
+>   fixed: four Helm releases, not
+>   three; the readiness list's endpoint; 422 above 20 targets; and the
+>   catalogue's description, which promised traces and alerts
+>   (`cmd/serendipd/packages.go`, now "Stored logs and metrics
+>   history"). Re-checked: no drift left.
+

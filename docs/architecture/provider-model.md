@@ -398,6 +398,22 @@ plain fit note.
   fingerprint back and skips the full install while it matches and its
   quick checks pass.
 
+### Disk, for a package that keeps data (spec 023)
+
+- **`Requirements.Disk`** (`DiskRequirements`, optional): `growthMiBPerDay`
+  under the benchmark's load, `retentionDays`, and `budgetMiB`, the most
+  its volumes can take. When set, `Validate` requires all three; nil
+  means the package keeps no data. The console reads it as "about N MiB a
+  day, kept D days, at most M MiB". The observability package's is
+  measured (`providers/observability/openchoreo/requirements.go`) and is
+  a 2-hour slope extrapolated to a day (RP-063).
+- **Current use:** an installer may also implement
+  `reconcile.PackageUsage` (`Usage(ctx) (DiskUsage, error)`), read from
+  the kubelet's volume stats. `GET /v1/packages` shows it as `usage` for
+  an installed package (the installer reads at most once per 30 s, and
+  the handler waits 5 s), or `usageError` saying it
+  couldn't be read. It lags and leaves some data out (RP-061).
+
 ## Open questions
 
 - **Real cluster/product behavior can invalidate a design that looked

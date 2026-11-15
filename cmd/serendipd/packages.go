@@ -48,7 +48,7 @@ func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcil
 		},
 		"openchoreo-observability-plane": {
 			Provider: "openchoreo-observability-plane", Capability: capObservability,
-			Description:  "Stored logs, metrics, traces and alerts; heavy on a 16 GB machine",
+			Description:  "Stored logs and metrics history; heavy on a 16 GB machine",
 			Installer:    observability,
 			Requirements: obsplane.Requirements,
 			Removal:      observabilityRemoval,

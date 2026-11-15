@@ -829,9 +829,9 @@ All in `verification.md`; the five fixed there (F1–F5):
   the node, so any `hostNetwork` pod can write logs, or read them if the
   store's own credentials leak.
 - **Logs keep what pods print, secrets included,** for 3 days. That's why
-  stored logs need Log Reader, the same as pod logs.
+  stored logs need Log Reader, the same as pod logs (RP-067).
 - **Disk.** A noisy Component could fill the logs volume before retention
-  acts. The size caps bound it, and the package reports current use.
+  acts. The size caps bound it, and the package reports current use (RP-068).
 - **Community modules move faster than the core charts.** They're
   pinned, and the modules' versions and compatibility are noted in
   `VERSIONS.md`.

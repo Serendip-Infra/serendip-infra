@@ -12,13 +12,25 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-14 (after spec 023 T014)
+Last updated: 2026-11-15 (after spec 023 T015)
 
 ## Current phase
 
-**Spec 023 (observability package): T001–T014 done (2026-11-14); next
-is T015 (docs and close: the epic body, the spec PR, `docs/architecture/`
-for the `Removing` readiness reason, the docs-keeper drift check).**
+**Spec 023 (observability package): all 15 tasks done (2026-11-15).
+Left: the GitHub close-out (push `spec-023`, the PR with `Closes #64`,
+epic #64's body rewritten to DONE, the merge), paced beside the
+backfill run (see "GitHub" below). Then the next spec: 024 (alerts),
+whose tasks must include validating alert destinations itself (RP-062).**
+- **T015 (closes #90):** docs and close-out (tasks.md T015).
+  - **Docs:** `application-platform.md` "Observability (spec 023)" and
+    the package readiness reasons (`Removing`); `provider-model.md`
+    (`Disk`, `PackageUsage`); `authorization.md` (stored logs and
+    `serendip/observability/read`).
+  - **Risk register:** RP-066 (alert-rule CRD left), RP-067 (secrets in
+    stored logs), RP-068 (logs volume filling before retention). Every
+    RP the plan names is indexed.
+  - **docs-keeper:** four drift items fixed, one of them in code: the
+    catalogue's description no longer promises traces and alerts.
 - **T014 (`3f81280` and the commit after it, closes #89):** reviews done
   (tasks.md T014).
   - **RP-064 fixed:** Fluent Bit is off the host network, on Serendip's
