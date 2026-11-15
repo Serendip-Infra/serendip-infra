@@ -12,30 +12,37 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024's plan written)
+Last updated: 2026-11-15 (spec 024 re-scoped to alerts; plan rewritten)
 
 ## Current phase
 
-**Spec 024 (traces, alert rules, notification channels; epic #65):
-spec reviewed and committed on local branch `spec-024` (`9364e98`);
-`plan.md` and `tasks.md` (T001–T015) written, awaiting the user's
-approval.** Nothing pushed; epic #65 not yet updated (one paced write
-once tasks are approved, then the task issues as one paced batch).
+**Spec 024 (alert rules and notification channels; epic #65): spec,
+`plan.md` and `tasks.md` (T001–T013) in `specs/024-alerts/` on local
+branch `spec-024`, awaiting the user's approval of the plan.** Nothing
+pushed. Epic #65 → "Spec 024: Alert rules and notification channels" and
+#66 → "Spec 025: Networking: Cilium, Hubble and traces" (two paced
+writes, done or pending: check the epics).
+- **Traces moved to spec 025** (the user agreed, 2026-11-15), with
+  trace-based alert conditions. The research for them is in spec 024's
+  plan, "Carried to spec 025"; the earlier draft with full trace
+  decisions is commit `02c86b4`.
 - **The plan's main decision:** `serendipd` evaluates every rule itself
-  by polling the adapters (and Prometheus for restarts), and sends
-  notifications through one validating stdlib client (`core/notify`).
-  OpenChoreo's alerting path isn't used: its metric rules need the
-  Prometheus Operator and Alertmanager that ADR 0021 removed, and its
-  Observer would send to person-typed URLs from inside the cluster
-  (RP-062). This amends spec IN 8 / AC 9 and AC 13 (plan "Spec
-  amendments").
-- **Traces:** OpenChoreo's `observability-tracing-openobserve` module on
-  the existing OpenObserve, as a package option (`options.traces`); tail
-  sampling off; trace scoping double-checked against span UIDs.
-- **Prior art:** WSO2 cs-tools' alert services (design adopted, code not;
-  `build-vs-adopt.md`). Its entity-service is an Open row for spec 028's
-  Ticketing provider.
-- **Next:** on approval, T001 (spike on `serendip-t018`).
+  (polling the metrics and logs adapters, and Prometheus's
+  kube-state-metrics for restarts) and sends notifications through one
+  validating stdlib client, `core/notify`. OpenChoreo's alerting path
+  isn't used (its metric rules need the Prometheus Operator and
+  Alertmanager ADR 0021 removed; its Observer would send to person-typed
+  URLs, RP-062). ADR 0022 at close-out.
+- **Channels (all free, outbound only):** webhook in four formats
+  (Serendip signed JSON, Slack-compatible, Discord, Teams Workflows),
+  email via `SMTPServer`, ntfy (urgent priority as the free "page") and
+  Telegram. Deferred: SMS, voice, WhatsApp Cloud API, Pushover. Rejected:
+  unofficial WhatsApp clients. OTP is a later identity spec (TOTP and
+  passkeys first; ThunderID's Custom SMS sender could point at
+  `serendipd`). All in `build-vs-adopt.md`.
+- **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
+- **Next:** on approval, the epic's body to IN PROGRESS and the task
+  issues as one paced batch, then T001 (spike on `serendip-t018`).
 
 **Spec 023 (observability package): done and closed out on GitHub
 (2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**

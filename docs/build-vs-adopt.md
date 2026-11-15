@@ -96,6 +96,9 @@ Last updated: 2026-11-15.
 | OpenSearch (logs-opensearch module) for logs | OpenObserve | Measured: twice the memory, about 6.6 GB of disk a day at the test load, and a 1.16 GB image (confirms the row above) | ADR 0021 |
 | SigNoz as the edge-1 observability backend | OpenObserve and Prometheus | The heaviest measured (about 2 GB, 3.5× the CPU); no OpenChoreo module; it needs a root user before it ingests anything, and a fixed ClickHouse password. Its search was fastest: reconsider for multi-node installs with memory to spare | ADR 0021 |
 | The metrics module's kube-prometheus-stack (Prometheus Operator) | Plain Prometheus | About 450 MiB more at idle; its 10 CRDs left kube-apiserver about 390 MiB higher after removal | ADR 0021, plan 023 decision 3 |
+| Unofficial WhatsApp clients (whatsmeow, Baileys) for alerts | Telegram, ntfy, chat webhooks, email | They break WhatsApp's terms and accounts get banned, even at low volume | Spec 024 plan (Channel research) |
+| Email-to-SMS gateways and Textbelt's free tier for alerts | ntfy's urgent priority as the free page | Gone at UK carriers; Textbelt free is one message a day | Spec 024 plan (Channel research) |
+| OpenChoreo's alerting path (`ObservabilityAlertRule`, the Observer's channels and sender) | `serendipd` evaluates rules and sends notifications | Metric rules need the Prometheus Operator and Alertmanager ADR 0021 removed; the Observer would send to person-typed URLs from inside the cluster (RP-062) and keep credentials outside the Secrets capability | Spec 024 plan |
 | WSO2 cs-tools' alert services' code (`sre-alert-ingestion-service`, `sre-alert-core-service`, `csm-notification-service`) | Serendip's own alert and notification code, following their design | Built on PostgreSQL, Kafka and Redis (constitution 4), with libraries each needing an ADR. Adopted as design: one alert shape from the backends' webhooks (their OpenObserve and Prometheus mappings), folding by fingerprint inside a window, resolution as a note, delivery in its own retrying loop | Spec 024 (Prior art) |
 
 ## Open (decided later)
@@ -103,4 +106,6 @@ Last updated: 2026-11-15.
 | Question | Options | Where |
 |---|---|---|
 | An external Ticketing provider | cs-tools' entity-service (WSO2's ServiceNow replacement, REST over PostgreSQL), Zammad, GLPI, Jira | Spec 028 (capability-model.md's Ticketing row) |
+| SMS, voice calls and WhatsApp as alert channels | Twilio (SMS ~$0.056, voice ~3¢/min in the UK), an Android phone as an SMS gateway, Sri Lankan gateways, WhatsApp Cloud API (paid templates); as opt-in paid channel types | Spec 024 plan (Channel research) |
+| OTP for sign-in and approvals | TOTP and passkeys (free, nothing delivered); ThunderID's email OTP over SMTP; ThunderID's Custom SMS sender pointed at `serendipd` (Telegram, Android gateway); Telegram Gateway ($0.01 a code) | A later identity spec |
 | Self-service autonomous agents in Serendip's own ThunderID | A small spec after 020 (both identity kinds: exchange for a person's assistant, own identity for autonomous agents) | Spec 021 plan decision 1 |
