@@ -145,8 +145,9 @@ the process list shows it:
   [--severity] [--componentId|--applicationId|--environmentId]
   [--limit]` (newest first, 100 by default, at most 500), `alerts get`,
   `alerts ack <id>` and `alerts summary`. **The `alerts_list` tool
-  answers at most 50**, by default and whatever it asks; an agent
-  narrows with the filters, or reads `alerts_summary`.
+  answers at most 50**: 50 by default, and a larger `limit` is refused
+  (`limit must be from 1 to 50`). An agent narrows with the filters, or
+  reads `alerts_summary`.
 - **Rules:** `serendip alertrules create|list|get|update|delete`, and
   `silence <id> --until <RFC 3339> --reason <why>` / `unsilence <id>`.
   These are MCP tools too, under the agent's roles.

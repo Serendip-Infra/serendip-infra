@@ -183,6 +183,18 @@ describe("an alert", () => {
     expect(await screen.findByText("ops-telegram")).toBeTruthy();
   });
 
+  it("names the rule, and the component and environment on the Alerts page (T010 F2)", async () => {
+    goTo("/alerts/a1");
+    mockFetch({ ...base, "/v1/alerts/a1": firing, "/v1/alertrules/r1": rule });
+    const { unmount } = render(<App />);
+    expect(await screen.findByText("web-memory")).toBeTruthy();
+    unmount();
+    goTo("/alerts");
+    mockFetch({ ...base, "/v1/alerts?state=firing": [firing], "/v1/components": [web], "/v1/environments": [env] });
+    render(<App />);
+    expect(await screen.findByText("web · development")).toBeTruthy();
+  });
+
   it("decides acknowledge at the Alert's rule, a scope the permissions route takes", async () => {
     goTo("/alerts");
     mockFetch({ ...base, "/v1/alerts?state=firing": [firing] });

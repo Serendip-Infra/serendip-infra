@@ -661,6 +661,16 @@ export function AlertsPage({ query }: { query: URLSearchParams }) {
   const channels = useChannels();
   const rootAccess = usePermissions({});
   const now = useNow();
+  // Names for "Where": the Components and Environments the caller can
+  // read. Anything else stays an ID (spec 024 T010).
+  const places = usePoll(
+    async (s) => {
+      const [comps, envs] = await Promise.all([apiList<Component>("/v1/components", s), apiList<Environment>("/v1/environments", s)]);
+      return new Map<string, string>([...comps, ...envs].map((r) => [r.metadata.id, r.metadata.name] as [string, string]));
+    },
+    60_000,
+    "alerts-places",
+  );
 
   function setFilter(k: string, v: string) {
     const q = new URLSearchParams(query);
@@ -692,7 +702,7 @@ export function AlertsPage({ query }: { query: URLSearchParams }) {
       ) : alerts.data.length === 0 ? (
         <EmptyState title={state === "firing" ? "Nothing firing" : "No alerts"}>Alerts you can read appear here, from the rules on components' Observability tabs and the packages' built-in rules.</EmptyState>
       ) : (
-        <AlertTable alerts={alerts.data} names={new Map()} now={now} onChanged={alerts.refresh} caption="Alerts" />
+        <AlertTable alerts={alerts.data} names={places.data ?? new Map()} now={now} onChanged={alerts.refresh} caption="Alerts" />
       )}
       <ApiEquivalent request={{ method: "GET", path }} />
       {builtIn.data && builtIn.data.length > 0 && (
@@ -721,6 +731,7 @@ function AlertView({ a, id, updatedAt, refresh, now }: { a: Alert; id: string; u
   // An Alert inherits its rule's access (see ScopedAck).
   const access = usePermissions({ kind: "AlertRule", id: a.spec.ruleId });
   const channels = useChannels();
+  const rule = usePoll((s) => apiFetch<AlertRule>("GET", `/v1/alertrules/${enc(a.spec.ruleId)}`, undefined, s), 60_000, `alert-rule-${a.spec.ruleId}`);
   const deliveries = a.status.deliveries ?? [];
   return (
     <>
@@ -746,7 +757,7 @@ function AlertView({ a, id, updatedAt, refresh, now }: { a: Alert; id: string; u
             ["Started", `${new Date(a.status.startedAt).toLocaleString()} (${formatAge(a.status.startedAt, now)})`],
             ...(a.status.resolvedAt ? ([["Resolved", `${new Date(a.status.resolvedAt).toLocaleString()}: ${resolvedWords(a.status.resolvedReason)}`]] as Array<[string, string]>) : []),
             ["Acknowledged", a.status.acknowledged ? `by ${a.status.acknowledged.by.replace(/^person:/, "")}, ${formatAge(a.status.acknowledged.at, now)}` : "No"],
-            ["Rule", <span className="mono">{a.spec.ruleId}</span>],
+            ["Rule", rule.data?.metadata?.name ?? <span className="mono">{a.spec.ruleId}</span>],
           ]}
         />
       </section>

@@ -54,7 +54,7 @@ const heartbeatRetry = time.Minute
 
 // NewHeartbeatLoop returns the loop over beats, sending with beater.
 func NewHeartbeatLoop(beats store.Store[resource.HeartbeatSpec, resource.HeartbeatStatus], beater Beater, health notify.Health, secrets notify.SecretReader) *HeartbeatLoop {
-	return &HeartbeatLoop{beats: beats, beater: beater, health: health, secrets: secrets, now: time.Now}
+	return &HeartbeatLoop{beats: beats, beater: beater, health: health, secrets: secrets, now: func() time.Time { return time.Now().UTC() }}
 }
 
 // WithClock makes the loop read the time from now (tests).

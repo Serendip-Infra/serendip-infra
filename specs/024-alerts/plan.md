@@ -506,8 +506,9 @@ release's.
 7. **Delivery** (cs-tools' separate loop).
    - **Pending deliveries** live on the Alert (`deliveries[]`), so a
      restart resumes them.
-   - **Retries:** up to 5 attempts, backing off 10 s, 30 s, 1 min, 5 min
-     and 15 min. After that the delivery is `failed`, with the last error
+   - **Retries:** up to 5 attempts, waiting 10 s, 30 s, 1 min and 5 min
+     between them (about 7 minutes in all; T010 dropped an unused 15 min
+     step). After that the delivery is `failed`, with the last error
      (spec IN 11). A 4xx other than 408 and 429 isn't retried.
    - **Per-channel rate:** at most one send a second, and 20 a minute to
      a Telegram group. Telegram's `retry_after` is honoured, up to 15

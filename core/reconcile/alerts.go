@@ -160,7 +160,8 @@ type AlertEvaluatorOptions struct {
 // one Alert writer.
 func NewAlertEvaluator(o AlertEvaluatorOptions, d DeliveryOptions) (*AlertEvaluator, *DeliveryLoop) {
 	if o.Now == nil {
-		o.Now = time.Now
+		// UTC, as every other stored time is (spec 024 T010).
+		o.Now = func() time.Time { return time.Now().UTC() }
 	}
 	w := &alertWriter{alerts: o.Stores.Alerts}
 	loop := newDeliveryLoop(o.Stores, w, d, o.Now)

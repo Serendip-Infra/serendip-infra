@@ -93,6 +93,8 @@ purpose), **Closed** (fixed).
 | RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
 | RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
+| RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
+| RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Open (carried to T012) | Spec 024 T010 |
 
 ---
 
@@ -1773,3 +1775,21 @@ The text below is the T013 record.
   channel lists.
 - **Revisit:** if a console view needs `lastSent` to the minute, or Alert
   lists pass about 10,000 rows.
+
+## RP-079 — The API drops unknown fields in a resource document
+
+- **Kind:** correctness. **Status:** Open, carried to spec 024 T012's
+  reviews. **Found:** spec 024 T010.
+- **What:** `decodeBody` ignores fields it doesn't know. A typo'd or
+  invented field is dropped and the request succeeds. In T010, channels
+  created with `metadata.ownerId` (what the catalogue's description
+  said, F3) were stored without an owner, so they became platform
+  channels, and nothing said so. The description is fixed; the silent
+  drop isn't.
+- **Mitigation:** the description now names `ownerRefs` and
+  `resourceVersion`. The console builds its documents from typed forms.
+- **Residual:** a CLI or MCP caller writing a document by hand can still
+  lose a field without an error. For an owner, that silently widens who
+  the resource belongs to (a Project's channel becomes the platform's).
+- **Revisit:** T012 decides whether to refuse unknown fields (400
+  naming them) for every client, or at least for `metadata`.

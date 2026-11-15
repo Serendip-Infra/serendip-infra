@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T009 done)
+Last updated: 2026-11-15 (spec 024: T001–T010 done)
 
 ## Current phase
 
@@ -20,9 +20,39 @@ Last updated: 2026-11-15 (spec 024: T001–T009 done)
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
 loop), T006 (condition queries, built-in disk rule), T007 (the API),
-T008 (CLI and MCP) and T009 (the console) done and committed on local
-branch `spec-024`.**
-Nothing pushed.
+T008 (CLI and MCP), T009 (the console) and T010 (live check) done and
+committed on local branch `spec-024`.**
+Nothing pushed. **Next: T011** (benchmarks on `bench-t470`), then T012
+(reviews; it now carries RP-079, unknown fields dropped by the API) and
+T013.
+- **T010:** `specs/024-alerts/verification.md`, criteria 1–12 and 14
+  live on `serendip-t018` (7's measurements and 13 are T011's).
+  - **Fixed:** F1 `core/notify`'s dialer gave one unreachable address
+    the whole 10 s (a broken IPv6 route timed out every send): families
+    now alternate and each attempt gets a share; F2 the Alerts page
+    showed IDs; F3 the catalogue's `--resource` description named
+    `ownerId`/`metadata.version` (real: `ownerRefs`,
+    `resourceVersion`); F4 alerting times now UTC; F5 the allowance
+    hint; F6 the CLI rule list's STATUS; F7 spec criterion 5 now says an
+    in-house LAN receiver (the cluster's ranges are always refused);
+    F8 the unused 15 min backoff step.
+  - **Not live:** a separate SMTP test server (an SMTP server can't be
+    private, and creating an ethereal.email inbox was denied by the
+    session), Telegram's own 429. Healthchecks.io going back UP after
+    the restart wasn't confirmed by the user (Serendip's beats resumed).
+  - **Tooling** in `~/.serendip-t018/t024/` (helpers, console scripts,
+    the `t024-alerty` image, the receiver, evidence; `secrets/` holds the
+    user's Telegram, Gmail and healthchecks values, to delete).
+  - **State left:** the test Component, receiver namespace, n8n,
+    tunnels and images removed; the heartbeat deleted; the observability
+    package reinstalled. **This session's `serendipd` (T010 build, on
+    `t024/t024.db`) runs on :8088**; the user's dev one (`dev-up.ps1`,
+    `t023.db`) was stopped for the run: restart it with
+    `.\scripts\dev-up.ps1 -Restart -NoBuild` (or `-Restart` for a fresh
+    build).
+  - **The user should** revoke the scratch bot's token (BotFather
+    `/revoke`), delete the Gmail app password and the healthchecks.io
+    check, then delete `~/.serendip-t018/t024/secrets/`.
 - **T009:** `ui/src/screens/Alerts.tsx` (Component and Application
   sections, `/alerts`, `/alerts/{id}`), `Notifications.tsx`
   (`/settings/notifications`), `lib/alerts.ts`, a top bar with the bell
@@ -140,8 +170,8 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 (its
-      commit, after `e107b49`) (hashes change
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 (its
+      commit, after `da3484a`) (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over
       `main..spec-024`, or `git rebase --exec`.
@@ -182,7 +212,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T010 (live check on serendip-t018, through the console in headless Chrome, the CLI and MCP).
+- **Next:** T011 (benchmarks on `bench-t470`).
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").

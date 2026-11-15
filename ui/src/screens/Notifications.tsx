@@ -353,7 +353,7 @@ function ChannelForm({ channel, projects, secrets, smtp, onDone, onCancel }: {
       {owner && (
         <fieldset>
           <legend>Allowances (Owners only)</legend>
-          <AllowanceField id="ch-private" label="May reach a private address (in the cluster or on the LAN)" hint="For an in-cluster receiver, for example. The cloud metadata address is never allowed." value={s.allowPrivate} onChange={(v) => update({ allowPrivate: v })} error={errors.allowPrivate} />
+          <AllowanceField id="ch-private" label="May reach a private address (on the LAN)" hint="For an in-house receiver on the LAN, for example. Loopback, the cloud metadata address and the cluster's own addresses are never allowed." value={s.allowPrivate} onChange={(v) => update({ allowPrivate: v })} error={errors.allowPrivate} />
           {s.type === "webhook" && <AllowanceField id="ch-plain" label="May use plain HTTP" hint="The body crosses the network unencrypted." value={s.allowPlain} onChange={(v) => update({ allowPlain: v })} error={errors.allowPlain} />}
         </fieldset>
       )}

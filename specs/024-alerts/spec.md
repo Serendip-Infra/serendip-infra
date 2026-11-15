@@ -331,8 +331,11 @@ external Ticketing provider for that spec (`docs/build-vs-adopt.md`).
    - a plain-HTTP URL;
    - a redirect.
 
-   With an Owner's explicit allowance, an in-cluster receiver works.
-   Checked on `serendip-t018`, not only in unit tests.
+   With an Owner's explicit allowance, an in-house receiver on the LAN
+   works. The cluster's own ranges (pods, Services, the node) stay
+   refused even then, as plan decision 5 says (amended in T010: this
+   line said "an in-cluster receiver"). Checked on `serendip-t018`, not
+   only in unit tests.
 6. **Secrets stay secret.** No channel token, signing secret or SMTP
    password appears in any of these (checked by searching for a known
    value):

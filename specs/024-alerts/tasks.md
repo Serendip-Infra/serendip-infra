@@ -516,7 +516,25 @@ Dependency sketch:
     Owners only, and a secret field that never shows its value;
   - the gzipped build's growth is stated.
 
-## T010 — Live check on serendip-t018
+## T010 — Live check on serendip-t018 ✅ 2026-11-15
+
+> **Done as:** `specs/024-alerts/verification.md`: evidence for criteria
+> 1–12 and 14 on `serendip-t018` (7's measurements and 13 are T011's),
+> through the console in headless Chrome, the CLI and MCP, with a real
+> Telegram chat, Gmail, healthchecks.io, n8n and webhook receivers behind
+> Cloudflare quick tunnels. Fixed: F1 the checked dialer gave one
+> unreachable address the whole send (`core/notify/dialer.go`), F2 the
+> Alerts page showed IDs, F3 the catalogue's resource description named
+> `ownerId`/`metadata.version`, F4 alerting times in local offsets, F5
+> the allowance hint promised an in-cluster receiver, F6 the CLI's rule
+> STATUS was empty, F7 spec criterion 5's wording, F8 an unused 15 min
+> backoff step; `docs/cli-and-mcp.md`'s `alerts_list` cap. **The
+> in-cluster receiver** of this task's list is refused even with the
+> allowance (plan decision 5); an in-house LAN receiver was checked
+> instead. **Not live:** a separate SMTP test server (none can be
+> private; a public throwaway inbox was denied) and Telegram's own 429
+> (the webhook's 429 was). Carried to T012: RP-079 (unknown fields
+> dropped). contract-guardian: pass, nits fixed.
 
 - **Do:** spec acceptance criteria 1–11 on the real cluster, through the
   console (headless Chrome), the CLI and MCP:
@@ -574,6 +592,9 @@ Dependency sketch:
     `core/notify` reading of constitution 1 (plan decision 5);
   - `security-review` over the branch, with the sender, the address
     check, escaping and secrets called out.
+  - **Carried from T010 (sub-task):** RP-079, the API dropping unknown
+    fields in a resource document. Decide whether to refuse them (400
+    naming them), and fix or record why not.
 - **Files:** as the findings require.
 - **Verify:**
   - each review's findings are fixed, or recorded as by design with the

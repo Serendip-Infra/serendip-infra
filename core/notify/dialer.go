@@ -178,6 +178,10 @@ type dialer struct {
 	check   *Checker
 	lookup  Lookup
 	timeout time.Duration
+	// connect opens one connection to one checked address; nil uses
+	// the net.Dialer it's given. Tests replace it. A replacement must
+	// dial through nd (its Control hook re-checks the peer address).
+	connect func(ctx context.Context, nd *net.Dialer, network, addr string) (net.Conn, error)
 }
 
 type allowPrivateKey struct{}
@@ -226,19 +230,73 @@ func (d *dialer) DialContext(ctx context.Context, network, address string) (net.
 	}
 	// The address actually dialed: a second resolution can't slip past
 	// the check above, because this one sees the socket's peer.
-	nd := net.Dialer{Timeout: d.timeout, Control: d.control(allow)}
+	connect := d.connect
+	if connect == nil {
+		connect = func(ctx context.Context, nd *net.Dialer, network, addr string) (net.Conn, error) {
+			return nd.DialContext(ctx, network, addr)
+		}
+	}
+	// Each attempt gets an equal share of what's left of the budget, and
+	// the families alternate, so one unreachable address (a broken IPv6
+	// route, say) can't use up the whole send before the next address
+	// is tried (spec 024 T010 F1; RFC 8305's ordering, without racing).
+	deadline := time.Now().Add(d.timeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
+	addrs = interleaveFamilies(addrs)
 	var last error
-	for _, a := range addrs {
-		c, err := nd.DialContext(ctx, network, net.JoinHostPort(a.String(), port))
+	for i, a := range addrs {
+		left := time.Until(deadline)
+		if i > 0 && left <= 0 {
+			break // the budget is spent: don't stretch it by minAttempt per address
+		}
+		share := left / time.Duration(len(addrs)-i)
+		if share < minAttempt {
+			share = minAttempt
+		}
+		nd := net.Dialer{Timeout: share, Control: d.control(allow)}
+		c, err := connect(ctx, &nd, network, net.JoinHostPort(a.String(), port))
 		if err == nil {
 			return c, nil
 		}
 		last = err
-		if errors.Is(err, ErrRefusedAddress) {
+		if errors.Is(err, ErrRefusedAddress) || ctx.Err() != nil {
 			return nil, err
 		}
 	}
 	return nil, last
+}
+
+// minAttempt is the least time one address gets to connect.
+const minAttempt = time.Second
+
+// interleaveFamilies orders addrs as RFC 8305 section 4 does: the first
+// address's family first, then alternating, each family keeping its
+// resolver order.
+func interleaveFamilies(addrs []netip.Addr) []netip.Addr {
+	if len(addrs) < 2 {
+		return addrs
+	}
+	var first, other []netip.Addr
+	firstIs4 := addrs[0].Unmap().Is4()
+	for _, a := range addrs {
+		if a.Unmap().Is4() == firstIs4 {
+			first = append(first, a)
+		} else {
+			other = append(other, a)
+		}
+	}
+	out := make([]netip.Addr, 0, len(addrs))
+	for i := 0; i < len(first) || i < len(other); i++ {
+		if i < len(first) {
+			out = append(out, first[i])
+		}
+		if i < len(other) {
+			out = append(out, other[i])
+		}
+	}
+	return out
 }
 
 // control is the dialer's Control hook: it checks the address the socket

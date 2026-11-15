@@ -316,7 +316,7 @@ func (h *notificationsHandler) recordTest(ctx context.Context, id string, at tim
 		if err != nil {
 			return err
 		}
-		t := at
+		t := at.UTC()
 		ch.Status.LastTest, ch.Status.LastTestResult = &t, result
 		_, err = h.channels.Update(ctx, ch)
 		if errors.Is(err, store.ErrConflict) && attempt < 2 {

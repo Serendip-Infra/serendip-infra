@@ -35,8 +35,9 @@ const (
 	digestLines = 5
 )
 
-// deliveryBackoff is the wait after each failed attempt.
-var deliveryBackoff = []time.Duration{10 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute}
+// deliveryBackoff is the wait after each failed attempt: MaxDeliveryAttempts
+// attempts need one wait fewer (spec 024 T010 F8).
+var deliveryBackoff = []time.Duration{10 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute}
 
 // Notifier sends one notification (core/notify's Client).
 type Notifier interface {

@@ -81,7 +81,7 @@ var (
 	cascadeParam = Param{Name: "cascade", In: InQuery, Type: Boolean,
 		Description: "Also delete everything the resource owns. Answered with the blast radius, decided like the delete itself"}
 	resourceBody = Param{Name: "resource", In: InBody, Type: Object, Required: true,
-		Description: "The resource document: metadata (name, ownerId, labels) and spec. On update, include the metadata.version you read: a stale version is refused as a conflict"}
+		Description: "The resource document: metadata (name, ownerRefs as [{\"kind\": \"Project\", \"id\": \"...\"}], labels) and spec. On update, include the metadata.resourceVersion you read: a stale version is refused as a conflict"}
 	principalTypes = []string{"person", "group", "agent", "apiKey"}
 	scopeParam     = Param{Name: "scope", In: InQuery,
 		Description: `A scope: "/" or "Kind/id", such as "Project/0190…"`}

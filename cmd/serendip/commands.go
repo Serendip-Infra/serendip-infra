@@ -439,9 +439,22 @@ func describe(item map[string]any) (id, name, status string) {
 					status = "Ready=" + fmt.Sprint(m["status"])
 				}
 			}
+			// Without Ready (an AlertRule's is Evaluating, a heartbeat's
+			// Sending), the first condition, with its reason.
+			if m, ok := firstCondition(conds); status == "" && ok {
+				status = fmt.Sprintf("%v=%v (%v)", m["type"], m["status"], m["reason"])
+			}
 		}
 	}
 	return id, name, status
+}
+
+func firstCondition(conds []any) (map[string]any, bool) {
+	if len(conds) == 0 {
+		return nil, false
+	}
+	m, ok := conds[0].(map[string]any)
+	return m, ok
 }
 
 func cmpOr(vals ...string) string {

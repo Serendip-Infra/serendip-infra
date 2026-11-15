@@ -599,6 +599,19 @@ func TestReasonReachesApprovalsRequest(t *testing.T) {
 	}
 }
 
+// An AlertRule has no Ready condition: its list row shows Evaluating
+// with the reason (spec 024 T010).
+func TestDescribeShowsFirstConditionWithoutReady(t *testing.T) {
+	_, _, status := describe(map[string]any{"metadata": map[string]any{"id": "r1", "name": "disk"},
+		"status": map[string]any{"active": false, "conditions": []any{map[string]any{"type": "Evaluating", "status": "False", "reason": "PackageNotReady"}, "not a map"}}})
+	if status != "Evaluating=False (PackageNotReady)" {
+		t.Fatalf("status = %q", status)
+	}
+	if _, _, status := describe(map[string]any{"status": map[string]any{"conditions": []any{"not a map"}}}); status != "" {
+		t.Fatalf("status from a malformed condition = %q", status)
+	}
+}
+
 func TestDescribeHandlesEveryListShape(t *testing.T) {
 	for _, item := range []map[string]any{
 		{"id": "Owner", "roleName": "Owner"},
