@@ -12,14 +12,33 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (after spec 023's GitHub close-out)
+Last updated: 2026-11-15 (spec 024's plan written)
 
 ## Current phase
 
+**Spec 024 (traces, alert rules, notification channels; epic #65):
+spec reviewed and committed on local branch `spec-024` (`9364e98`);
+`plan.md` and `tasks.md` (T001–T015) written, awaiting the user's
+approval.** Nothing pushed; epic #65 not yet updated (one paced write
+once tasks are approved, then the task issues as one paced batch).
+- **The plan's main decision:** `serendipd` evaluates every rule itself
+  by polling the adapters (and Prometheus for restarts), and sends
+  notifications through one validating stdlib client (`core/notify`).
+  OpenChoreo's alerting path isn't used: its metric rules need the
+  Prometheus Operator and Alertmanager that ADR 0021 removed, and its
+  Observer would send to person-typed URLs from inside the cluster
+  (RP-062). This amends spec IN 8 / AC 9 and AC 13 (plan "Spec
+  amendments").
+- **Traces:** OpenChoreo's `observability-tracing-openobserve` module on
+  the existing OpenObserve, as a package option (`options.traces`); tail
+  sampling off; trace scoping double-checked against span UIDs.
+- **Prior art:** WSO2 cs-tools' alert services (design adopted, code not;
+  `build-vs-adopt.md`). Its entity-service is an Open row for spec 028's
+  Ticketing provider.
+- **Next:** on approval, T001 (spike on `serendip-t018`).
+
 **Spec 023 (observability package): done and closed out on GitHub
-(2026-11-15): PR #197 merged (`b568806`), epic #64 closed. Next spec:
-024 (alerts), whose tasks must include validating alert destinations
-itself (RP-062).**
+(2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**
 - **After the close-out (2026-11-15), upstream `main` = `5bb071d`:**
   - **#197's merge conflict:** `spec-023` had been cut while upstream
     `main` was stale, and `CLAUDE.md` conflicted. The cause: the
