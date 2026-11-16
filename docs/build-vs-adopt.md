@@ -12,7 +12,7 @@ console, CLI and MCP) and integrates everything else.
 - **Accepted risks and costs** of these choices live in
   `docs/risk-register.md`.
 
-Last updated: 2026-11-15.
+Last updated: 2026-11-16.
 
 ## Built (Serendip's own code)
 
@@ -42,6 +42,8 @@ Last updated: 2026-11-15.
 | A Git credential for one run | The build reconciler reads it through the Secrets capability and copies it into a plain Secret for that run only, deleted when the run ends (RP-050) | Spec 022 plan decision 3, T015 |
 | Background package jobs | `core/reconcile/packagejob.go`: a package's install or removal runs beside the reconcile loop, one per package, bounded at 30 min, because Helm's `--wait` outlives a 10 s reconcile (RP-045) | Spec 022 T013 |
 | Store-level uniqueness | `resources.unique_key` with `UNIQUE (kind, unique_key)`, closing RP-033 | Spec 022 plan decision 9, T003 |
+| Alert evaluation (`core/reconcile/alerts.go`) and delivery (`delivery.go`) | OpenChoreo's path needs the Prometheus Operator and Alertmanager ADR 0021 removed, and its Observer would be a second alert store and sender; fixed conditions polled by `serendipd` cost +4.2 mcores for 200 rules (RP-080). Design from WSO2 cs-tools (folding, a separate retrying delivery loop, digests) | Spec 024, ADR 0022 |
+| The notification sender (`core/notify`): Telegram, SMTP, the signed `serendip.alert.v1` webhook, the heartbeat | A handful of HTTPS POSTs and one SMTP send, standard library only, through one client that checks every dialed address (SSRF). No library or product does that check for us | Spec 024 plan decision 5, ADR 0022 |
 
 ## Adopted (other projects, integrated)
 
@@ -65,6 +67,10 @@ Last updated: 2026-11-15.
 | MCP Go SDK (`modelcontextprotocol/go-sdk` v1.8.0) | MCP protocol (stdio and streamable HTTP) | ADR 0017, spec 021 | Chosen over hand-written, to avoid maintaining protocol churn ourselves. 9 modules, at most +2.4 MB; confined to `mcp/` (its `golang.org/x/sys` is also used directly by the CLI for an owner-only folder ACL on Windows) |
 | OpenObserve, via OpenChoreo's logs-openobserve module 0.8.0 | Log store and collector (Fluent Bit) | ADR 0021, spec 023 | Fluent Bit runs off the host network on Serendip's copy of the chart's config (T014, RP-064, RP-065), adopted rather than written: one edit to the chart's render. The lightest of three measured: about 0.4 GB of disk a day at the test load. Telemetry off, 3-day retention; its search slows as data grows (RP-055) |
 | Plain Prometheus (`prometheus-community/prometheus` 29.47.2), with the metrics module's adapter only | Metrics store | ADR 0021, spec 023 | In place of the module's kube-prometheus-stack: about 450 MiB less at idle and no CRDs. Serendip's values must keep matching the adapter (RP-056) |
+| Telegram's Bot API (`sendMessage`, `getUpdates`) | Alert notifications, as a protocol | Spec 024, ADR 0022 | Free; cards with a URL button, resolutions threaded as replies. The bot token is the whole credential (RP-069) |
+| SMTP relays (Gmail app password, Brevo; any STARTTLS or implicit-TLS relay) | Alert email, as a protocol | Spec 024 plan decision 6 | No mail server on the laptop. Content leaves the machine (RP-070) |
+| A signed JSON webhook (`serendip.alert.v1`, HMAC-SHA256) | The integration point for every other channel | Spec 024, `operations.md` | Serendip's own format, the GitHub/Stripe-style signature |
+| healthchecks.io, Uptime Kuma (heartbeat monitors); n8n, Node-RED, Apprise API (webhook relays) | Suggested outside tools, **not dependencies** | `docs/guides/alert-integrations.md` | Nothing installed or bundled. Gatus needs a relay: its push wants a bearer header the heartbeat can't send |
 
 ## Rejected (considered and turned down)
 
@@ -101,6 +107,7 @@ Last updated: 2026-11-15.
 | OpenChoreo's alerting path (`ObservabilityAlertRule`, the Observer's channels and sender) | `serendipd` evaluates rules and sends notifications | Metric rules need the Prometheus Operator and Alertmanager ADR 0021 removed; the Observer would send to person-typed URLs from inside the cluster (RP-062) and keep credentials outside the Secrets capability | Spec 024 plan |
 | WSO2 cs-tools' alert services' code (`sre-alert-ingestion-service`, `sre-alert-core-service`, `csm-notification-service`) | Serendip's own alert and notification code, following their design | Built on PostgreSQL, Kafka and Redis (constitution 4), with libraries each needing an ADR. Adopted as design: one alert shape from the backends' webhooks (their OpenObserve and Prometheus mappings), folding by fingerprint inside a window, resolution as a note, delivery in its own retrying loop | Spec 024 (Prior art) |
 | Prometheus' Go API client (`prometheus/client_golang/api`) for the restarts condition | `prometheus.go`, one standard-library instant query through the Service proxy | One fixed query shape and one answer type; the client would be a dependency (and ADR) with its own transport, where the Service proxy needs the cluster client's credentials | Spec 024 T006 |
+| Alertmanager (with plain Prometheus) for alert routing | `serendipd`'s evaluator and `core/notify` | Reverses ADR 0021's measured saving, covers metrics only (logs and restarts would still be Serendip's), and keeps receivers' credentials in its own config | Spec 024, ADR 0022 |
 
 ## Open (decided later)
 

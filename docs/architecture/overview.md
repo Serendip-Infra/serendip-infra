@@ -40,7 +40,7 @@ Serendip is organized into logical planes. Each plane maps loosely to a
 | Application Platform | Application/component deployment, GitOps, build/registry | Adopted providers behind a native abstraction |
 | Infrastructure | Cluster lifecycle, networking, compute/VM, storage provisioning | Adopted providers behind a native abstraction |
 | Observability | Logs, metrics, traces, dashboards | Adopted providers, OpenTelemetry as the common collection layer |
-| Operations | Incidents, alerts, SLOs, runbooks, postmortems, change intelligence | Native — see `operations.md` |
+| Operations | Incidents, alerts, SLOs, runbooks, postmortems, change intelligence | Native — see `operations.md`. Alerts are built (spec 024, ADR 0022) |
 | AI Operations | Diagnosis, recommendation, approval-gated action | Native — see `ai-operations.md` |
 
 ## Build vs. adopt

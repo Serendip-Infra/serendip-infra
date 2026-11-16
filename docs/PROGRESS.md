@@ -12,17 +12,38 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-16 (spec 024: T001–T012 done)
+Last updated: 2026-11-16 (spec 024: T001–T013 done, but one credential item open)
 
 ## Current phase
 
-**Spec 024 (alert rules and notification channels; epic #65): plan
-approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
-(authorization), T004 (`core/notify`), T005 (evaluator and delivery
-loop), T006 (condition queries, built-in disk rule), T007 (the API),
-T008 (CLI and MCP), T009 (the console), T010 (live check) and T011
-(benchmarks) and T012 (reviews) done and committed on local branch
-`spec-024`.** Nothing pushed. **Next: T013** (docs and close-out).
+**Spec 024 (alert rules and notification channels; epic #65): all 13
+tasks done and committed on local branch `spec-024`**, except one item of
+T013's verify: the T010 scratch credentials. Nothing pushed.
+**Next, in order:**
+1. **The user:** revoke the scratch bot's token (BotFather `/revoke`;
+   `getMe` still answered 200 on 2026-11-16), delete the Gmail app
+   password and the healthchecks.io check, then
+   `~/.serendip-t018/t024/secrets/`. Then tick T013 in tasks.md
+   (`getMe` 401 is the check).
+2. **GitHub, one paced background batch:** T001–T013's task issues
+   under epic #65 (assignee, milestone "v1 GA", short title, labels
+   `task` + area, board Priority/Area/Size), then epic #65's body in
+   epic #1's layout. About 65 writes at one a minute, stopping at the
+   first 403 or 429.
+3. **Link commits to issues:** rewrite only `main..spec-024`, appending
+   `Closes #<issue>` to each task's commit (list below), then check the
+   tree matches the old tip.
+4. **The PR:** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
+   with `Closes #65`, merged by `serendipinfra` with a merge commit.
+5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66).
+- **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
+  "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
+  architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,
+  066 and 068 updated). docs-keeper's one finding is fixed. **Found:**
+  the heartbeat can't send headers, so Gatus (the plan's suggestion for
+  `small-3`) needs a relay; the guide suggests healthchecks.io or Uptime
+  Kuma, and RP-074 records it. An optional header from a Secret would be
+  a small follow-up if wanted.
 - **T012:** see tasks.md's "Done as" note.
   - **RP-080:** option a (the user's choice). The lastEvaluated refresh
     is hourly, and the API shows the evaluator's live time.
@@ -202,7 +223,7 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`, T011 `66435ca`, T012 (its `feat(api): spec 024 T012` commit)
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`, T011 `66435ca`, T012 (its `feat(api): spec 024 T012` commit), T013 (its `docs: spec 024 T013` commit)
       and the two `spec 024 T010` fix commits after it (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over
@@ -222,7 +243,7 @@ writes, done or pending: check the epics).
   validating stdlib client, `core/notify`. OpenChoreo's alerting path
   isn't used (its metric rules need the Prometheus Operator and
   Alertmanager ADR 0021 removed; its Observer would send to person-typed
-  URLs, RP-062). ADR 0022 at close-out.
+  URLs, RP-062). Recorded as ADR 0022.
 - **Channels (all free, outbound only), settled 2026-11-15:** Telegram
   first (cards with a "View in console" URL button, resolution threaded
   as a reply), email through any SMTP relay (Gmail app password or Brevo;

@@ -124,7 +124,32 @@ Site → Cluster → Node
 ### Operational resources
 
 - **Alert** — a single detected anomaly (metric threshold, log pattern,
-  synthetic check failure, ...).
+  synthetic check failure, ...). Built in spec 024 with four kinds around
+  it (`core/resource/alerting.go`; behaviour in `operations.md`
+  "Alerts"):
+  - **`AlertRule`** — owned by a Component or an Application, with an
+    `environmentId`: a fixed `condition` (`metric`, `restarts`,
+    `logMatch`, or the built-in `packageDisk`), `severity`, `summary`,
+    `channelIds`, `interval` and `enabled`. Status: `active`,
+    `lastEvaluated`, `lastValue`, `silence`. A built-in rule
+    (`builtIn: true`) is owned by its `ProviderInstance` and can't be
+    deleted on its own (`resource.OwnerKept`, 409).
+  - **`Alert`** — owned by its rule, written only by `serendipd`, like
+    `Approval`, so it has no generic write or delete route. Spec fixed at
+    creation (rule, Component, Environment, severity, summary,
+    fingerprint); status `state`, `startedAt`, `resolvedAt` with its
+    reason, `value`, `threshold`, `acknowledged`, up to 20 `deliveries`.
+    Replaces spec 001's placeholder `AlertSpec`.
+  - **`NotificationChannel`** — platform-wide or owned by a Project:
+    `telegram`, `email` or `webhook`, `minSeverity`, `default`, and the
+    Owner-only `allowPrivateDestination`/`allowPlainHTTP` with reasons.
+    Credentials are Secret references; responses show only `secretSet`.
+  - **`SMTPServer`** — platform-only: a relay (`host`, `port`, `tls`,
+    `from`, two Secret references) that email channels name.
+  - **`Heartbeat`** — platform-only and at most one (the store's unique
+    key): an outside monitor's URL (a Secret) and an interval.
+  - **Status is the server's** on these kinds: a body's `status` is
+    ignored (a silence changes only through `…/silence`).
 - **Incident** — a correlated, triaged operational event, potentially
   produced by one or more Alerts. Carries severity, affected resources,
   diagnosis, and the approval/action trail. Full lifecycle in
@@ -152,9 +177,9 @@ Resources are connected by typed edges, not implicit foreign keys:
 
 | Edge | Example |
 |---|---|
-| `owns` | Project owns Environment and Application; Application owns Component; Component owns Build (spec 022); Environment owns Deployment |
+| `owns` | Project owns Environment and Application; Application owns Component; Component owns Build (spec 022); Environment owns Deployment; a Component or Application owns its AlertRules, and an AlertRule its Alerts (spec 024) |
 | `runs-on` | Component runs-on Cluster; Cluster runs-on Node(s) |
-| `depends-on` | Deployment depends-on its Component; Component depends-on the Components it calls (spec 020); Component depends-on Database |
+| `depends-on` | Deployment depends-on its Component; Component depends-on the Components it calls (spec 020); Component depends-on Database; AlertRule depends-on its channels, NotificationChannel on its Secrets and SMTP server, SMTPServer and Heartbeat on their Secrets (spec 024; deleting one still depended on is 409) |
 | `provided-by` | Database provided-by a Provider instance (e.g. CloudNativePG) |
 
 The graph supports traversal in both directions (children, dependents) and

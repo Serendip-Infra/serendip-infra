@@ -566,7 +566,7 @@ Dependency sketch:
   - each known secret is found only in the Secrets provider;
   - findings are fixed, or carried as sub-tasks.
 
-## T011 — Benchmarks and measured cost
+## T011 — Benchmarks and measured cost ✅ 2026-11-16
 
 - **Do,** on the simulated T470 (`bench-t470`), with the harness
   extended:
@@ -611,7 +611,7 @@ Dependency sketch:
 > - the warm restart overwrote `serendipd`'s log;
 > - bench rules are now validated before a run.
 
-## T012 — Reviews
+## T012 — Reviews ✅ 2026-11-16
 
 - **Do:** fix the findings (fix, don't defer) of:
   - `go-reviewer` over the Go changes;
@@ -668,6 +668,33 @@ Dependency sketch:
 > holds.
 
 ## T013 — Docs and close-out [A]
+
+> **Done as (docs, 2026-11-16; the task stays open for one item):**
+> - `operations.md` "Alerts (spec 024)": rules, Alerts, channels and
+>   delivery, the Telegram, email and `serendip.alert.v1` bodies, the
+>   signature, the heartbeat.
+> - New `docs/guides/alert-integrations.md`: Telegram and email set-up,
+>   the signature check, the n8n recipe (from T010's live flow), heartbeat
+>   monitors.
+> - `resource-model.md`, `capability-model.md`, `application-platform.md`
+>   "Alerts (spec 024)", `authorization.md` "Alerts and notifications",
+>   `approvals.md` "Alerting", `overview.md` and the architecture README.
+> - ADR 0022 (with the constitution 1 reading of `core/notify` as a
+>   recorded deviation), and `build-vs-adopt.md`.
+> - The risk register: RP-069, 070, 072, 073 and 074 added; RP-062, 066
+>   and 068 updated.
+> - **Found (oss-researcher):** Gatus's push needs an `Authorization:
+>   Bearer` header, which the heartbeat can't send. The plan's Gatus
+>   suggestion is amended, the guide suggests healthchecks.io or Uptime
+>   Kuma, and RP-074 records it. Also, healthchecks.io's free plan lists
+>   no SMS or WhatsApp credits (the plan said 5).
+> - docs-keeper: one wrong statement (the Telegram card's layout) and
+>   missing pointers in `overview.md`, the README and `operations.md`.
+>   All fixed. Every RP the plan names is indexed and has an entry.
+> - **Not yet:** the T010 scratch bot's token still answers `getMe` 200
+>   (2026-11-16). The user revokes it with BotFather, deletes the Gmail
+>   app password and the healthchecks.io check, then
+>   `~/.serendip-t018/t024/secrets/`. T013 is ticked after that.
 
 - **Do:**
   - `operations.md`: rules, Alerts, channels, the bodies and the

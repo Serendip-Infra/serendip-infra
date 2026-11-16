@@ -563,6 +563,7 @@ In `openchoreo-observability-plane`, through a background package job:
   metrics history are deleted. …"), goes through an Approval, and reads
   `Removing` at once. Uninstall deletes the CR, the four releases in
   reverse, then the namespace (volumes, Secrets, Fluent Bit's config).
+  Since spec 024 it needs `cascade=true`, for the built-in alert rule.
   Left behind: the plane chart's `observabilityalertrules` CRD (RP-066)
   and Fluent Bit's read-position file on the node (RP-060). The data
   plane and running Components are untouched, and builds keeps working.
@@ -609,9 +610,56 @@ In `openchoreo-observability-plane`, through a background package job:
   Application search with `omitted`, metrics charts, an expired build's
   stored logs, a Reader's 403 on logs, the adapters timing out from a
   workload pod, Claude Code through `serendip mcp`, and a clean removal.
-- **Not done** (spec OUT): traces, alerts, HTTP metrics, a remote
-  observability plane, and Serendip-side authentication to the
-  adapters.
+- **Not done** (spec OUT): traces, alerts (now spec 024, below), HTTP
+  metrics, a remote observability plane, and Serendip-side
+  authentication to the adapters.
+
+## Alerts (spec 024)
+
+Alert rules on Components and Applications, evaluated by `serendipd`
+against this package (ADR 0022). The model, conditions, channels and
+bodies are in `operations.md` "Alerts"; this section is what touches the
+platform.
+
+- **Nothing new is installed.** OpenChoreo's `ObservabilityAlertRule`,
+  its notification channel CRs, the `observability-alert-rule` trait and
+  the Observer's alert store aren't used, and no `observabilityalertrules`
+  objects are made (RP-066 unchanged). No Prometheus Operator or
+  Alertmanager.
+- **Queries** (`providers/observability/openchoreo/conditions.go`), each
+  scoped by the Component's, Environment's and Project's UIDs:
+  - `metric`: the metrics adapter, as the charts read it;
+  - `logMatch`: one logs-adapter search with `limit = 1`, reading
+    `total`;
+  - `restarts`: one instant PromQL query to Prometheus through the
+    Service proxy (`prometheus.go`), a fixed template over
+    kube-state-metrics' `kube_pod_container_status_restarts_total` (now
+    in `prometheus-values.yaml`'s `metricAllowlist`) joined to
+    `kube_pod_labels`;
+  - `packageDisk`: the package's `usage`, no data when older than
+    5 minutes.
+- **The built-in rule.** The catalogue declares the package's rules
+  (`reconcile.Package.AlertRules`); after Ready, the reconciler creates
+  `observability-disk` (warning at 85% of the budget) owned by the
+  `ProviderInstance`. **Removing the package now needs `cascade=true`**
+  (the console sends it), and the Approval's blast radius lists the
+  rule and its Alerts.
+- **While the package isn't Ready,** rules read `active: false,
+  PackageNotReady`. On removal, open Alerts resolve with
+  `packageRemoved`, and that resolution is delivered.
+- **The cluster's own ranges** (nodes' pod CIDRs and addresses, the
+  ServiceCIDRs) reach the sender every 5 minutes, so no channel can
+  point inside the cluster (RP-076).
+- **Measured** (T011, `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`):
+  200 one-minute rules cost `serendipd` +4.2 mcores and +5.5 MiB, and
+  the node +149 to +234 mcores, mostly OpenObserve (RP-080). Query
+  latency plateaued over 2.5 h (p95 0.8–1.2 s). With no rules, idle
+  memory is within 1 MiB of spec 023.
+- **Verification:** `specs/024-alerts/verification.md` (live on
+  `serendip-t018`: Telegram, Gmail, outside and LAN webhooks, n8n, the
+  heartbeat to healthchecks.io, and the in-cluster refusals).
+- **Not done:** trace-based conditions (spec 025), composite conditions,
+  person-written queries, and reading replies from Telegram.
 
 ## Deployment foundation (spec 010)
 

@@ -8,14 +8,14 @@ standalone in under ~5 minutes and contain decisions, not exploration.
 | File | Contents | Status |
 |------|----------|--------|
 | `overview.md` | What Serendip is, positioning, the planes, build-vs-adopt table | Done |
-| `resource-model.md` | Org → Team → Project, which owns Applications (→ Component → Build, spec 022) and Environments (→ Deployment, spec 020, ADR 0019); Site/Cluster/Node; Network/Database/Storage; Incident/Alert. Fields, relationships, status conventions | Done |
+| `resource-model.md` | Org → Team → Project, which owns Applications (→ Component → Build, spec 022) and Environments (→ Deployment, spec 020, ADR 0019); Site/Cluster/Node; Network/Database/Storage; Incident/Alert, and spec 024's AlertRule, Alert, NotificationChannel, SMTPServer and Heartbeat. Fields, relationships, status conventions | Done |
 | `capability-model.md` | Capability list, capability spec format, default providers per capability | Done |
 | `provider-model.md` | Provider interface contracts (Go), registration, lifecycle, replacement, "bring your own capability" | Done |
 | `deployment-profiles.md` | edge-1 / small-3 / standard-5 / private-cloud; what each enables; upgrade paths between them; topology planner behavior | Done |
 | `reconciliation.md` | Reconcile engine model: events, resync, failed-retry, early re-check (`RequeueAfter`), foundations re-ensure loop, degraded startup, readiness API | Done |
 | `storage.md` | Local → Longhorn(2 replicas) → external progression; primary vs backup storage separation; storage classes/policies; hardware-aware placement | Done |
 | `bootstrap-agent.md` | serendip-agent design: lives outside Kubernetes; hardware discovery, enrollment, bootstrap, emergency diagnostics | Done |
-| `operations.md` | Alert → Incident → Diagnosis → Recommendation → Approval → Action → Verification → Postmortem lifecycle; SLO/error budgets; change intelligence | Done |
+| `operations.md` | Alert → Incident → Diagnosis → Recommendation → Approval → Action → Verification → Postmortem lifecycle; alert rules, Alerts, channels, the webhook body and signature, the heartbeat (spec 024, ADR 0022; set-up guide in `../guides/alert-integrations.md`); SLO/error budgets; change intelligence | Done |
 | `ai-operations.md` | Severity-based autonomy matrix, approval engine, what context AI receives, MCP surface (the `serendip` CLI, `serendip mcp`, `/mcp`; spec 021, ADRs 0017 and 0018; reference in `../cli-and-mcp.md`) | Done |
 | `identity.md` | Three identities (human, platform, workload); workload identity abstraction over Entra/Keycloak/Thunder/ServiceAccount; subjects and groups for authorization; agent identities; CLI sign-in and delegated AI assistants (`Via`) | Done |
 | `application-platform.md` | The Application Platform capability on OpenChoreo: object mapping, conditions, exposure, and spec 020's environments, Deployments, promotion, runtime view, schemas, dependencies, platform view and packages (ADRs 0005, 0010, 0019) | Done |

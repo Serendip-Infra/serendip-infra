@@ -89,7 +89,12 @@ purpose), **Closed** (fixed).
 | RP-066 | The observability plane chart's `observabilityalertrules` CRD outlives the package's removal | Footprint | Decided | Spec 023 T001 |
 | RP-067 | Stored logs keep what pods print, secrets included, for 3 days | Data exposure | Accepted | Spec 023 plan |
 | RP-068 | A noisy Component can fill the logs volume before retention acts | Availability, capacity | Accepted | Spec 023 plan |
+| RP-069 | The Telegram bot token is the whole credential, and sits in the API URL's path | Security | Accepted | Spec 024 plan |
+| RP-070 | Alert content leaves the machine for third parties (Telegram, the mail relay, webhook receivers) | Data exposure | Accepted | Spec 024 plan |
 | RP-071 | Resolved Alerts are removed after 30 days by system retention | Audit, data retention | Accepted | Spec 024 T005 |
+| RP-072 | Rules are polled: a condition shorter than the interval can be missed, and a firing is seen up to one interval late | Correctness | Accepted | Spec 024 plan |
+| RP-073 | A `logMatch` threshold is capped at 999 | Correctness (limit) | Accepted | Spec 024 plan |
+| RP-074 | The heartbeat proves Serendip can alert, not that a message reached a person; it can't send headers, so Gatus needs a relay | Operability | Accepted | Spec 024 plan; T013 |
 | RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
 | RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
@@ -1483,6 +1488,12 @@ purpose), **Closed** (fixed).
 - **Revisit:** when OpenObserve has an allow-list of hosts or CIDRs (a
   chart PR mentioned `ZO_SSRF_ALLOWED_HOSTS`; not in v0.92.2), or when
   spec 024 adds notification channels.
+- **Revisited, spec 024 (2026-11-16):** the second condition is met, and
+  no person-typed destination ever reaches OpenObserve. `serendipd`
+  evaluates rules and sends every notification itself (ADR 0022), so
+  OpenObserve has no alert destination but the logs module's own. The
+  mitigation is now `core/notify`'s address check at every dial (plan
+  024 decision 5, RP-076). The guard stays off for that one webhook.
 
 ## RP-063 — The stated disk growth is a 2-hour slope, extrapolated
 
@@ -1593,6 +1604,8 @@ The text below is the T013 record.
 - **Revisit:** if spec 024 (alerts) creates objects of this kind, so
   removal must say what it leaves; or if a re-install with a newer chart
   finds the old CRD's schema in the way.
+- **Revisited, spec 024 (2026-11-16):** unchanged. Spec 024 makes no
+  `observabilityalertrules` objects (ADR 0022), so the CRD stays empty.
 
 ## RP-067 — Stored logs keep what pods print, secrets included
 
@@ -1635,9 +1648,104 @@ The text below is the T013 record.
 - **Residual:** the reported use lags (RP-061). The "no alert" part is
   closed by spec 024 T006: the package's built-in `observability-disk`
   rule warns at 85% of the budget, to the platform's default channels.
-- **Revisit:** with spec 024 (an alert on the package's own disk use), or
-  if a size-based cap for the logs store becomes settable in the logs
-  module.
+- **Revisit:** if a size-based cap for the logs store becomes settable
+  in the logs module. (The spec 024 trigger is done: the built-in
+  `observability-disk` rule, live-checked in T010.)
+
+## RP-069 — The Telegram bot token is the whole credential
+
+- **Kind:** security. **Status:** Accepted, 2026-11-16. **Found:** spec
+  024 plan (Risks); built in T004.
+- **What:** anyone holding a bot's token can read the bot's chats
+  (`getUpdates`) and send as it. Telegram's Bot API takes the token in
+  the URL path (`/bot<token>/sendMessage`), so any error or log that
+  carries the URL carries the token.
+- **Mitigation:**
+  - it's a Secret (`botTokenSecretId`), read at send time and never
+    cached; responses show only `secretSet`;
+  - errors are cleaned down to the host, and Go's `url.Error` is
+    unwrapped (`core/notify/telegram.go`), so no Alert, event or log
+    holds it. T010 searched the store, audit rows, events and
+    `serendipd`'s log for the live token and found none;
+  - naming it on a channel needs the Secret's value read;
+  - "Find chat" (`POST /v1/secrets/{id}/telegramchats`) answers chats
+    only, never the token, and needs the same value read.
+- **Residual:** Telegram itself, and the Secrets provider, hold it.
+  BotFather's `/revoke` is the only rotation.
+- **Revisit:** if Telegram offers scoped or expiring bot credentials, or
+  when reading replies (account linking) needs the bot to read more.
+
+## RP-070 — Alert content leaves the machine
+
+- **Kind:** data exposure. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks).
+- **What:** every notification sends the rule's summary, the Project,
+  Application, Component and Environment names, the value and threshold,
+  and a console link to a third party: Telegram's servers, the SMTP relay
+  (Gmail, Brevo) and the mail providers after it, or a webhook receiver
+  and whatever it forwards to.
+- **Mitigation:**
+  - **never log lines:** a `logMatch` Alert records the count;
+  - the console says so on the channel form and the Notifications
+    page (`LeavesNotice`);
+  - channel, SMTP and heartbeat writes are left off MCP, so people,
+    not AI agents, decide where content goes;
+  - the console link needs a sign-in to show anything.
+- **Residual:** a summary is free text a person writes; it can name
+  anything.
+- **Revisit:** if a profile needs on-premises-only delivery (a LAN
+  webhook with `allowPrivateDestination` already does it), or a redacted
+  body mode.
+
+## RP-072 — Rules are polled
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks).
+- **What:** each rule is evaluated on its interval (1–60 minutes) over
+  its window, not on every data point. So:
+  - a condition shorter than the interval can fall between two
+    evaluations and be missed (a `metric` rule's `for` reads every point
+    in its window, which narrows this; a restart counter's max − min
+    still sees restarts inside the window);
+  - a firing is seen up to one interval late, 1 minute at best, plus the
+    data's own lag (RP-061 for disk).
+- **Mitigation:** the 1-minute floor, windows that cover the interval,
+  and next runs counted from the due time (T011's 66 s drift fixed).
+- **Revisit:** if a use needs sub-minute alerting. That needs push from
+  the backend, which ADR 0022 turned down for this install.
+
+## RP-073 — A `logMatch` threshold is capped at 999
+
+- **Kind:** correctness (limit). **Status:** Accepted, 2026-11-16.
+  **Found:** spec 024 plan (Risks).
+- **What:** the logs adapter pages at 1,000 lines. T001 found its answer
+  carries `total`, but if `total` were ever absent the fallback counts a
+  page of `above + 1`, which can't go past 1,000. So `above` is capped at
+  999 (`resource.MaxCountAbove`), and "more than N lines" can't count
+  higher.
+- **Revisit:** if the adapter's `total` is confirmed stable across
+  releases (the fallback could go), or a rule needs higher counts.
+
+## RP-074 — The heartbeat proves Serendip can alert, not that a person was told
+
+- **Kind:** operability. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks); the header limit in T013.
+- **What:**
+  - the heartbeat beats while the evaluator, the delivery loop and the
+    store work. A revoked Telegram token, a full mailbox or a broken
+    relay still lets it beat; those show as `failed` deliveries on the
+    Alert, not as a missing heartbeat;
+  - it sends a plain `GET` or empty `POST` and can't set headers. Gatus's
+    `external-endpoints` push needs `Authorization: Bearer`, so Gatus
+    (plan 024's suggestion for `small-3` and `standard-5`) works only
+    through a relay that adds it.
+- **Mitigation:** a channel's test send and `lastTestResult`; deliveries'
+  recorded errors; healthchecks.io and Uptime Kuma take the token in the
+  URL (`docs/guides/alert-integrations.md`).
+- **Residual:** nothing alerts on failed deliveries themselves.
+- **Revisit:** if a monitor people want needs a header (an optional
+  header from a Secret would be small), or with a "deliveries failing"
+  rule.
 
 ## RP-075 — Alerting authorization: checks made before the write, and wide custom roles
 

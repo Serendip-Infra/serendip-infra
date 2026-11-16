@@ -721,6 +721,10 @@ down, its own alerting is down too.
   - Email goes through a Gmail app password or Brevo.
 - **`small-3` and `standard-5` (a small team): a self-hosted watcher on
   an always-free cloud VM.**
+  - **Amended in T013:** Gatus's push needs an `Authorization: Bearer`
+    header, which the heartbeat can't send (it has no headers), so Gatus
+    works only behind a relay that adds it. The guide suggests
+    healthchecks.io or Uptime Kuma instead (RP-074).
   - It's **Gatus**, a single Go binary with a YAML config:
     - it receives the cluster's heartbeat (`external-endpoints`);
     - it probes the console's URL from outside;

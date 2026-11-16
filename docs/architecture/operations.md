@@ -12,7 +12,7 @@ Alert → Incident → Diagnosis → Recommendation → Approval → Action → 
 ```
 
 - **Alert** — a single detected anomaly (metric threshold, log pattern,
-  synthetic check).
+  synthetic check). Built in spec 024: "Alerts (spec 024)" below.
 - **Incident** — one or more correlated Alerts, triaged with a severity and
   affected-resource set. First-class Serendip resource (`resource-model.md`).
 - **Diagnosis** — AI or human analysis of probable cause, using the
@@ -50,6 +50,182 @@ Incident:
 
 This structure is what makes AI diagnosis operate on something concrete
 rather than free text — see `ai-operations.md`.
+
+## Alerts (spec 024)
+
+The first step of the lifecycle is built: alert rules, Alerts and
+notification channels. Incidents, correlation and runbooks are not yet.
+`serendipd` evaluates every rule itself and sends every notification
+through one validating client (ADR 0022). OpenChoreo's alerting path,
+Alertmanager and the Prometheus Operator aren't used. Design detail:
+`specs/024-alerts/plan.md`.
+
+### Rules
+
+An `AlertRule` is owned by a Component or an Application, with an
+`environmentId`. Its spec is a `condition`, a `severity` (`info`,
+`warning`, `critical`), a `summary`, its `channelIds` (or the Project's
+default channels when empty), an `interval` (1–60 minutes, default 1) and
+`enabled`.
+
+| Condition | Data | Fires when |
+|---|---|---|
+| `metric`: `cpu` or `memory`, as `value` (millicores or MiB), `percentOfRequest` or `percentOfLimit`; `above`; `for` | the metrics adapter | every point in `for` is above |
+| `restarts`: `above` within `window` | kube-state-metrics' restart counter through Prometheus (max − min per container, summed) | the count is above |
+| `logMatch`: `text`, `above` (at most 999, RP-073) within `window` | the logs adapter's `total` | more lines match |
+| `packageDisk`: `percentOfBudget` | the package's `usage` | built-in only |
+
+- **Every query is Serendip's,** a fixed template filled from validated
+  IDs, scoped by all three OpenChoreo UIDs. There's no query language.
+- **The evaluator** (`core/reconcile/alerts.go`) ticks every 15 s, runs
+  at most 2 queries at once (20 s each), and caps an install at 200
+  enabled rules with a 1-minute floor. Next runs count from the due
+  time, not the tick.
+- **Status:** `active` with its reason (`PackageNotReady` while the
+  observability package isn't Ready), `lastEvaluated` and `lastValue`,
+  `silence` (who, why, until, at most 30 days), and an `Evaluating`
+  condition. A query error, a refused condition or no data
+  (`QueryFailed`, `ConditionRefused`, `NoData`) sets the condition and
+  never changes an Alert. Values are held in memory and written on a change, with an
+  hourly refresh of `lastEvaluated`; the API answers the live time
+  (RP-080).
+- **The built-in disk rule** (`observability-disk`, warning at 85% of the
+  budget) is created when the package becomes Ready, notifies the
+  platform's default channels, and can be silenced, retuned or disabled
+  but not deleted (409). It goes with the package, so removal needs
+  `cascade=true`.
+
+### Alerts
+
+An `Alert` is written only by `serendipd` and owned by its rule; there's
+no generic write or delete route.
+- **Folding:** the fingerprint is `rule|component|environment`. While it
+  fires, evaluations update the one Alert; a firing within 5 minutes of
+  its last resolution reopens the same Alert, so a flapping rule is one
+  record.
+- **Status:** `state` (`firing` or `resolved`), `startedAt`, `resolvedAt`
+  with its reason (`clear`, `ruleDeleted`, `packageRemoved`,
+  `componentGone`), `value` and `threshold`, `acknowledged` (who, when),
+  and up to 20 `deliveries`.
+- **A `logMatch` Alert records the count,** never the log lines.
+- **Retention:** resolved Alerts older than 30 days are removed hourly,
+  at most 500 a pass, through one policy-decided Approval per rule
+  (RP-071).
+
+### Channels and delivery
+
+| Type | Settings | Secrets |
+|---|---|---|
+| `telegram` | `chatId`; the host is always `api.telegram.org` | `botTokenSecretId` (the whole credential, RP-069) |
+| `email` | `smtpServerId`, `to` (at most 20) | the SMTP server's username and password |
+| `webhook` | `url`, or `urlSecretId` when the URL holds a token (only its host is stored) | `signingSecretId` (optional) |
+
+- **A channel** is platform-wide or owned by a Project, with a
+  `minSeverity` (default `info`) and `default`. An `SMTPServer`
+  (platform-only: `host`, `port`, `tls` of `starttls` or `implicit`,
+  `from` and its two Secrets) is a relay Projects use without holding
+  its credentials. A Gmail app password or Brevo works; a mail server on
+  the laptop doesn't.
+- **The sender** (`core/notify`) checks the address actually dialed and
+  refuses loopback, unspecified, private (RFC 1918, ULA), link-local,
+  CGNAT, multicast, broadcast and the cluster's own pod, Service and node
+  ranges (RP-076), for IPv4, IPv6 and IPv4-mapped IPv6. It follows no
+  redirects, uses no proxy, needs TLS 1.2 or later and pools no
+  connections. The check runs at save, at test send and at every
+  delivery. Only an Owner can set `allowPrivateDestination` (an in-house
+  LAN receiver; the cluster's ranges and loopback stay refused) or
+  `allowPlainHTTP`, each with a reason.
+- **Delivery** (`core/reconcile/delivery.go`) keeps pending deliveries on
+  the Alert, so a restart resumes them. Up to 5 attempts, waiting 10 s,
+  30 s, 1 min and 5 min; a 4xx other than 408 or 429 isn't retried. A 429's
+  `Retry-After` (Telegram's `retry_after`) is honoured up to 15 minutes.
+  At most one send a second per channel, and 20 a minute to a Telegram
+  group; when more are queued, Telegram and email get one digest.
+- **Recorded on each delivery,** so "why wasn't I told" has an answer:
+  `pending`, `sent`, `failed` with its host-only error, `silenced`, or
+  `belowMinSeverity`. Silences suppress deliveries, not Alerts.
+- **Alert content leaves the machine** (RP-070): the summary, names,
+  values and a console link, never log lines. The channel form says so.
+
+### The bodies
+
+**Telegram** (`sendMessage`, HTML). A firing is:
+- a bold first line, "🔴 FIRING · critical" (🟠 warning, 🔵 info);
+- the Component in bold, then "Environment · Project";
+- a detail line: the value against the threshold, and when it started;
+- "Summary: <summary>";
+- an italic footer, "Rule <name>";
+- a "View in console" URL button.
+
+A resolution is one line, "✅ RESOLVED · Component · Environment ·
+Project", plus its detail (how long it lasted), sent as a reply to the
+firing. A test is "🧪 TEST". A `localhost` console URL can't be a button,
+so the link goes in the text. Every value is HTML-escaped.
+
+**Email:** the subject "[CRITICAL] firing: <summary>" or "[RESOLVED]
+<summary>", a plain-text and an HTML part with the same fields and the
+link, and `Message-ID`/`In-Reply-To` so the resolution threads under the
+firing.
+
+**Webhook, `serendip.alert.v1`:** a `POST` with
+`Content-Type: application/json`, `X-Serendip-Event` (`firing`,
+`resolved` or `test`), `User-Agent: serendip-notify/1`, one body per
+Alert (never a digest):
+
+```json
+{
+  "version": "serendip.alert.v1",
+  "event": "firing",
+  "alert": {
+    "id": "…", "rule": "checkout-memory", "severity": "critical",
+    "summary": "checkout memory above 400 MiB", "state": "firing",
+    "project": "shop", "application": "storefront",
+    "component": "checkout", "environment": "production",
+    "startedAt": "2026-11-15T12:25:39Z",
+    "value": 412.5, "threshold": 400,
+    "consoleUrl": "https://…/alerts/…"
+  }
+}
+```
+
+`project`, `application`, `component`, `environment`, `resolvedAt` and
+`consoleUrl` are left out when empty; times are UTC. The shape is fixed
+for `v1`: a change to it is a new version, never people's templates.
+
+**The signature,** when the channel has a `signingSecretId`:
+
+```
+X-Serendip-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, t + "." + raw body)>
+```
+
+A receiver recomputes the HMAC over the raw bytes it received, compares
+in constant time, and refuses a `t` more than a few minutes old (a
+replay). `docs/guides/alert-integrations.md` has a working check.
+
+### Heartbeat
+
+One platform `Heartbeat` (`PUT /v1/heartbeat`, Owners) sends `GET` or an
+empty `POST` to an outside monitor's URL (a Secret) every 1–10 minutes,
+through the same checked client. **It sends only while Serendip can
+alert:** the evaluator ticked within 2 minutes, the delivery loop ran and
+the store answers. Otherwise it sends nothing, and the monitor's own
+timeout raises the alarm; it never sends a "fail". It proves Serendip
+can alert, not that a message reached a person (RP-074). The monitor
+must not run on the same machine (the guide).
+
+### Where to use it
+
+- **API:** `/v1/alertrules` (CRUD, `…/silence`, `…/unsilence`),
+  `/v1/alerts` (list with filters and `limit`, `summary`, get,
+  `…/acknowledge`), `/v1/notificationchannels` (CRUD, `…/test`),
+  `/v1/smtpservers`, `/v1/heartbeat` (`PUT`, `GET`, `DELETE`, `…/test`),
+  and `POST /v1/secrets/{id}/telegramchats` to find a chat ID.
+  Authorization: `authorization.md` "Alerts and notifications".
+- **CLI and MCP:** `docs/cli-and-mcp.md` "Alerts and notifications".
+  Channel, SMTP and heartbeat writes are CLI-only.
+- **Console:** Alerts on a Component's Observability tab and on an
+  Application, the bell in the top bar and `/alerts`, and Settings ›
+  Notifications (channels, SMTP servers, the heartbeat).
 
 ## SLOs and error budgets
 

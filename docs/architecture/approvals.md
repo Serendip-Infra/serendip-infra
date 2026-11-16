@@ -292,6 +292,26 @@ Approvals only grow, so no read scans them all (RP-003).
   the server decides anyway. Decided requests show who decided (a person or
   policy), the outcome and clean-up progress.
 
+## Alerting (spec 024)
+
+- **Deletes** of `AlertRule`, `NotificationChannel`, `SMTPServer` and the
+  `Heartbeat` go through the ordinary `DELETE` and its Approval. A rule's
+  blast radius lists its Alerts. A channel, SMTP server or Secret that
+  something still names is refused with 409, and nothing is deleted.
+- **`Alert`s have no delete route.** They go with their rule (cascade),
+  or by retention.
+- **A built-in rule can't be deleted on its own** (409); it goes by the
+  package's removal, which now needs `cascade=true`, so that Approval's
+  blast radius lists the rule and its Alerts.
+- **Retention is an Approval by policy** (constitution 5 has no
+  exception). Hourly, `serendipd` removes resolved Alerts older than
+  30 days, at most 500 a pass: one Approval per rule, decided by policy
+  and `Executed` in the same transaction, naming the removed Alerts,
+  with an audit row per Alert under `system:alerts`. Nobody waits for
+  it (RP-071). This is the first system retention of operational
+  records; RP-003 still leaves Approvals themselves unbounded.
+- **Acknowledging and silencing are writes,** not deletes: no Approval.
+
 ## Known limits
 
 In `docs/risk-register.md`:
@@ -312,7 +332,7 @@ In `docs/risk-register.md`:
 
 Out of scope: other destructive verbs, approval policies for people
 (quorum, "a second person"), pre-approved runbooks, cancelling a request,
-notifications, an audit read API, retention, and approvals for creates and
+notifications about approvals (spec 024's channels carry alerts only), an audit read API, retention, and approvals for creates and
 updates.
 
 ## Settled during T013
