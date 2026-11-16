@@ -95,6 +95,7 @@ purpose), **Closed** (fixed).
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
 | RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Open (carried to T012) | Spec 024 T010 |
+| RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Open (writes, carried to T012) | Spec 024 T011 |
 
 ---
 
@@ -1319,6 +1320,14 @@ purpose), **Closed** (fixed).
 - **Revisit:** if T013's run on the reference laptop shows searches over
   2 s, or if retention grows. Options then: a narrower default window, or
   OpenObserve's own tuning (a larger `ZO_MEMORY_CACHE_MAX_SIZE`).
+- **Spec 024 T011 (2026-11-16):** with 200 alert rules evaluating beside
+  the same load, the alert queries plateaued over 2.5 hours (mean 255 to
+  205 ms, p95 1.1 to 0.8 s, worst 4.9 s). They're `limit = 1` counts over
+  5 or 15 minutes. That plateau stands for the 3 days of data the plan
+  asked for (the user's choice of method). The load driver's own searches
+  were slower with the rules competing: mean 0.90 s, worst 5.1 s. That's
+  still under this entry's 2 s revisit line on average, but the worst
+  case is over it. The rules' load on OpenObserve is RP-080.
 
 ## RP-056 — Serendip's plain Prometheus must keep matching the metrics adapter
 
@@ -1793,3 +1802,49 @@ The text below is the T013 record.
   the resource belongs to (a Project's channel becomes the platform's).
 - **Revisit:** T012 decides whether to refuse unknown fields (400
   naming them) for every client, or at least for `metadata`.
+
+## RP-080 — 200 alert rules load the observability backends, and their status writes fill the audit log
+
+- **Kind:** footprint; audit volume. **Status:** the backend load is
+  Accepted; the status writes are Open, carried to spec 024 T012 for the
+  user's decision. Recorded 2026-11-16. **Found:** spec 024 T011 (the
+  simulated T470, `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`).
+- **What:**
+  - **Backend load.** With 200 rules at 1 minute and spec 023's log
+    load running:
+    - `serendipd` itself used +4.2 mcores and +5.5 MiB;
+    - the node used +149 to +234 mcores mean (peak 1.2 cores) and about
+      +177 MiB;
+    - OpenObserve averaged 179 mcores and 375 MiB, against 40 mcores and
+      264 MiB with the same load and no rules (spec 023).
+
+    That's 7–12% of a 2-core T470. The run's cadence was 66 s, which is
+    fixed now, so about 11% more queries are expected than were
+    measured.
+  - **Status writes.** About 26 AlertRule writes a minute:
+    - up to 20 of them are the 10-minute `lastEvaluated` refresh
+      (`alertStaleEvaluated`), which every rule gets even when nothing
+      changed;
+    - the rest are values that changed, flushed once a minute.
+
+    Each write is an audit row of about 2 KiB (a snapshot of the rule).
+    That's about 37,000 rows and 75 MiB a day, more than 25 GiB a year,
+    and the audit log has no retention yet (RP-003).
+- **Why the backend load is accepted:** 200 rules at 1 minute is the
+  worst case the caps allow (plan decision 2), and a real install has far
+  fewer. The evaluation latency held a plateau over 2.5 hours (p95 under
+  1.2 s, worst 4.9 s, against a 20 s timeout).
+- **Mitigation:**
+  - the 200-rule cap and the 1-minute floor;
+  - at most 2 queries at once;
+  - `logMatch` is a `limit = 1` count.
+- **Open:** the status writes. The options are in plan 024 "Findings
+  from T011" 5:
+  - a. refresh `lastEvaluated` hourly;
+  - b. answer `lastValue` and `lastEvaluated` from the evaluator's memory
+    instead of the store;
+  - c. accept it until the retention spec.
+- **Revisit:**
+  - T013's run on the reference laptop;
+  - a raised rule cap;
+  - the audit retention spec.

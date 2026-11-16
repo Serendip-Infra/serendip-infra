@@ -62,6 +62,8 @@ type options struct {
 	// with a package run (specs/022-builds T013).
 	pkg           packageOptions
 	kubeconfigAbs string
+	// dbPath is serendipd's database, read for the phases' store writes.
+	dbPath string
 }
 
 func parseFlags(args []string) (options, error) {
@@ -96,6 +98,8 @@ func parseFlags(args []string) (options, error) {
 	fs.IntVar(&o.pkg.loadSamples, "package-load-samples", 180, "observability package: samples under load, every package-idle-interval (180 at 10 s is about 30 minutes)")
 	fs.IntVar(&o.pkg.diskSamples, "package-disk-samples", 121, "observability package: disk-phase samples under load, every package-disk-interval, with the du probe at both ends (121 at 60 s spans 2 hours; 0 skips it)")
 	fs.DurationVar(&o.pkg.diskInterval, "package-disk-interval", time.Minute, "observability package: time between disk-phase samples")
+	fs.IntVar(&o.pkg.rules, "package-rules", 0, "observability package: alert rules to create after the load phase, each at 1 minute (at most 199: the built-in disk rule is the 200th; 0 skips the rules phases)")
+	fs.IntVar(&o.pkg.rulesSamples, "package-rules-samples", 180, "observability package: samples while the rules are evaluated, every package-idle-interval")
 	fs.BoolVar(&diskProbe, "disk-probe", true, "measure host-path volumes (local-path) with a short-lived du pod at the start and end of each phase; the kubelet reports no usage for them")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -134,6 +138,7 @@ func run(args []string) error {
 	kubeconfig := abs(o.kubeconfig)
 	o.kubeconfigAbs = kubeconfig
 	dbPath := filepath.Join(abs(o.out), "serendipd.db")
+	o.dbPath = dbPath
 	credsPath := filepath.Join(abs(o.out), "openbao-init.json")
 	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm", credsPath} {
 		_ = os.Remove(p)
@@ -424,6 +429,16 @@ func runCompare(args []string) error {
 		}
 	}
 	fmt.Print(renderComparison(compareRuns(rs[0], rs[1])))
+	// Two package runs of the same package also compare its idle and
+	// load phases (spec 024 T011: no regression without rules).
+	if pa, pb := rs[0].Package, rs[1].Package; pa != nil && pb != nil && pa.Provider == pb.Provider {
+		fmt.Printf("\n## Package installed, idle\n\n%s", renderComparison(compareAggregates(pa.Idle, pb.Idle)))
+		if pa.Load != nil && pb.Load != nil {
+			fmt.Printf("\n## Package under load\n\n%s", renderComparison(compareAggregates(pa.Load.Cluster, pb.Load.Cluster)))
+		}
+		fmt.Printf("\nserendipd, package idle: %.1f → %.1f MiB RSS, %.2f → %.2f mcores.\n\n",
+			pa.SerendipdIdle.RSSMiB.Mean, pb.SerendipdIdle.RSSMiB.Mean, pa.SerendipdIdle.CPUMillicores.Mean, pb.SerendipdIdle.CPUMillicores.Mean)
+	}
 	fmt.Print(renderVolumeGrowth(compareVolumes(rs[0], rs[1])))
 	return nil
 }
@@ -474,6 +489,10 @@ func checkLoadFlags(po packageOptions) error {
 		return fmt.Errorf("--package-disk-samples %d: 0 to skip the disk phase, or at least 2 to measure growth", po.diskSamples)
 	case po.diskSamples > 1 && po.diskInterval <= 0:
 		return fmt.Errorf("--package-disk-interval %s: must be positive", po.diskInterval)
+	case po.rules < 0 || po.rules > maxBenchRules:
+		return fmt.Errorf("--package-rules %d: 0 to skip, at most %d (the built-in rule is the 200th)", po.rules, maxBenchRules)
+	case po.rules > 0 && po.rulesSamples < 2:
+		return fmt.Errorf("--package-rules-samples %d: at least 2", po.rulesSamples)
 	}
 	if _, err := os.Stat(po.loadScript); err != nil {
 		return fmt.Errorf("--package-load-script: %w", err)

@@ -218,7 +218,7 @@ func TestRunLoadAlwaysStopsTheLoad(t *testing.T) {
 				return make([]Sample, n), nil, nil
 			}
 			var p PackageRun
-			err := runLoad(ctx, po, load, sample, "stop by hand", &p)
+			err := runLoad(ctx, po, load, sample, "stop by hand", &p, nil, nil)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("runLoad = %v, want error %v", err, tc.wantErr)
 			}

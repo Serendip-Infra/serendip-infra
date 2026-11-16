@@ -584,6 +584,33 @@ Dependency sketch:
   - there's no regression without rules (criterion 12);
   - the harness's own tests pass.
 
+> **Done as:** `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`
+> (README, `rules/`, `compare-package-vs-spec023.md`). The harness gained
+> `--package-rules` and `--package-rules-samples`, store-write counts and
+> the evaluator's timing lines (`core/reconcile/alertstats.go`).
+> - **Rule 4:** PASS. `serendipd` used 79 MiB and 0.01% CPU idle, and 88
+>   MiB and 6.8 mcores with 200 rules evaluating. A same-host A/B put
+>   spec 024's own idle cost at +1 MiB over spec 023 (25 vs 24 MiB).
+> - **Criterion 12:** PASS, every group, at platform idle, package idle
+>   and under load.
+> - **Latency:** plateaued over 2.5 hours (mean about 205–255 ms, p95
+>   0.8–1.2 s, worst 4.9 s), which stands for 3 days by the user's
+>   2-hour plateau method.
+> - **Costs:** resync +0.38 mcores; evaluation +4.2 mcores and +5.5 MiB
+>   in `serendipd`, but +149 to +234 mcores on the node (OpenObserve);
+>   26 AlertRule writes a minute.
+>
+> Recorded in plan "Findings from T011", RP-080 (new; the status writes
+> are an open decision carried to T012) and RP-055 (updated).
+>
+> Fixed after the run, not re-measured:
+> - the cadence was 66 s for 1-minute rules; the next run now counts
+>   from the due time (`TestAlerts_CadenceHoldsWhenTicksDrift`);
+> - disabled time was counted as lateness;
+> - "no data" was counted as failed;
+> - the warm restart overwrote `serendipd`'s log;
+> - bench rules are now validated before a run.
+
 ## T012 — Reviews
 
 - **Do:** fix the findings (fix, don't defer) of:

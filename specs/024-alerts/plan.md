@@ -839,6 +839,69 @@ also answers PROGRESS.md's "re-check by 2026-11-15" item.
   3. TOTP, if a ThunderID release adds it (watch v2.0);
   4. the Telegram relay, only if a person can't use email.
 
+## Findings from T011 (2026-11-16, simulated T470)
+
+The run: `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`.
+It used 199 rules at 1 minute plus the built-in rule, under spec 023's log
+load.
+
+1. **The 3-day latency figure became a 2-hour plateau check** (the
+   user's choice, 2026-11-15). The rules stayed on through the 2-hour
+   disk phase:
+   - if latency levelled off, that would stand for 3 days of data;
+   - if it climbed, we'd extrapolate and update RP-055.
+
+   It levelled off. Over 2.5 hours (15 ten-minute windows), while the
+   logs volume grew 117 MiB, the mean query time fell from about 255 ms
+   to about 205 ms, and p95 from 1.1 s to 0.8 s. The worst query was
+   4.9 s, inside decision 2's 20 s timeout.
+2. **`serendipd`'s own cost is small:**
+   - evaluation: +4.2 mcores, +5.5 MiB;
+   - resync: +0.38 mcores;
+   - rule 4 passes.
+
+   **The backends' cost is not small.** The node used +149 to +234
+   mcores. OpenObserve went from 40 to 179 mcores against spec 023's
+   disk phase. That's 7–12% of a 2-core T470 for 200 one-minute rules.
+   Accepted as RP-080: the cap and the 1-minute floor already bound it.
+3. **The cadence was 66 s, not 60 s, and that's fixed.** Each rule's
+   next run was counted from the tick that picked it up. The next run now
+   counts from the due time, and disabled time no longer counts as
+   lateness (`alerts.go`, `TestAlerts_CadenceHoldsWhenTicksDrift`). This
+   was fixed after the run, so the fixed cadence wasn't re-measured.
+   About 11% more queries than measured are expected.
+4. **One pass of 200 rules takes 30–48 s** at 2 queries at a time. It
+   fits in the minute with 25–60% to spare. Decision 2's 2 workers stay.
+   Raising them would only move load onto OpenObserve.
+5. **Rule status writes are an open decision (RP-080).** There are about
+   26 AlertRule writes a minute:
+   - up to 20 of them are the 10-minute `lastEvaluated` refresh
+     (`alertStaleEvaluated`), which every rule gets even when nothing
+     changed;
+   - each one is an audit row of about 2 KiB.
+
+   That's about 37,000 rows (75 MiB) a day, with no audit retention yet
+   (RP-003's retention spec). Decision 2's "a write on a state change,
+   not on every check" holds for values, but not for this refresh.
+
+   Options, for the user (T012 carries it):
+   - a. Refresh `lastEvaluated` hourly, not every 10 minutes. That's
+     about 3–9 writes a minute. The stored time can then be up to an
+     hour old; the console would show live time from the evaluator.
+   - b. Keep `lastValue` and `lastEvaluated` out of the store: the API
+     answers them from the evaluator's memory. That gives near-zero
+     writes in steady state, but a restart forgets them until the next
+     evaluation.
+   - c. Accept it as it stands, and let the retention spec bound the
+     audit log.
+6. **"Failed" in the timing line counted "no data" answers.** About 6%
+   of queries were no-data answers. No rule ended `QueryFailed`. The line
+   now has `noData=`.
+7. **Harness fixes from the run:**
+   - every bench rule is checked against the API's validator before a
+     run (a restarts threshold of 1000 stopped one attempt);
+   - `serendipd`'s log is kept across the warm restart.
+
 ## Carried to spec 025 (traces)
 
 The research found these facts, to be checked there:
@@ -937,8 +1000,9 @@ decisions.
 - **RP-066:** unchanged; no `observabilityalertrules` objects are made.
 - **RP-068:** the built-in rule closes its "no alert" residual.
 - **Query load:** 200 rules at one-minute intervals against OpenObserve,
-  which spec 023 found slows as data grows (RP-055). T011 measures the
-  evaluation latency at 3 days of data.
+  which spec 023 found slows as data grows (RP-055). T011 measured a
+  2-hour plateau instead of 3 days of data ("Findings from T011" 1). The
+  load on the backends and the rules' status writes are RP-080.
 
 ## Explicitly NOT done
 

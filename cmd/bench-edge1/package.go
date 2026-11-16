@@ -56,6 +56,10 @@ type packageOptions struct {
 	loadSamples  int
 	diskSamples  int
 	diskInterval time.Duration
+	// The alert rules (specs/024-alerts T011): rules created after the
+	// load phase, and samples while they're evaluated.
+	rules        int
+	rulesSamples int
 }
 
 // PackageRun is what the package run measured.
@@ -85,6 +89,9 @@ type PackageRun struct {
 	Load        *LoadRun `json:"load,omitempty"`
 	Disk        *LoadRun `json:"disk,omitempty"`
 	LoadQueries string   `json:"loadQueries,omitempty"`
+	// Rules is the alert rules' phases, between the load and disk
+	// phases; the disk phase then runs with the rules on.
+	Rules *RulesRun `json:"rules,omitempty"`
 	// Incomplete is why the load or disk phase stopped short, if it did.
 	Incomplete string `json:"incomplete,omitempty"`
 	// Cost is the package's stated cost, derived from the above.
@@ -126,6 +133,8 @@ type LoadRun struct {
 	Cluster         Aggregate    `json:"cluster"`
 	Samples         []Sample     `json:"samples"`
 	Serendipd       ProcessStats `json:"serendipd"`
+	// Writes is the store's change over the phase, when it was read.
+	Writes *StoreWrites `json:"writes,omitempty"`
 }
 
 // HelmRun is the package's full Helm command run once by itself, the cost
@@ -210,7 +219,7 @@ func measurePackage(ctx context.Context, o options, cl *cluster, nodeName string
 	p.ResyncMillicores = p.SerendipdIdle.CPUMillicores.Mean - res.Serendipd.CPUMillicores.Mean
 
 	if kindOf(po.provider).capability == observabilityCapability {
-		lerr := measureLoad(ctx, o, cl, nodeName, d, p)
+		lerr := measureLoad(ctx, o, cl, nodeName, d, a, p, created)
 		if lerr != nil {
 			// The phases stop short, so their peak and growth aren't the
 			// package's: the summary says so, rather than a cost to copy.
@@ -294,9 +303,20 @@ type loadFunc func(ctx context.Context, verb string) (string, error)
 // sampleFunc samples the cluster and serendipd n times, interval apart.
 type sampleFunc func(ctx context.Context, n int, interval time.Duration) ([]Sample, []procSample, error)
 
-// measureLoad starts decision 9's load, samples a load phase and then a
-// longer disk phase under the same load, and stops the load.
-func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d *daemon, p *PackageRun) error {
+// phaseFunc samples one named phase under load.
+type phaseFunc func(ctx context.Context, name string, n int, interval time.Duration) (*LoadRun, error)
+
+// betweenFunc runs between the load and disk phases (the rules phases),
+// sampling with phase.
+type betweenFunc func(ctx context.Context, phase phaseFunc) error
+
+// writesFunc reads the store, so a phase can state its writes.
+type writesFunc func(ctx context.Context) (storeCounts, error)
+
+// measureLoad starts decision 9's load, samples a load phase, the rules
+// phases if there are rules, and then a longer disk phase under the same
+// load, and stops the load.
+func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d *daemon, a api, p *PackageRun, created *workload) error {
 	po := o.pkg
 	load := func(ctx context.Context, verb string) (string, error) {
 		cmd := exec.CommandContext(ctx, "bash", po.loadScript, verb)
@@ -313,13 +333,24 @@ func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d
 		return samplePhase(ctx, cl, nodeName, d, n, interval)
 	}
 	stopHint := fmt.Sprintf("KUBECONFIG=%s bash %s stop", o.kubeconfigAbs, po.loadScript)
-	return runLoad(ctx, po, load, sample, stopHint, p)
+	writes := func(ctx context.Context) (storeCounts, error) { return readStoreCounts(ctx, o.dbPath) }
+	var between betweenFunc
+	if po.rules > 0 {
+		between = func(ctx context.Context, phase phaseFunc) error {
+			return measureRules(ctx, o, cl, a, d, phase, p, created)
+		}
+	}
+	err := runLoad(ctx, po, load, sample, stopHint, p, between, writes)
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	finishRules(fctx, a, d, p.Rules)
+	return err
 }
 
 // runLoad is measureLoad's sequence, with the script and the sampler
 // passed in so a test can check the load is always stopped. stopHint is
 // the command that stops the load by hand, logged if stop fails.
-func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampleFunc, stopHint string, p *PackageRun) error {
+func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampleFunc, stopHint string, p *PackageRun, between betweenFunc, writes writesFunc) error {
 	log.Printf("package: starting the load (%s)", po.loadScript)
 	// Stopped whatever happens, even if start failed partway, on a
 	// context a cancelled run doesn't end, so the loggers don't keep
@@ -335,21 +366,45 @@ func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampl
 	if _, err := load(ctx, "start"); err != nil {
 		return err
 	}
-	phase := func(name string, n int, interval time.Duration) (*LoadRun, error) {
+	phase := func(ctx context.Context, name string, n int, interval time.Duration) (*LoadRun, error) {
 		log.Printf("package: %s, %d samples every %s", name, n, interval)
+		var before storeCounts
+		var werr error
+		if writes != nil {
+			before, werr = writes(ctx)
+		}
 		start := time.Now()
 		samples, procs, err := sample(ctx, n, interval)
-		return &LoadRun{
+		l := &LoadRun{
 			Seconds: time.Since(start).Seconds(), IntervalSeconds: interval.Seconds(),
 			Samples: samples, Cluster: aggregate(samples), Serendipd: processStatsOf(procs),
-		}, err
+		}
+		if writes != nil && werr == nil {
+			var after storeCounts
+			if after, werr = writes(ctx); werr == nil {
+				l.Writes = writesBetween(before, after)
+			}
+		}
+		if werr != nil {
+			log.Printf("package: %s: reading the store: %v", name, werr)
+		}
+		return l, err
 	}
 	var err error
-	if p.Load, err = phase("under load", po.loadSamples, po.idleInterval); err != nil {
+	if p.Load, err = phase(ctx, "under load", po.loadSamples, po.idleInterval); err != nil {
 		return fmt.Errorf("load sampling: %w", err)
 	}
+	if between != nil {
+		if err := between(ctx, phase); err != nil {
+			return err
+		}
+	}
 	if po.diskSamples > 0 {
-		if p.Disk, err = phase("disk, still under load", po.diskSamples, po.diskInterval); err != nil {
+		name := "disk, still under load"
+		if between != nil {
+			name += ", rules on"
+		}
+		if p.Disk, err = phase(ctx, name, po.diskSamples, po.diskInterval); err != nil {
 			return fmt.Errorf("disk sampling: %w", err)
 		}
 	}
@@ -657,6 +712,7 @@ func writePackageSummary(b *strings.Builder, r Result) {
 		writeGroupTable(b, fmt.Sprintf("%s (%d samples over %.0f min)", l.title, len(l.run.Samples), l.run.Seconds/60), l.run.Cluster, seconds(l.run.IntervalSeconds))
 		fmt.Fprintf(b, "\nserendipd: %.1f MiB RSS, %.2f mcores mean.\n", l.run.Serendipd.RSSMiB.Mean, l.run.Serendipd.CPUMillicores.Mean)
 	}
+	writeRulesSummary(b, p.Rules)
 	if p.LoadQueries != "" {
 		fmt.Fprintf(b, "\nThe load driver's queries:\n\n```\n%s\n```\n", p.LoadQueries)
 	}

@@ -141,6 +141,7 @@ type AlertEvaluator struct {
 	lastPurge   time.Time
 	lastTick    atomic.Int64
 	removedDone bool
+	stats       evalStats
 }
 
 // AlertEvaluatorOptions wires an AlertEvaluator.
@@ -212,10 +213,12 @@ type evalJob struct {
 	comp   string
 	value  ConditionValue
 	err    error
+	took   time.Duration
 }
 
 // Tick evaluates the due rules once.
 func (e *AlertEvaluator) Tick(ctx context.Context) error {
+	began := time.Now()
 	now := e.now()
 	if !e.loaded {
 		if err := e.load(ctx, now); err != nil {
@@ -241,16 +244,29 @@ func (e *AlertEvaluator) Tick(ctx context.Context) error {
 	e.removedDone = false
 
 	var jobs []*evalJob
+	var late time.Duration
 	for _, r := range rules {
 		mem := e.memory(r, now)
 		if !r.Spec.IsEnabled() {
+			// Due as soon as it's enabled again: the time it spent
+			// disabled isn't lateness.
+			mem.nextDue = now
 			e.disabled(ctx, r, now)
 			continue
 		}
 		if now.Before(mem.nextDue) {
 			continue
 		}
-		mem.nextDue = now.Add(r.Spec.Interval())
+		late = max(late, now.Sub(mem.nextDue))
+		// The next run counts from the due time, not from this tick, so
+		// a rule picked up a tick late still runs every Interval (spec
+		// 024 T011 measured 66 s for 1 minute when it counted from now:
+		// a tick a few ms early waited one more AlertTick). A rule more
+		// than an Interval behind starts over from now.
+		mem.nextDue = mem.nextDue.Add(r.Spec.Interval())
+		if !mem.nextDue.After(now) {
+			mem.nextDue = now.Add(r.Spec.Interval())
+		}
 		targets, reason, msg, err := e.targets(ctx, r)
 		if err != nil {
 			log.Printf("reconcile: alerts: rule %s: targets: %v", r.Metadata.ID, err)
@@ -278,6 +294,9 @@ func (e *AlertEvaluator) Tick(ctx context.Context) error {
 	// answers are in.
 	now = e.now()
 	e.apply(ctx, jobs, now)
+	if len(jobs) > 0 {
+		e.stats.add(jobs, time.Since(began), late)
+	}
 	e.finishTick(ctx, now)
 	return nil
 }
@@ -317,6 +336,7 @@ func (e *AlertEvaluator) finishTick(ctx context.Context, now time.Time) {
 			delete(e.open, fp)
 		}
 	}
+	e.stats.maybeLog(now)
 	e.lastTick.Store(now.UnixNano())
 }
 
@@ -473,7 +493,9 @@ func (e *AlertEvaluator) evaluate(ctx context.Context, jobs []*evalJob) {
 			defer func() { <-sem; wg.Done() }()
 			qctx, cancel := context.WithTimeout(ctx, AlertQueryTimeout)
 			defer cancel()
+			began := time.Now()
 			j.value, j.err = e.provider.EvaluateCondition(qctx, j.target, j.rule.Spec.Condition, conditionWindow(j.rule.Spec.Condition))
+			j.took = time.Since(began)
 		}(j)
 	}
 	wg.Wait()

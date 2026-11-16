@@ -428,6 +428,38 @@ func TestAlerts_LoadIsBounded(t *testing.T) {
 	}
 }
 
+// TestAlerts_CadenceHoldsWhenTicksDrift: ticks land a few ms either side
+// of their 15 s grid (as a real ticker does under load). A 1-minute rule
+// still runs ten times in ten minutes; counting the next run from the
+// pick-up time made it 66 s (spec 024 T011).
+func TestAlerts_CadenceHoldsWhenTicksDrift(t *testing.T) {
+	f := newAlertFixture(t)
+	comp := f.component("web")
+	f.rule("cpu", comp)
+	f.provider.set(comp, 0.5)
+	base := f.now
+	at := func(k int) time.Time {
+		// 0-6 ms past the grid, changing from tick to tick.
+		d := time.Duration(k%7) * time.Millisecond
+		return base.Add(time.Duration(k)*reconcile.AlertTick + d)
+	}
+	k := 0
+	step := func() {
+		k++
+		f.tick(at(k).Sub(f.now))
+	}
+	for f.provider.calls.Load() == 0 {
+		step()
+	}
+	first := f.provider.calls.Load()
+	for range 40 { // ten minutes of ticks
+		step()
+	}
+	if got := f.provider.calls.Load() - first; got != 10 {
+		t.Errorf("runs in ten minutes = %d, want 10", got)
+	}
+}
+
 // sqliteRetention is serendipd's retention purge over the fixture's db.
 func sqliteRetention(f *alertFixture) func(context.Context, time.Time, int) (int, error) {
 	return func(ctx context.Context, cutoff time.Time, limit int) (int, error) {

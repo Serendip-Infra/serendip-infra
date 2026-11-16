@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (spec 024: T001–T010 done)
+Last updated: 2026-11-16 (spec 024: T001–T011 done)
 
 ## Current phase
 
@@ -20,11 +20,29 @@ Last updated: 2026-11-15 (spec 024: T001–T010 done)
 approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
 loop), T006 (condition queries, built-in disk rule), T007 (the API),
-T008 (CLI and MCP), T009 (the console) and T010 (live check) done and
-committed on local branch `spec-024`.**
-Nothing pushed. **Next: T011** (benchmarks on `bench-t470`), then T012
-(reviews; it now carries RP-079, unknown fields dropped by the API) and
-T013.
+T008 (CLI and MCP), T009 (the console), T010 (live check) and T011
+(benchmarks) done and committed on local branch `spec-024`.**
+Nothing pushed. **Next: T012** (reviews). It carries RP-079 (unknown
+fields dropped by the API) and **RP-080's open decision for the user**:
+the rules' status writes, about 37,000 audit rows a day at 200 rules
+(options a/b/c in plan "Findings from T011" 5). Then T013.
+- **T011:** `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`.
+  - **Passed:** rule 4 (79 MiB idle; a same-host A/B puts spec 024 at
+    +1 MiB over spec 023) and criterion 12 (every group).
+  - **Latency:** plateaued over 2.5 h (p95 0.8–1.2 s), which stands for
+    3 days by the user's method.
+  - **Cost:** 200 rules cost `serendipd` +4.2 mcores and the node +149
+    to +234 mcores (OpenObserve), recorded as RP-080.
+  - **Fixed after the run, not re-measured:** the 66 s cadence, lateness
+    counted from disabled time, and noData counted as failed.
+  - **Harness:** keeps `serendipd`'s log across restarts and validates
+    bench rules before a run.
+  - The run was started from the user's own Git Bash terminal, because
+    Claude Code's memory-pressure reaper killed two runs.
+  - `serendip-t018` is stopped (`docker start serendip-t018-control-plane`,
+    then `.\scripts\dev-up.ps1 -Restart -NoBuild`).
+  - `bench-t470` is still up; delete it with
+    `bash profiles/edge-1/bench/kind-t470-setup.sh down bench-t470`.
 - **T010:** `specs/024-alerts/verification.md`, criteria 1–12 and 14
   live on `serendip-t018` (7's measurements and 13 are T011's).
   - **Fixed:** F1 `core/notify`'s dialer gave one unreachable address
@@ -157,10 +175,17 @@ T013.
   - **No public domain exists yet.** The user may register one
     (`serendipinfra.com` or `serendip-infra.dev` suggested) for email
     sending with DKIM; not decided.
-- **GitHub for spec 024 is waiting on `backfill.sh`** (resting, resumes
-  about 07:26 UTC 2026-11-15, ends around Monday): never two runs at
-  once. After it logs `DONE`: epic #65's body to IN PROGRESS, and T001–
-  T013's task issues as one paced batch. Epic #65 → "Spec 024: Alert rules and notification channels" and
+- **`backfill.sh` is DONE** (22:47 UTC 2026-11-15). GitHub for spec 024
+  is now unblocked: epic #65's body to IN PROGRESS, and T001–T013's task
+  issues as one paced batch, created with assignee, milestone, a short
+  title and Priority/Area/Size set.
+  - **Deferred cleanup (the user, 2026-11-16: "later but keep in
+    mind"):** #283 is an orphan duplicate of #284 (Spec 019 T006), to be
+    closed. About 245 backfilled tasks lack an assignee and a milestone,
+    and 59 titles carry the whole tasks.md heading (up to 927 chars).
+    The fix is one paced PATCH per task (assignee, milestone, short
+    title), about 13 h. Board Priority/Area/Size are empty on finished
+    work; the plan is to skip them, Area not decided. Epic #65 → "Spec 024: Alert rules and notification channels" and
 #66 → "Spec 025: Networking: Cilium, Hubble and traces" (two paced
 writes, done or pending: check the epics).
   - **Then link the finished tasks' commits (the user, 2026-11-15:
@@ -212,7 +237,7 @@ writes, done or pending: check the epics).
   v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
   version bump are due.**
 - **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
-- **Next:** T011 (benchmarks on `bench-t470`).
+- **Next:** T012 (reviews), then T013.
 - **Later, after spec 024 (agreed 2026-11-15):** composite alert
   conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
   done").
