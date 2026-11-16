@@ -428,7 +428,7 @@ func (h *notificationsHandler) writeHeartbeat(w http.ResponseWriter, r *http.Req
 func (h *notificationsHandler) putHeartbeat(w http.ResponseWriter, r *http.Request) {
 	reqID := audit.RequestIDFrom(r.Context())
 	var hb resource.Heartbeat
-	if !decodeBody(w, r, &hb) {
+	if !decodeResourceBody(w, r, &hb) {
 		return
 	}
 	hb.Status = resource.HeartbeatStatus{}

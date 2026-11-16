@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-16 (spec 024: T001–T011 done)
+Last updated: 2026-11-16 (spec 024: T001–T012 done)
 
 ## Current phase
 
@@ -21,11 +21,18 @@ approved by the user 2026-11-15. T001 (spike), T002 (core types), T003
 (authorization), T004 (`core/notify`), T005 (evaluator and delivery
 loop), T006 (condition queries, built-in disk rule), T007 (the API),
 T008 (CLI and MCP), T009 (the console), T010 (live check) and T011
-(benchmarks) done and committed on local branch `spec-024`.**
-Nothing pushed. **Next: T012** (reviews). It carries RP-079 (unknown
-fields dropped by the API) and **RP-080's open decision for the user**:
-the rules' status writes, about 37,000 audit rows a day at 200 rules
-(options a/b/c in plan "Findings from T011" 5). Then T013.
+(benchmarks) and T012 (reviews) done and committed on local branch
+`spec-024`.** Nothing pushed. **Next: T013** (docs and close-out).
+- **T012:** see tasks.md's "Done as" note.
+  - **RP-080:** option a (the user's choice). The lastEvaluated refresh
+    is hourly, and the API shows the evaluator's live time.
+  - **RP-079:** unknown `metadata` fields get a 400.
+  - **Security fix:** an SMTP server's Secrets now need value read, on
+    naming and on a host or port change. Before this, a Contributor at
+    `/` could exfiltrate any Secret through a relay pointed at its own
+    host.
+  - The go-reviewer shutdown fixes are in.
+  - contract-guardian passed.
 - **T011:** `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`.
   - **Passed:** rule 4 (79 MiB idle; a same-host A/B puts spec 024 at
     +1 MiB over spec 023) and criterion 12 (every group).
@@ -195,7 +202,7 @@ writes, done or pending: check the epics).
     issue>` to the body of each task's commit. Match each commit by
     `T00N` in its subject:
     - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
-      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`, T011 `66435ca`
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`, T011 `66435ca`, T012 (its `feat(api): spec 024 T012` commit)
       and the two `spec 024 T010` fix commits after it (hashes change
       after the rewrite);
     - non-interactively: `git filter-branch --msg-filter` over

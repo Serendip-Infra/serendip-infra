@@ -96,6 +96,11 @@ func (l *HeartbeatLoop) Tick(ctx context.Context) error {
 		return nil
 	}
 	res := l.beater.Beat(ctx, l.health, hb.Spec, l.secrets, false)
+	if ctx.Err() != nil {
+		// Stopping: a beat cut short isn't a failure to record (T012
+		// review). The sender's own timeouts bound a beat otherwise.
+		return nil
+	}
 	switch {
 	case res.Sent:
 		l.next = now.Add(hb.Spec.Interval())

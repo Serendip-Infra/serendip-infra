@@ -172,7 +172,7 @@ func (h *ResourceHandler[S, St]) Register(mux Mux) {
 
 func (h *ResourceHandler[S, St]) Create(w http.ResponseWriter, r *http.Request) {
 	var res resource.Resource[S, St]
-	if !decodeBody(w, r, &res) {
+	if !decodeResourceBody(w, r, &res) {
 		return
 	}
 	if h.serverStatus {
@@ -266,7 +266,7 @@ func listOptions(r *http.Request) store.ListOptions {
 
 func (h *ResourceHandler[S, St]) Update(w http.ResponseWriter, r *http.Request) {
 	var res resource.Resource[S, St]
-	if !decodeBody(w, r, &res) {
+	if !decodeResourceBody(w, r, &res) {
 		return
 	}
 	// The path's {id} is authoritative over whatever the body claims --

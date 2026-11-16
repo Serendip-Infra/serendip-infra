@@ -334,7 +334,7 @@ func cmpOr(a, b string) string {
 
 func (h *DeploymentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var d resource.Deployment
-	if !decodeBody(w, r, &d) {
+	if !decodeResourceBody(w, r, &d) {
 		return
 	}
 	ctx := r.Context()
@@ -365,7 +365,7 @@ func (h *DeploymentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *DeploymentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var d resource.Deployment
-	if !decodeBody(w, r, &d) {
+	if !decodeResourceBody(w, r, &d) {
 		return
 	}
 	ctx := r.Context()

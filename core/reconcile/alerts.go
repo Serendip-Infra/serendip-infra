@@ -35,8 +35,10 @@ const (
 	AlertRetentionBatch = 500
 	// alertStaleEvaluated: a rule whose value hasn't changed still has its
 	// lastEvaluated written this often, so the store's copy isn't left far
-	// behind while nothing changes.
-	alertStaleEvaluated = 10 * time.Minute
+	// behind while nothing changes. Hourly, not more often: each write is
+	// an audit row (RP-080, the user's option a, 2026-11-16); the API
+	// answers the live time from LastEvaluated.
+	alertStaleEvaluated = time.Hour
 	alertRetentionEvery = time.Hour
 	// alertRetentionBatches bounds one retention run: 20 × 500 Alerts.
 	alertRetentionBatches = 20
@@ -134,12 +136,15 @@ type AlertEvaluator struct {
 	deliver   func(alertID string)
 	now       func() time.Time
 
-	loaded      bool
-	rules       map[string]*ruleMemory
-	open        map[string]*openAlert // by fingerprint
-	lastFlush   time.Time
-	lastPurge   time.Time
-	lastTick    atomic.Int64
+	loaded    bool
+	rules     map[string]*ruleMemory
+	open      map[string]*openAlert // by fingerprint
+	lastFlush time.Time
+	lastPurge time.Time
+	lastTick  atomic.Int64
+	// evaluatedAt is each rule's latest evaluation time (rule ID →
+	// time.Time), read by the API between the store's hourly refreshes.
+	evaluatedAt sync.Map
 	removedDone bool
 	stats       evalStats
 }
@@ -182,6 +187,17 @@ func (e *AlertEvaluator) LastTick() time.Time {
 		return time.Time{}
 	}
 	return time.Unix(0, n)
+}
+
+// LastEvaluated is when the rule was last evaluated, live: the store's
+// lastEvaluated is refreshed only hourly while the value holds (RP-080).
+// ok is false for a rule not evaluated since serendipd started.
+func (e *AlertEvaluator) LastEvaluated(id string) (t time.Time, ok bool) {
+	v, ok := e.evaluatedAt.Load(id)
+	if !ok {
+		return time.Time{}, false
+	}
+	return v.(time.Time), true
 }
 
 // Run ticks until ctx ends.
@@ -290,6 +306,11 @@ func (e *AlertEvaluator) Tick(ctx context.Context) error {
 		e.resolveRule(ctx, r, keep, resource.ResolvedComponentGone, now)
 	}
 	e.evaluate(ctx, jobs)
+	if err := ctx.Err(); err != nil {
+		// Stopping: the cancelled queries weren't failures, and no rule
+		// was evaluated (T012 review). Run's final flush keeps what's held.
+		return err
+	}
 	// The queries can take a while: transitions are timed when the
 	// answers are in.
 	now = e.now()
@@ -411,6 +432,7 @@ func (e *AlertEvaluator) forgetDeleted(rules []resource.AlertRule) {
 	for id := range e.rules {
 		if !live[id] {
 			delete(e.rules, id)
+			e.evaluatedAt.Delete(id)
 		}
 	}
 	for fp, a := range e.open {
@@ -576,6 +598,7 @@ func (e *AlertEvaluator) apply(ctx context.Context, jobs []*evalJob, now time.Ti
 		o := byRule[id]
 		mem := e.rules[id]
 		mem.evaluated = now
+		e.evaluatedAt.Store(id, now)
 		if o.value != nil && (mem.value == nil || *mem.value != *o.value) {
 			mem.value, mem.valueDirty = o.value, true
 		}
@@ -794,7 +817,7 @@ func (e *AlertEvaluator) writeRule(ctx context.Context, id string, now time.Time
 		_, err = e.s.Rules.Update(ctx, r)
 		if errors.Is(err, store.ErrConflict) {
 			if attempt == 2 {
-				log.Printf("reconcile: alerts: rule %s: status not written after %d conflicts; retried on the next change", id, attempt+1)
+				log.Printf("reconcile: alerts: rule %s: status not written after %d conflicts; retried at the next flush", id, attempt+1)
 			}
 			continue
 		}

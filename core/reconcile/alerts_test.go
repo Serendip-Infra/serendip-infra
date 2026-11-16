@@ -460,6 +460,50 @@ func TestAlerts_CadenceHoldsWhenTicksDrift(t *testing.T) {
 	}
 }
 
+// A rule whose value holds writes its lastEvaluated hourly, not on every
+// pass, while LastEvaluated answers the live time (RP-080, option a).
+func TestAlerts_SteadyRuleWritesHourly(t *testing.T) {
+	f := newAlertFixture(t)
+	comp := f.component("web")
+	r := f.rule("cpu", comp)
+	f.provider.set(comp, 0.5)
+	for f.provider.calls.Load() == 0 {
+		f.tick(reconcile.AlertTick)
+	}
+	f.tick(reconcile.AlertTick) // the first value's flush
+	settled := f.writes.Load()
+	for range 4*60 - 1 { // just under an hour of ticks
+		f.tick(reconcile.AlertTick)
+	}
+	if got := f.writes.Load() - settled; got != 0 {
+		t.Errorf("writes in the hour = %d, want 0", got)
+	}
+	live, ok := f.e.LastEvaluated(r.Metadata.ID)
+	if !ok || f.now.Sub(live) >= time.Minute {
+		t.Errorf("LastEvaluated = %v, %v; want within a minute of %v", live, ok, f.now)
+	}
+	if stored := f.ruleNow(r.Metadata.ID).Status.LastEvaluated; stored == nil || !stored.Before(live) {
+		t.Errorf("stored lastEvaluated = %v, want older than the live %v", stored, live)
+	}
+	for range 8 {
+		f.tick(reconcile.AlertTick)
+	}
+	if got := f.writes.Load() - settled; got != 1 {
+		t.Errorf("writes after the hour = %d, want 1 (the refresh)", got)
+	}
+	approved := store.WithApproval(f.ctx, store.ApprovalIntent{Approval: resource.Approval{
+		Spec:   resource.ApprovalSpec{Action: resource.ApprovalAction{Verb: resource.ApprovalVerbDelete, Target: resource.Scope{Kind: resource.KindAlertRule, ID: r.Metadata.ID}, Cascade: true}},
+		Status: resource.ApprovalStatus{Phase: resource.ApprovalApproved},
+	}})
+	if err := f.rules.Delete(approved, r.Metadata.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	f.tick(reconcile.AlertTick)
+	if _, ok := f.e.LastEvaluated(r.Metadata.ID); ok {
+		t.Error("LastEvaluated still answers for a deleted rule")
+	}
+}
+
 // sqliteRetention is serendipd's retention purge over the fixture's db.
 func sqliteRetention(f *alertFixture) func(context.Context, time.Time, int) (int, error) {
 	return func(ctx context.Context, cutoff time.Time, limit int) (int, error) {

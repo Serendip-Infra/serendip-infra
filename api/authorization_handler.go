@@ -105,7 +105,7 @@ func (h *AuthorizationHandler) getDefinition(w http.ResponseWriter, r *http.Requ
 
 func (h *AuthorizationHandler) createDefinition(w http.ResponseWriter, r *http.Request) {
 	var d resource.RoleDefinition
-	if !decodeBody(w, r, &d) {
+	if !decodeResourceBody(w, r, &d) {
 		return
 	}
 	if err := resource.ValidateRoleDefinition(d.Spec, true); err != nil {
@@ -266,7 +266,7 @@ func (h *AuthorizationHandler) createAssignment(w http.ResponseWriter, r *http.R
 		return
 	}
 	var a resource.RoleAssignment
-	if !decodeBody(w, r, &a) {
+	if !decodeResourceBody(w, r, &a) {
 		return
 	}
 	if err := resource.ValidateRoleAssignment(a.Spec); err != nil {

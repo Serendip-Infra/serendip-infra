@@ -322,7 +322,9 @@ release's.
    - **No write per evaluation.** `lastValue` and `lastEvaluated` are held
      in memory. They're flushed at most once a minute, and only for rules
      that changed. So the store sees a write on a state change, not on
-     every check (SQLite on a T470).
+     every check (SQLite on a T470). While a value holds,
+     `lastEvaluated` is refreshed hourly, and the API answers the
+     evaluator's live time (amended in T012, RP-080 option a).
    - **Folding** (cs-tools' design):
      - the fingerprint is `rule|component|environment`;
      - while that fingerprint's Alert is firing, evaluations update it in
@@ -549,6 +551,15 @@ release's.
      build's credential does (amended in T003). An email channel's SMTP
      server needs nothing: SMTP servers are platform relays. Changing
      where a channel with an allowance sends needs the allowance action.
+   - **An SMTP server's Secrets** (amended in T012, from the security
+     review) need `serendip/secrets/value/read` where they're newly
+     named, and again when the host or port changes. The server sends
+     them to its host in AUTH. Before this, `smtpservers/write` alone let
+     a Contributor at `/`, who can't read Secret values, point a server
+     at its own host and receive any two Secrets
+     (`TestAuthz_SMTPServerSecretsNeedValueRead`). The Owner who sets up
+     a relay needs Secrets User on its Secrets, as for a Telegram
+     channel's token.
    - **Platform `default` channels** can be named by any principal who
      can write a rule. Their settings are shown only to readers at `/`;
      everyone else sees "platform channel".
@@ -894,6 +905,13 @@ load.
      evaluation.
    - c. Accept it as it stands, and let the retention spec bound the
      audit log.
+
+   **Decided (the user, 2026-11-16): a.** Done in T012:
+   - `alertStaleEvaluated` is now 1 hour;
+   - the evaluator's `LastEvaluated` is the live time, and the API's rule
+     answers show it (`api.WithRuleEvaluated`).
+
+   RP-080 has the detail.
 6. **"Failed" in the timing line counted "no data" answers.** About 6%
    of queries were no-data answers. No rule ended `QueryFailed`. The line
    now has `noData=`.

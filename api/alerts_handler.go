@@ -29,6 +29,36 @@ type alertsHandler struct {
 	rules  store.Store[resource.AlertRuleSpec, resource.AlertRuleStatus]
 	comps  store.Store[resource.ComponentSpec, resource.ComponentStatus]
 	now    func() time.Time
+	// evaluated is a rule's live evaluation time; nil reads none.
+	evaluated func(id string) (time.Time, bool)
+}
+
+// WithRuleEvaluated lets rule responses show when each rule was last
+// evaluated, live. The stored lastEvaluated is refreshed only hourly while
+// a rule's value holds, since each write is an audit row (RP-080).
+func WithRuleEvaluated(f func(id string) (time.Time, bool)) ServerOption {
+	return func(o *serverOptions) { o.evaluated = f }
+}
+
+// withLiveEvaluated is rule with its live evaluation time, when that's
+// later than the stored one.
+func withLiveEvaluated(rule resource.AlertRule, evaluated func(id string) (time.Time, bool)) resource.AlertRule {
+	if evaluated == nil {
+		return rule
+	}
+	t, ok := evaluated(rule.Metadata.ID)
+	if !ok || (rule.Status.LastEvaluated != nil && !t.After(*rule.Status.LastEvaluated)) {
+		return rule
+	}
+	rule.Status.LastEvaluated = &t
+	return rule
+}
+
+// liveRuleView is the rule handler's view: the live evaluation time.
+func liveRuleView(evaluated func(id string) (time.Time, bool)) func(context.Context, resource.AlertRule) (any, error) {
+	return func(_ context.Context, r resource.AlertRule) (any, error) {
+		return withLiveEvaluated(r, evaluated), nil
+	}
 }
 
 func (h *alertsHandler) register(mux Mux) {
@@ -246,7 +276,7 @@ func (h *alertsHandler) updateRule(w http.ResponseWriter, r *http.Request, mutat
 			return
 		}
 		if !mutate(&rule) {
-			writeJSON(w, http.StatusOK, rule)
+			writeJSON(w, http.StatusOK, withLiveEvaluated(rule, h.evaluated))
 			return
 		}
 		got, err := h.rules.Update(ctx, rule)
@@ -257,7 +287,7 @@ func (h *alertsHandler) updateRule(w http.ResponseWriter, r *http.Request, mutat
 			writeStoreErr(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, got)
+		writeJSON(w, http.StatusOK, withLiveEvaluated(got, h.evaluated))
 		return
 	}
 }

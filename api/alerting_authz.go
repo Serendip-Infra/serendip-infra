@@ -118,6 +118,36 @@ func channelSecrets(ctx context.Context, r resource.NotificationChannel, current
 	return ctx, nil
 }
 
+// smtpSecrets: an SMTP server sends its username and password Secrets to
+// its host in AUTH, so naming either needs reading its value, as a
+// channel's Secrets do (T012 security review: without it, smtpservers/
+// write let a Contributor send any Secret to a host it runs). Both are
+// re-checked when a Secret is newly named, and when the host or port
+// changes, since that decides where the values go.
+func smtpSecrets(ctx context.Context, r resource.SMTPServer, current *resource.SMTPServer) (context.Context, error) {
+	moved := current == nil || current.Spec.Host != r.Spec.Host || current.Spec.Port != r.Spec.Port
+	for _, id := range []string{r.Spec.UsernameSecretID, r.Spec.PasswordSecretID} {
+		if id == "" {
+			continue
+		}
+		if !moved && (id == current.Spec.UsernameSecretID || id == current.Spec.PasswordSecretID) {
+			continue
+		}
+		at := resource.Scope{Kind: resource.KindSecret, ID: id}
+		var ok bool
+		var err error
+		ctx, ok, err = allowedNoted(ctx, secretValueRead, at)
+		if err != nil {
+			return ctx, err
+		}
+		if !ok {
+			return ctx, deployRefuse(http.StatusForbidden, "forbidden",
+				"missing %s at %s: an SMTP server sends the Secrets it names to its host, so naming one needs reading its value", secretValueRead.Name, at)
+		}
+	}
+	return ctx, nil
+}
+
 // channelSecretIDs are the Secrets s sends with.
 func channelSecretIDs(s resource.NotificationChannelSpec) []string {
 	var out []string

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/serendip-infra/serendip-infra/api"
 	"github.com/serendip-infra/serendip-infra/core/policy"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 	"github.com/serendip-infra/serendip-infra/core/store/sqlite"
@@ -188,4 +189,84 @@ func TestAlerts_Silence(t *testing.T) {
 	}
 	w.expect("tok-contrib", http.MethodPost, unsilence, nil, http.StatusOK)
 	w.expect("tok-contrib", http.MethodPost, "/v1/alertrules/"+w.ruleB+"/silence", ok, http.StatusForbidden)
+}
+
+// Rule answers show the evaluator's live lastEvaluated, which the store
+// refreshes only hourly while a value holds (RP-080, option a).
+func TestAlertRules_LiveLastEvaluated(t *testing.T) {
+	live := time.Date(2026, 11, 16, 12, 0, 30, 0, time.UTC)
+	var ruleID string
+	w := newAuthzWorld(t, func(w *authzWorld) {
+		w.grant("tok-contrib", policy.ContributorRoleID, "projA")
+	}, api.WithRuleEvaluated(func(id string) (time.Time, bool) {
+		return live, id == ruleID
+	}))
+	other := w.mkAs("key-ci", "/v1/alertrules", alertRule("cpu-b", w.scope("appB"), w.id["prod"]))
+	ruleID = w.mkAs("key-ci", "/v1/alertrules", alertRule("cpu-a", w.scope("web"), w.id["prod"]))
+	evaluated := func(body []byte) *time.Time {
+		t.Helper()
+		var r resource.AlertRule
+		if err := json.Unmarshal(body, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.Status.LastEvaluated
+	}
+	got := w.do("tok-contrib", http.MethodGet, "/v1/alertrules/"+ruleID, nil)
+	if e := evaluated(got.Body.Bytes()); got.Code != http.StatusOK || e == nil || !e.Equal(live) {
+		t.Errorf("get: %d lastEvaluated %v, want %v", got.Code, e, live)
+	}
+	got = w.do("key-ci", http.MethodGet, "/v1/alertrules", nil)
+	var list []resource.AlertRule
+	if err := json.Unmarshal(got.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range list {
+		e := r.Status.LastEvaluated
+		switch r.Metadata.ID {
+		case ruleID:
+			if e == nil || !e.Equal(live) {
+				t.Errorf("list: lastEvaluated %v, want %v", e, live)
+			}
+		case other:
+			if e != nil {
+				t.Errorf("list: a rule not evaluated shows lastEvaluated %v", e)
+			}
+		}
+	}
+	until := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	got = w.do("tok-contrib", http.MethodPost, "/v1/alertrules/"+ruleID+"/silence", map[string]any{"until": until, "reason": "fix"})
+	if e := evaluated(got.Body.Bytes()); got.Code != http.StatusOK || e == nil || !e.Equal(live) {
+		t.Errorf("silence: %d lastEvaluated %v, want %v", got.Code, e, live)
+	}
+}
+
+// An unknown metadata field is refused, naming it, not dropped: a dropped
+// `ownerId` made a Project's channel the platform's (RP-079).
+func TestResourceBody_UnknownMetadataRefused(t *testing.T) {
+	w := newAuthzWorld(t, func(*authzWorld) {})
+	channel := func(meta map[string]any) map[string]any {
+		return map[string]any{"metadata": meta, "spec": map[string]any{
+			"type": "webhook", "webhook": map[string]any{"url": "https://hooks.example.com/a"}}}
+	}
+	web := w.scope("projA")
+	got := w.do("key-ci", http.MethodPost, "/v1/notificationchannels",
+		channel(map[string]any{"name": "ops", "ownerId": web.ID, "metadata.version": 1}))
+	if got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), `\"ownerId\"`) ||
+		!strings.Contains(got.Body.String(), `\"metadata.version\"`) {
+		t.Errorf("unknown fields: %d %s, want 400 naming both", got.Code, got.Body)
+	}
+	// encoding/json's case-insensitive match still applies, and an
+	// unknown spec field is still ignored.
+	body := channel(map[string]any{"Name": "ops", "OwnerRefs": []resource.OwnerRef{{Kind: web.Kind, ID: web.ID}}})
+	body["spec"].(map[string]any)["colour"] = "red"
+	w.mkAs("key-ci", "/v1/notificationchannels", body)
+}
+
+// A body that isn't a resource document isn't checked for metadata.
+func TestResourceBody_OtherBodiesUnchecked(t *testing.T) {
+	w := newAuthzWorld(t, func(*authzWorld) {})
+	got := w.do("key-ci", http.MethodPost, "/v1/approvals", map[string]any{"metadata": map[string]any{"ownerId": "x"}})
+	if strings.Contains(got.Body.String(), "unknown metadata fields") {
+		t.Errorf("approval request checked as a resource document: %d %s", got.Code, got.Body)
+	}
 }

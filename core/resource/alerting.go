@@ -226,8 +226,10 @@ func ValidateSilence(s AlertSilence, now time.Time) error {
 	return nil
 }
 
-// AlertRuleStatus is written by serendipd. LastValue and LastEvaluated
-// are flushed at most once a minute (decision 2), not on every check.
+// AlertRuleStatus is written by serendipd. LastValue is flushed at most
+// once a minute (decision 2), not on every check. LastEvaluated goes with
+// it; while the value holds, it's refreshed hourly, and the API answers
+// the evaluator's live time (RP-080).
 type AlertRuleStatus struct {
 	Status
 	Active        bool          `json:"active"`

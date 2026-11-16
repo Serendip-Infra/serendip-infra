@@ -261,17 +261,20 @@ func TestNotifications_PlatformChannelsHiddenBelowRoot(t *testing.T) {
 }
 
 func TestNotifications_SMTPHostChecked(t *testing.T) {
-	w, _ := newNotifyWorld(t, func(w *authzWorld) {})
+	w, _ := newNotifyWorld(t, func(w *authzWorld) {
+		w.grant("tok-admin", policy.OwnerRoleID, "/")
+		w.grant("tok-admin", policy.SecretsUserRoleID, "secret")
+	})
 	smtp := func(host string) map[string]any {
 		return map[string]any{"metadata": map[string]any{"name": "relay-" + host}, "spec": resource.SMTPServerSpec{
 			Host: host, Port: 587, TLS: resource.SMTPStartTLS, From: "alerts@example.com",
 			UsernameSecretID: w.id["secret"], PasswordSecretID: w.id["secret"]}}
 	}
-	got := w.do("key-ci", http.MethodPost, "/v1/smtpservers", smtp("lan.example"))
+	got := w.do("tok-admin", http.MethodPost, "/v1/smtpservers", smtp("lan.example"))
 	if got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), "private address") {
 		t.Errorf("a private SMTP host: %d %s, want 400", got.Code, got.Body)
 	}
-	got = w.do("key-ci", http.MethodPost, "/v1/smtpservers", smtp("smtp.example.com"))
+	got = w.do("tok-admin", http.MethodPost, "/v1/smtpservers", smtp("smtp.example.com"))
 	if got.Code != http.StatusCreated || jsonDoc(t, got.Body.Bytes())["secretSet"] == nil {
 		t.Errorf("an SMTP server: %d %s, want 201 with secretSet", got.Code, got.Body)
 	}

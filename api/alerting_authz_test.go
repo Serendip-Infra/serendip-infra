@@ -146,8 +146,12 @@ func TestAuthz_SMTPServersAreDecidedAtRoot(t *testing.T) {
 // Deleting a rule, channel or SMTP server goes through an Approval, like
 // every delete (decision 10); one still in use is refused with none.
 func TestAuthz_AlertingDeletesHaveApprovals(t *testing.T) {
-	w := newAuthzWorld(t, func(w *authzWorld) { w.grant("tok-contrib", policy.ContributorRoleID, "projA") })
-	smtp := w.mkAs("key-ci", "/v1/smtpservers", map[string]any{
+	w := newAuthzWorld(t, func(w *authzWorld) {
+		w.grant("tok-contrib", policy.ContributorRoleID, "projA")
+		w.grant("tok-admin", policy.OwnerRoleID, "/")
+		w.grant("tok-admin", policy.SecretsUserRoleID, "secret")
+	})
+	smtp := w.mkAs("tok-admin", "/v1/smtpservers", map[string]any{
 		"metadata": map[string]any{"name": "gmail"},
 		"spec": resource.SMTPServerSpec{Host: "smtp.gmail.com", Port: 587, TLS: resource.SMTPStartTLS, From: "alerts@example.com",
 			UsernameSecretID: w.id["secret"], PasswordSecretID: w.id["secret"]},
@@ -230,4 +234,36 @@ func TestAuthz_ChannelDestinationsAndSecrets(t *testing.T) {
 	chA := w.mkAs("key-ci", "/v1/notificationchannels", webhookChannel("a", projA, false, nil))
 	doc["spec"].(map[string]any)["channelIds"] = []string{chA}
 	w.expect("tok-contrib", http.MethodPut, "/v1/alertrules/"+rule, doc, http.StatusOK)
+}
+
+// T012 security review: an SMTP server sends its Secrets to its host, so
+// naming them, or moving the host, needs reading their values. Without
+// it, a Contributor at "/" could send any Secret to a host it runs.
+func TestAuthz_SMTPServerSecretsNeedValueRead(t *testing.T) {
+	w := newAuthzWorld(t, func(w *authzWorld) {
+		w.grant("tok-contrib", policy.ContributorRoleID, "/")
+		w.grant("tok-admin", policy.OwnerRoleID, "/")
+		w.grant("tok-admin", policy.SecretsUserRoleID, "secret")
+	})
+	body := func(host string) map[string]any {
+		return map[string]any{"metadata": map[string]any{"name": "relay"}, "spec": resource.SMTPServerSpec{
+			Host: host, Port: 465, TLS: resource.SMTPImplicit, From: "alerts@example.com",
+			UsernameSecretID: w.id["secret"], PasswordSecretID: w.id["secret"]}}
+	}
+	got := w.do("tok-contrib", http.MethodPost, "/v1/smtpservers", body("mx.attacker.example"))
+	if got.Code != http.StatusForbidden || !strings.Contains(got.Body.String(), "serendip/secrets/value/read at Secret/"+w.id["secret"]) {
+		t.Errorf("create naming a Secret without value read: %d %s, want 403", got.Code, got.Body)
+	}
+	id := w.mkAs("tok-admin", "/v1/smtpservers", body("smtp.example.com"))
+	path := "/v1/smtpservers/" + id
+	doc := w.current(path, "")
+	doc["spec"].(map[string]any)["host"] = "mx.attacker.example"
+	w.expect("tok-contrib", http.MethodPut, path, doc, http.StatusForbidden)
+	doc["spec"].(map[string]any)["port"] = 587
+	doc["spec"].(map[string]any)["host"] = "smtp.example.com"
+	w.expect("tok-contrib", http.MethodPut, path, doc, http.StatusForbidden)
+	// The same destination and Secrets: only the sender address changes.
+	doc = w.current(path, "")
+	doc["spec"].(map[string]any)["from"] = "ops@example.com"
+	w.expect("tok-contrib", http.MethodPut, path, doc, http.StatusOK)
 }

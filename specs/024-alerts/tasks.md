@@ -628,6 +628,45 @@ Dependency sketch:
     reason;
   - `go test ./...`, `go vet ./...` and the UI tests pass.
 
+> **Done as:** `go test ./...`, `go vet ./...` and the UI tests (172) pass.
+>
+> **RP-080's status writes: the user chose option a.**
+> - `alertStaleEvaluated` is now 1 hour (`TestAlerts_SteadyRuleWritesHourly`).
+> - `AlertEvaluator.LastEvaluated` holds the live time, and the API's rule
+>   answers show it (`api.WithRuleEvaluated`,
+>   `TestAlertRules_LiveLastEvaluated`, `TestWithLiveEvaluated`).
+>
+> **RP-079:** `decodeResourceBody` refuses unknown `metadata` fields,
+> answering 400 that names them, on every route that takes a resource
+> document (`TestResourceBody_*`). Unknown `spec` fields are still dropped
+> (the residual, with the reason).
+>
+> **security-review:** one finding survived the false-positive check, at
+> 8/10, and it's fixed. An SMTP server's Secrets needed no value read, so
+> a Contributor at `/` could point a relay at its own host and receive any
+> two Secrets by AUTH PLAIN. `smtpSecrets` now requires
+> `secrets/value/read` on newly named Secrets and on a host or port change
+> (`TestAuthz_SMTPServerSecretsNeedValueRead`; plan decision 9 amended).
+> The sender, the address check, the escaping and the secrets in errors
+> were checked and passed.
+>
+> **go-reviewer** findings, all fixed:
+> - a shutdown recorded cancelled queries as `QueryFailed` and stamped
+>   evaluation times; `Tick` now returns on a cancelled context;
+> - the heartbeat recorded a beat cut short by shutdown;
+> - `decodeBody` is streaming again, and only resource documents go
+>   through the metadata check (`TestResourceBody_OtherBodiesUnchecked`);
+> - the conflict log's wording;
+> - the missing stored-versus-live test rows.
+>
+> Left as is, by design: a disabled rule keeps its live time, since that
+> is still when it last ran. A per-rule `time.Time` box per pass isn't
+> worth avoiding.
+>
+> **contract-guardian:** pass, twice: over the branch, and over the
+> shutdown fixes. `core/notify`'s reading of constitution 1 (decision 5)
+> holds.
+
 ## T013 — Docs and close-out [A]
 
 - **Do:**

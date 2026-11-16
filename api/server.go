@@ -251,6 +251,8 @@ type serverOptions struct {
 	// notifier and notifySecrets send test notifications (spec 024).
 	notifier      Notifier
 	notifySecrets notify.SecretReader
+	// evaluated is a rule's live evaluation time (spec 024, RP-080).
+	evaluated func(id string) (time.Time, bool)
 }
 
 // WithDirectory lets the authorization routes read the identity provider's
@@ -400,6 +402,7 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	}
 	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](ruleStore, "alertrules").
 		WithServerStatus().
+		WithView(liveRuleView(opts.evaluated)).
 		WithValidate(builtInKept(ruleStore)).
 		WithPrepare(prepareAlertRule).
 		WithAuthorize(resource.KindAlertRule, recordDeniedIn(db), channelUse{channels: channelStore}.check).Register(apiMux)
@@ -412,6 +415,7 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		WithServerStatus().
 		WithValidate(notifications.checkSMTP).
 		WithPrepare(prepareSMTPServer).
+		WithAuthorize(resource.KindSMTPServer, recordDeniedIn(db), smtpSecrets).
 		WithView(notifications.smtpView).Register(apiMux)
 	notifications.registerHeartbeat(apiMux)
 	(&alertsHandler{
@@ -419,6 +423,8 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		rules:  ruleStore,
 		comps:  compStore,
 		now:    time.Now,
+		// The rule actions' answers show the live time too (RP-080).
+		evaluated: opts.evaluated,
 	}).register(apiMux)
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")
 	// Not mountResource -- SecretHandler isn't the generic

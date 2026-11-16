@@ -151,7 +151,7 @@ func run() error {
 	var alerts *alerting
 	if kube != nil {
 		alerts = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String(), kube.clusterRanges)
-		serverOpts = append(serverOpts, api.WithNotifier(alerts.client, alerts.secrets))
+		serverOpts = append(serverOpts, api.WithNotifier(alerts.client, alerts.secrets), api.WithRuleEvaluated(alerts.evaluator.LastEvaluated))
 	}
 	if kube != nil {
 		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithRuntime(kube.runtime), api.WithConfigSchemas(kube.schemas), api.WithPlatformView(kube.platformView), api.WithPackages(kube.packages), api.WithBuilds(kube.builds), api.WithObservability(kube.observability), api.WithResourceMetadata(api.ResourceMetadata{

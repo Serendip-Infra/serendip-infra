@@ -94,8 +94,8 @@ purpose), **Closed** (fixed).
 | RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
-| RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Open (carried to T012) | Spec 024 T010 |
-| RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Open (writes, carried to T012) | Spec 024 T011 |
+| RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
+| RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
 
 ---
 
@@ -1787,27 +1787,40 @@ The text below is the T013 record.
 
 ## RP-079 — The API drops unknown fields in a resource document
 
-- **Kind:** correctness. **Status:** Open, carried to spec 024 T012's
-  reviews. **Found:** spec 024 T010.
+- **Kind:** correctness. **Status:** Mitigated in spec 024 T012 (unknown
+  metadata fields refused). **Found:** spec 024 T010.
 - **What:** `decodeBody` ignores fields it doesn't know. A typo'd or
   invented field is dropped and the request succeeds. In T010, channels
   created with `metadata.ownerId` (what the catalogue's description
   said, F3) were stored without an owner, so they became platform
   channels, and nothing said so. The description is fixed; the silent
   drop isn't.
-- **Mitigation:** the description now names `ownerRefs` and
-  `resourceVersion`. The console builds its documents from typed forms.
-- **Residual:** a CLI or MCP caller writing a document by hand can still
-  lose a field without an error. For an owner, that silently widens who
-  the resource belongs to (a Project's channel becomes the platform's).
-- **Revisit:** T012 decides whether to refuse unknown fields (400
-  naming them) for every client, or at least for `metadata`.
+- **Mitigation:**
+  - the description now names `ownerRefs` and `resourceVersion`;
+  - **since T012, `decodeBody` refuses unknown `metadata` fields** for
+    every client and every route that takes a resource document: 400
+    "unknown metadata fields", naming them and listing the known ones.
+    Keys still match case-insensitively, as `encoding/json` does. Store
+    reads stay tolerant (the check is in `api/`, not `core/resource`);
+  - `TestResourceBody_UnknownMetadataRefused`;
+  - the console builds its documents from typed forms.
+- **Why metadata only:** metadata decides ownership and so
+  authorization, and its shape hasn't changed since spec 001. Refusing
+  unknown `spec` or top-level fields everywhere would break clients that
+  send back a response's view-only fields (a channel's `secretSet`,
+  `platformChannel`). That's an API-wide contract change, not a spec 024
+  fix.
+- **Residual:** an unknown `spec` field is still dropped silently. A
+  dropped spec field can't change who owns a resource; at worst a
+  setting is left at its default.
+- **Revisit:** a versioned API (`v2`) or a `strict=true` query option, if
+  a dropped spec field causes a real mistake.
 
 ## RP-080 — 200 alert rules load the observability backends, and their status writes fill the audit log
 
 - **Kind:** footprint; audit volume. **Status:** the backend load is
-  Accepted; the status writes are Open, carried to spec 024 T012 for the
-  user's decision. Recorded 2026-11-16. **Found:** spec 024 T011 (the
+  Accepted; the status writes are Mitigated (the user chose option a,
+  2026-11-16; done in spec 024 T012). Recorded 2026-11-16. **Found:** spec 024 T011 (the
   simulated T470, `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`).
 - **What:**
   - **Backend load.** With 200 rules at 1 minute and spec 023's log
@@ -1838,12 +1851,25 @@ The text below is the T013 record.
   - the 200-rule cap and the 1-minute floor;
   - at most 2 queries at once;
   - `logMatch` is a `limit = 1` count.
-- **Open:** the status writes. The options are in plan 024 "Findings
-  from T011" 5:
-  - a. refresh `lastEvaluated` hourly;
-  - b. answer `lastValue` and `lastEvaluated` from the evaluator's memory
-    instead of the store;
-  - c. accept it until the retention spec.
+- **The status writes (option a, the user's choice, 2026-11-16):** of
+  the options in plan 024 "Findings from T011" 5 (a: refresh hourly; b:
+  answer from the evaluator's memory only; c: accept until the retention
+  spec), a was chosen. In spec 024 T012:
+  - `alertStaleEvaluated` is 1 hour, not 10 minutes. A rule whose value
+    holds is written once an hour, so 200 rules make about 3 refresh
+    writes a minute instead of 20. Values that changed are still flushed
+    once a minute. That's about 3–9 writes a minute in all, roughly
+    4,000–13,000 audit rows a day instead of 37,000 (not re-measured);
+  - the evaluator keeps each rule's live time (`LastEvaluated`), and
+    the API's rule answers (get, list, silence and unsilence) show it
+    when it's newer than the stored one (`api.WithRuleEvaluated`). So
+    the console, CLI and MCP see a live time;
+  - `TestAlerts_SteadyRuleWritesHourly` and
+    `TestAlertRules_LiveLastEvaluated` cover it.
+- **Residual:** the store's `lastEvaluated` can be up to an hour old,
+  and after a restart the API shows that stored time until the rule's
+  next evaluation (within one interval). Changed values still write. The
+  audit log still has no retention (RP-003).
 - **Revisit:**
   - T013's run on the reference laptop;
   - a raised rule cap;
