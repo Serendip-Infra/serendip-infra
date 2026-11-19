@@ -25,17 +25,25 @@ T013's verify: the T010 scratch credentials. Nothing pushed.
    password and the healthchecks.io check, then
    `~/.serendip-t018/t024/secrets/`. Then tick T013 in tasks.md
    (`getMe` 401 is the check).
-2. **GitHub, one paced background batch:** T001–T013's task issues
-   under epic #65 (assignee, milestone "v1 GA", short title, labels
-   `task` + area, board Priority/Area/Size), then epic #65's body in
-   epic #1's layout. About 65 writes at one a minute, stopping at the
-   first 403 or 429.
-3. **Link commits to issues:** rewrite only `main..spec-024`, appending
-   `Closes #<issue>` to each task's commit (list below), then check the
-   tree matches the old tip.
-4. **The PR:** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
+2. **GitHub batch: RUNNING since 15:40 UTC 2026-11-19** (the user said
+   yes), expected DONE about 17:00 UTC. T001–T013's task issues under
+   epic #65 (#339 T001, #340 T002, #341 T003, #342 T004, #343 T005, …),
+   then epic #65's body (IN PROGRESS; T013 unticked). Script, log and
+   state live in this session's scratchpad:
+   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/7e941eb3-e500-4941-93c6-42ca49fd8d5a/scratchpad/gh024/`
+   (`run.sh`, `run.log`, `state.txt` as "T### N"). **Check `run.log`'s
+   last line first:** `DONE`, or `FAILED: …` (then re-run
+   `bash <dir>/run.sh` only after reading why; it skips tasks in
+   `state.txt`, but a task created without its board fields needs them
+   set by hand). Never two runs at once.
+3. **Link commits to issues (the user said yes):** once `run.log` says
+   DONE, `bash <dir>/closes.sh` rewrites `main..spec-024` with
+   `Closes #N` from `state.txt` and checks the tree is unchanged. It
+   leaves T013 out unless run with `--with-t013`: use that only if the
+   scratch bot's `getMe` answers 401 (step 1).
+4. **The PR (the user said yes):** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
    with `Closes #65`, merged by `serendipinfra` with a merge commit.
-5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66).
+5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66; the user said yes): `/new-spec` first. No code before its spec, plan and tasks are approved.
 - **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
   "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
   architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,
