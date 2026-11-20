@@ -12,38 +12,69 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-16 (spec 024: T001–T013 done, but one credential item open)
+Last updated: 2026-11-20 (spec 025: T001 done; spec 024's PR #352 open)
 
 ## Current phase
 
+**Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
+and tasks approved 2026-11-19; T001 done** (live checks; see tasks.md's
+"Done as" note and plan.md's "Checked live in T001"). Local branch
+`spec-025`, off `spec-024`, not pushed. **Next, in order:**
+1. **GitHub batch for spec 025: RUNNING since 01:08 UTC 2026-11-20
+   (#353 is T001).** T001–T015's task issues under epic #66,
+   then epic #66's body (IN PROGRESS, T001 ticked). About 65 writes at
+   one a minute, so DONE about 02:15 UTC. Script, log and state:
+   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/ff900928-de70-45a4-8909-07814914986d/scratchpad/gh025/`
+   (`run.sh`, `run.log`, `state.txt`). Check `run.log`'s last line
+   (`DONE` or `FAILED: …`); never two runs at once.
+2. **T001's commit already says `Closes #353`.** Later task commits
+   carry their own `Closes #N` (numbers in `state.txt`).
+3. **T002** (core types), then T003–T015 in order.
+- **Spec 025 test bed** (`~/.serendip-t025/`):
+  - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
+    kubeconfig `t001/kubeconfig`);
+  - `serendipd` (spec-024 build) on `127.0.0.1:8095`, store
+    `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl);
+  - the observability package, and the tracing module installed by hand
+    with Serendip's collector config (`t001/otel-cm.yaml`);
+  - Project `t025`, Application `shop` with Components `srv` (10%
+    errors, 20 ms delay), `caller` and `spoofer`, all sending traces
+    (IDs in `t001/ids.txt`); the test image `t025-http:1` (`t001/img/`).
+  - A hand-added `hubble` scrape job in the live Prometheus ConfigMap
+    (T006 makes it real).
+  - `bench-t470` was **stopped** (`docker stop`), not deleted, to free
+    memory; `serendip-t018` and its `serendipd` still run.
+- **T001's main findings** (`providers/networking/cilium/VERSIONS.md`,
+  `providers/observability/openchoreo/VERSIONS.md` spec 025 section):
+  - Cilium's Envoy retried every 5xx three times once L7 visibility was
+    on, so a 10% error rate showed as 0%; `http-retry-count: "0"` and
+    `http-normalize-path: "false"` now (RP-081).
+  - Hubble's HTTP labels come from `labelsContext`; OpenChoreo's
+    `metric=http` then works unchanged, without a p95.
+  - The flow export wrote 10 MB a minute until filtered by the
+    `component-uid` label, DNS denied, masked to workloads and
+    identities, and aggregated per minute: about 7.5 MiB a day.
+  - The tracing adapter can't scope by UIDs or names, so traces are read
+    from OpenObserve with SQL and the adapter is left off.
+  - Identity attestation through Serendip's collector config held
+    against a spoofing Component.
+  - K3s's `HelmChart` with `bootstrap: true` brings a CNI-less node
+    Ready with Cilium.
+- **Not done in T001:** Fluent Bit tailing the flow file live (moved
+  into T006's verify).
+
 **Spec 024 (alert rules and notification channels; epic #65): all 13
-tasks done and committed on local branch `spec-024`**, except one item of
-T013's verify: the T010 scratch credentials. Nothing pushed.
-**Next, in order:**
-1. **The user:** revoke the scratch bot's token (BotFather `/revoke`;
-   `getMe` still answered 200 on 2026-11-16), delete the Gmail app
-   password and the healthchecks.io check, then
-   `~/.serendip-t018/t024/secrets/`. Then tick T013 in tasks.md
-   (`getMe` 401 is the check).
-2. **GitHub batch: RUNNING since 15:40 UTC 2026-11-19** (the user said
-   yes), expected DONE about 17:00 UTC. T001–T013's task issues under
-   epic #65 (#339 T001, #340 T002, #341 T003, #342 T004, #343 T005, …),
-   then epic #65's body (IN PROGRESS; T013 unticked). Script, log and
-   state live in this session's scratchpad:
-   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/7e941eb3-e500-4941-93c6-42ca49fd8d5a/scratchpad/gh024/`
-   (`run.sh`, `run.log`, `state.txt` as "T### N"). **Check `run.log`'s
-   last line first:** `DONE`, or `FAILED: …` (then re-run
-   `bash <dir>/run.sh` only after reading why; it skips tasks in
-   `state.txt`, but a task created without its board fields needs them
-   set by hand). Never two runs at once.
-3. **Link commits to issues (the user said yes):** once `run.log` says
-   DONE, `bash <dir>/closes.sh` rewrites `main..spec-024` with
-   `Closes #N` from `state.txt` and checks the tree is unchanged. It
-   leaves T013 out unless run with `--with-t013`: use that only if the
-   scratch bot's `getMe` answers 401 (step 1).
-4. **The PR (the user said yes):** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
-   with `Closes #65`, merged by `serendipinfra` with a merge commit.
-5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66; the user said yes): `/new-spec` first. No code before its spec, plan and tasks are approved.
+tasks done; PR #352 opened 2026-11-20** (Yasindu007, `Closes #65`),
+waiting to be merged by `serendipinfra` with a merge commit. The task
+issues (#339–#351) exist, and `main..spec-024` was rewritten so that
+T001–T012's commits carry `Closes #N` (T013 left out; tree unchanged,
+checked).
+- **Still open, the user:** revoke the scratch bot's token (BotFather
+  `/revoke`), delete the Gmail app password and the healthchecks.io
+  check, then `~/.serendip-t018/t024/secrets/` (still there on
+  2026-11-20). Then tick T013 in tasks.md and close #351 by hand
+  (`getMe` 401 is the check; the session's classifier denied running
+  it, so the user checks).
 - **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
   "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
   architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,

@@ -89,3 +89,49 @@ Notes (T001):
   - OpenObserve's start-up log for any outside URL, and the `config`
     keys the chart renders (a new key may need `extraEnv`);
   - the streams API's stats fields and unit (`usage.go`).
+
+## Spec 025 (T001, 2026-11-20, scratch cluster `t025` with Cilium 1.20.5)
+
+Recorded answers: `testdata/t001-*`.
+
+| Item | Version / value | Defined in |
+|---|---|---|
+| Tracing module | `observability-tracing-openobserve` 0.3.2, `oci://cr.openchoreo.dev/openchoreo/helm-charts/` (digest `sha256:674ccccccdcfe109d6bd2b916d92e268ea8527e095a339390ff3020efe25a99d`); collector `otel/opentelemetry-collector-contrib:0.163.2`, Service `opentelemetry-collector` (OTLP 4317, 4318) | T007 |
+| Tracing values | `openobserve-standalone.enabled=false` (the logs module's `openobserve` Service and `openobserve-admin-credentials` are reused as is); `opentelemetry-collector.configMap.existingName=<Serendip's>`; `opentelemetryCollectorCustomizations.tailSampling.enabled=false`; `adapter.enabled=false` planned (Serendip reads OpenObserve itself) | T007 |
+| Plane chart 1.3.1 | needs **no** change for tracing: `observer.tracingAdapter` has only `url` (default `http://tracing-adapter:9100`) and `timeout`; `enabled` is refused by the schema | n/a |
+| Hubble scrape | a `hubble` job with `dns_sd_configs` on `hubble-metrics.kube-system.svc.cluster.local` (A, port 9965) and `metric_relabel_configs` keeping `hubble_(http_requests_total|http_request_duration_seconds_(bucket|sum|count)|drop_total|flows_processed_total)`; target up after one interval | T006 (`prometheus-values.yaml`) |
+| `metric=http` | answers `requestCount`, `successfulRequestCount`, `unsuccessfulRequestCount` (absent when zero), `meanLatency`, `latencyP50`, `latencyP90`, `latencyP99` (seconds; requests per second), with the same `componentScope` as `resource`; **no p95** | T006 |
+| Traces in OpenObserve | stream `default`, type `traces`; `POST /api/default/_search?type=traces` with SQL; identity fields `service_openchoreo_dev_{component,environment,project}_uid` (and names), `service_k8s_pod_name`, `service_k8s_namespace_name`, from the collector's `k8sattributes` | T007 |
+| Fluent Bit (logs module 0.8.0) | the subchart takes `extraVolumes` and `extraVolumeMounts` (values lines 364, 366); its DaemonSet mounts `/var/log`, `/var/lib/docker/containers`, `/etc/machine-id` and its DB only | T006 |
+
+Notes (T001):
+
+- **`metric=http`** works unchanged once Hubble's `httpV2` carries
+  `source_namespace`, `source_pod`, `destination_namespace` and
+  `destination_pod` (`labelsContext`), and Prometheus scrapes it: about
+  4.8 requests a second, p50 18 ms, p90 25 ms, p99 100 ms for a server
+  with 20 ms of added latency.
+- **The tracing adapter can't scope:** `POST /api/v1alpha1/traces/query`
+  (`:9100`) with `searchScope` `{namespace}` answers (38 traces in 15
+  minutes), but `{namespace, projectUid, componentUid, environmentUid}`
+  and `{namespace, project, component, environment}` (names) both
+  answer 0 for a Component with traces. `includeAttributes: true` on the
+  spans query returns no attributes. So Serendip reads OpenObserve with
+  SQL instead (plan decision 12), which also gives duration and error
+  filters the adapter lacks.
+- **Identity is attested with Serendip's collector config**
+  (`testdata/t001-otel-collector-config.yaml`): a `transform` processor
+  deletes incoming `k8s.*`, `openchoreo.dev/*` and `container.*`
+  resource attributes (OTTL regex written with `[.]`: `\.` fails to
+  parse), then `k8sattributes` with `pod_association` from the
+  `connection` only. A Component claiming another's pod IP
+  (`k8s.pod.ip`), component UID and `k8s.pod.name` in its spans had all
+  43 spans stored under its own UID and pod
+  (`testdata/t001-traces-spoof-check.json`).
+- **The chart's first install was marked `failed`** because the
+  collector crash-looped past Helm's wait (the regex). The installer
+  checks the collector's readiness itself and upgrades a failed release.
+- **The plane chart's `observability-plane-unrestricted-ingress`
+  already admits any pod to `opentelemetry-collector`**, so a Serendip
+  NetworkPolicy wouldn't narrow it. Identity doesn't depend on who can
+  connect (above).

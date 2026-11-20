@@ -101,6 +101,7 @@ purpose), **Closed** (fixed).
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
 | RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
 | RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
+| RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off, drift reported) | Spec 025 T001 |
 
 ---
 
@@ -1982,3 +1983,29 @@ The text below is the T013 record.
   - T013's run on the reference laptop;
   - a raised rule cap;
   - the audit retention spec.
+
+## RP-081 — The L7 proxy that gives request metrics retries 5xx and rewrites paths by default
+
+- **Kind:** correctness (application behaviour). **Status:** Mitigated,
+  2026-11-20. **Found:** spec 025 T001 (scratch cluster `t025`, Cilium
+  1.20.5).
+- **What:** Hubble's HTTP metrics need Cilium's Envoy in the path of each
+  Component's HTTP port (an L7 policy). Envoy's defaults then change what
+  the application sees:
+  - **`http-retry-count` 3:** every 5xx is retried up to three times. A
+    test server answering 10% 500s looked 100% healthy: the metrics showed
+    only 200s, the server got more requests than were sent, and a
+    non-idempotent request (a POST that charges a card) could run up to
+    four times;
+  - **`http-normalize-path` true:** request paths are normalized before
+    they reach the application.
+- **Mitigation:** Serendip's Cilium values set `http-retry-count: "0"`
+  and `http-normalize-path: "false"` (`extraConfig`); with retries off
+  the 500s came through (5 of 39). The provider reports drift if either
+  is changed back (plan decision 4).
+- **Residual:** Envoy's other defaults still apply to proxied traffic
+  only: `http-request-timeout` 3600 s, `http-stream-idle-timeout` 300 s,
+  and its connection limits (1024 per cluster). A long-lived stream or
+  a very busy Component can behave differently behind the proxy.
+- **Revisit:** on every Cilium upgrade (`providers/networking/cilium/VERSIONS.md`),
+  and with T013's latency measurement.

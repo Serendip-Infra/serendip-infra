@@ -1,0 +1,12 @@
+# HELP hubble_drop_total Number of drops
+# TYPE hubble_drop_total counter
+hubble_drop_total{protocol="ICMPv6",reason="UNSUPPORTED_L3_PROTOCOL"} 478
+hubble_drop_total{protocol="TCP",reason="POLICY_DENIED"} 20
+hubble_drop_total{protocol="UDP",reason="STALE_OR_UNROUTABLE_IP"} 7
+# HELP hubble_http_request_duration_seconds Quantiles of HTTP request duration in seconds
+# TYPE hubble_http_request_duration_seconds histogram
+# HELP hubble_http_requests_total Count of HTTP requests
+# TYPE hubble_http_requests_total counter
+hubble_http_requests_total{destination="dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755/cmp-ac7df9f12c-env-8582189a02-2e63393c-5558d5d7c-rwjrr",method="GET",protocol="HTTP/1.1",reporter="server",source="default/probe-system2",status="200"} 1
+hubble_http_requests_total{destination="dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755/cmp-ac7df9f12c-env-8582189a02-2e63393c-5558d5d7c-rwjrr",method="GET",protocol="HTTP/1.1",reporter="server",source="dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755/cmp-34f31b6c12-env-8582189a02-97469aac-7c9567ff46-4cbcd",status="200"} 157
+hubble_http_requests_total{destination="dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755/cmp-ac7df9f12c-env-8582189a02-2e63393c-5558d5d7c-rwjrr",method="GET",protocol="HTTP/1.1",reporter="server",source="dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755/probe-samens2",status="200"} 1
