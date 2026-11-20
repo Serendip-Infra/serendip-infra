@@ -36,10 +36,16 @@ func New(client Reader) *Provider {
 	return &Provider{client: client, now: time.Now}
 }
 
-// The reasons Facts gives for what an external CNI lacks (spec criterion 2).
+// The reasons Facts gives for what an external CNI lacks (spec criterion
+// 2). A recognised CNI (kindnet, Flannel) keeps no such records, so that
+// is said plainly; for one Serendip can't name, it only says what it
+// can't read, since that CNI may well keep them (constitution 6).
 const (
 	ReasonNoFlows    = "flows: the cluster's CNI doesn't record connections"
 	ReasonNoRequests = "requests: the cluster's CNI doesn't provide request metrics"
+
+	ReasonUnreadFlows    = "flows: Serendip can't read connection records from this CNI"
+	ReasonUnreadRequests = "requests: Serendip can't read request metrics from this CNI"
 )
 
 // kindnetPolicySince is the first kindnetd image that enforces network
@@ -55,23 +61,29 @@ func (p *Provider) Facts(ctx context.Context) (reconcile.NetworkFacts, error) {
 		Plugin:            "unknown",
 		PolicyEnforcement: reconcile.PolicyUnknown,
 		PolicyReason:      "Serendip can't tell which CNI the cluster runs",
-		Unavailable:       []string{ReasonNoFlows, ReasonNoRequests},
 		ReadAt:            p.now().UTC(),
 	}
 	var errs []error
+	var notes []string
 
 	daemonSets, dsErr := p.daemonSets(ctx)
 	if dsErr != nil {
 		errs = append(errs, dsErr)
-		f.Unavailable = append(f.Unavailable, "plugin: kube-system's DaemonSets can't be read")
+		notes = append(notes, "plugin: kube-system's DaemonSets can't be read")
 	}
 	nodes, err := p.nodes(ctx)
 	if err != nil {
 		errs = append(errs, err)
-		f.Unavailable = append(f.Unavailable, "pod ranges: the nodes can't be read")
+		notes = append(notes, "pod ranges: the nodes can't be read")
 	}
 
 	detect(&f, daemonSets, dsErr == nil, nodes)
+	if f.Plugin == "unknown" {
+		f.Unavailable = []string{ReasonUnreadFlows, ReasonUnreadRequests}
+	} else {
+		f.Unavailable = []string{ReasonNoFlows, ReasonNoRequests}
+	}
+	f.Unavailable = append(f.Unavailable, notes...)
 	var skipped bool
 	f.PodRanges, skipped = podRanges(nodes)
 	if skipped {

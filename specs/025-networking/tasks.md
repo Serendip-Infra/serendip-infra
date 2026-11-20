@@ -88,9 +88,8 @@ had answered time out. `VERSIONS.md` records what's unit-tested only.
 contract-guardian passed; its notes fixed (an unparseable kindnetd tag is
 `unknown`, not `enforced`; `notEnforced` on K3s needs the DaemonSet list
 read and no other policy controller in it; a skipped pod range is named
-in `Unavailable`). Left as is, by design: the "doesn't record
-connections" reasons also show for an unknown CNI (spec criterion 2's
-wording).
+in `Unavailable`; for a CNI it can't name, the flows and requests
+reasons say Serendip can't read them, not that the CNI lacks them).
 
 - **Do:** detection from kube-system DaemonSets and node annotations,
   the facts plan decision 3 lists.

@@ -67,7 +67,7 @@ func TestFacts(t *testing.T) {
 		version     string
 		enforcement reconcile.PolicyEnforcement
 		ranges      []netip.Prefix
-		extra       []string // Unavailable beyond the two always there
+		extra       []string // Unavailable beyond the flows and requests reasons
 		wantErr     bool
 	}{
 		{
@@ -193,7 +193,11 @@ func TestFacts(t *testing.T) {
 			if !slices.Equal(f.PodRanges, tc.ranges) {
 				t.Errorf("ranges %v, want %v", f.PodRanges, tc.ranges)
 			}
-			want := append([]string{ReasonNoFlows, ReasonNoRequests}, tc.extra...)
+			want := []string{ReasonNoFlows, ReasonNoRequests}
+			if tc.plugin == "unknown" {
+				want = []string{ReasonUnreadFlows, ReasonUnreadRequests}
+			}
+			want = append(want, tc.extra...)
 			if !slices.Equal(f.Unavailable, want) {
 				t.Errorf("unavailable %q, want %q", f.Unavailable, want)
 			}
