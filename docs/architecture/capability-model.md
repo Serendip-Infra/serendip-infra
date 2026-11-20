@@ -70,7 +70,7 @@ makes the rest of the platform coherent:
 
 | Native (built) | External (optional integration) |
 |---|---|
-| Alerting, SLO/SLI, error budgets | — (visualized via observability backend, semantics owned natively) |
+| Alerting, SLO/SLI, error budgets | — (visualized via observability backend, semantics owned natively). **Alerting is built (spec 024, ADR 0022):** `serendipd` evaluates rules against the Observability capability (`ObservabilityProvider.EvaluateCondition`) and sends Telegram, email and signed webhooks through `core/notify`. There's no Notification capability or provider registry entry: these are protocols, not installed products; a paid channel (SMS, voice) or a second chat protocol arrives as a provider. Other tools are reached through the webhook (n8n, Node-RED, Apprise API). SLOs aren't built yet |
 | Incident management, runbooks, postmortems | ServiceNow, Jira, PagerDuty, Zammad, GLPI |
 | Change intelligence, resource/service graph | — |
 | AI diagnosis/recommendation/approval | — |

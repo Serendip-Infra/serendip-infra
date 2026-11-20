@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -37,6 +39,10 @@ const readyLine = "serendipd: all capabilities ready"
 
 // start launches serendipd and waits for readyLine.
 func (d *daemon) start(ctx context.Context, timeout time.Duration) (time.Duration, error) {
+	// A restart keeps the previous run's log as serendipd.1.log, .2...:
+	// the warm restart used to overwrite the cold run's, and with it the
+	// evaluator's lines (spec 024 T011).
+	keepLog(d.log)
 	logFile, err := os.Create(d.log)
 	if err != nil {
 		return 0, err
@@ -356,4 +362,23 @@ func (a api) deleteWorkload(ctx context.Context, w workload) error {
 		}
 	}
 	return nil
+}
+
+// keepLog renames an existing log at path to the first free
+// <name>.N<ext>, so the next start doesn't overwrite it.
+func keepLog(path string) {
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	for n := 1; ; n++ {
+		next := fmt.Sprintf("%s.%d%s", stem, n, ext)
+		if _, err := os.Stat(next); os.IsNotExist(err) {
+			if err := os.Rename(path, next); err != nil {
+				log.Printf("keeping %s: %v", path, err)
+			}
+			return
+		}
+	}
 }

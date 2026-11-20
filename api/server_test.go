@@ -23,7 +23,7 @@ var allKindPaths = []string{
 	"sites", "clusters", "nodes",
 	"applications", "components",
 	"capabilities", "providers", "provider-instances",
-	"incidents", "alerts", "volumes",
+	"incidents", "volumes",
 }
 
 func TestNewServer_AllKindsRespondToPostAndGet(t *testing.T) {

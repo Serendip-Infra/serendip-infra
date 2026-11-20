@@ -89,6 +89,18 @@ purpose), **Closed** (fixed).
 | RP-066 | The observability plane chart's `observabilityalertrules` CRD outlives the package's removal | Footprint | Decided | Spec 023 T001 |
 | RP-067 | Stored logs keep what pods print, secrets included, for 3 days | Data exposure | Accepted | Spec 023 plan |
 | RP-068 | A noisy Component can fill the logs volume before retention acts | Availability, capacity | Accepted | Spec 023 plan |
+| RP-069 | The Telegram bot token is the whole credential, and sits in the API URL's path | Security | Accepted | Spec 024 plan |
+| RP-070 | Alert content leaves the machine for third parties (Telegram, the mail relay, webhook receivers) | Data exposure | Accepted | Spec 024 plan |
+| RP-071 | Resolved Alerts are removed after 30 days by system retention | Audit, data retention | Accepted | Spec 024 T005 |
+| RP-072 | Rules are polled: a condition shorter than the interval can be missed, and a firing is seen up to one interval late | Correctness | Accepted | Spec 024 plan |
+| RP-073 | A `logMatch` threshold is capped at 999 | Correctness (limit) | Accepted | Spec 024 plan |
+| RP-074 | The heartbeat proves Serendip can alert, not that a message reached a person; it can't send headers, so Gatus needs a relay | Operability | Accepted | Spec 024 plan; T013 |
+| RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
+| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
+| RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
+| RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
+| RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
+| RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
 
 ---
 
@@ -1313,6 +1325,14 @@ purpose), **Closed** (fixed).
 - **Revisit:** if T013's run on the reference laptop shows searches over
   2 s, or if retention grows. Options then: a narrower default window, or
   OpenObserve's own tuning (a larger `ZO_MEMORY_CACHE_MAX_SIZE`).
+- **Spec 024 T011 (2026-11-16):** with 200 alert rules evaluating beside
+  the same load, the alert queries plateaued over 2.5 hours (mean 255 to
+  205 ms, p95 1.1 to 0.8 s, worst 4.9 s). They're `limit = 1` counts over
+  5 or 15 minutes. That plateau stands for the 3 days of data the plan
+  asked for (the user's choice of method). The load driver's own searches
+  were slower with the rules competing: mean 0.90 s, worst 5.1 s. That's
+  still under this entry's 2 s revisit line on average, but the worst
+  case is over it. The rules' load on OpenObserve is RP-080.
 
 ## RP-056 — Serendip's plain Prometheus must keep matching the metrics adapter
 
@@ -1468,6 +1488,12 @@ purpose), **Closed** (fixed).
 - **Revisit:** when OpenObserve has an allow-list of hosts or CIDRs (a
   chart PR mentioned `ZO_SSRF_ALLOWED_HOSTS`; not in v0.92.2), or when
   spec 024 adds notification channels.
+- **Revisited, spec 024 (2026-11-16):** the second condition is met, and
+  no person-typed destination ever reaches OpenObserve. `serendipd`
+  evaluates rules and sends every notification itself (ADR 0022), so
+  OpenObserve has no alert destination but the logs module's own. The
+  mitigation is now `core/notify`'s address check at every dial (plan
+  024 decision 5, RP-076). The guard stays off for that one webhook.
 
 ## RP-063 — The stated disk growth is a 2-hour slope, extrapolated
 
@@ -1578,6 +1604,8 @@ The text below is the T013 record.
 - **Revisit:** if spec 024 (alerts) creates objects of this kind, so
   removal must say what it leaves; or if a re-install with a newer chart
   finds the old CRD's schema in the way.
+- **Revisited, spec 024 (2026-11-16):** unchanged. Spec 024 makes no
+  `observabilityalertrules` objects (ADR 0022), so the CRD stays empty.
 
 ## RP-067 — Stored logs keep what pods print, secrets included
 
@@ -1617,8 +1645,340 @@ The text below is the T013 record.
 - **Mitigation:** the volumes are bounded, so the node's disk isn't
   filled; the package reports current use (`usage` on
   `GET /v1/packages`, the Packages page) against the stated budget.
-- **Residual:** no alert when use nears the budget (spec 024's alerts),
-  and the reported use lags (RP-061).
-- **Revisit:** with spec 024 (an alert on the package's own disk use), or
-  if a size-based cap for the logs store becomes settable in the logs
-  module.
+- **Residual:** the reported use lags (RP-061). The "no alert" part is
+  closed by spec 024 T006: the package's built-in `observability-disk`
+  rule warns at 85% of the budget, to the platform's default channels.
+- **Revisit:** if a size-based cap for the logs store becomes settable
+  in the logs module. (The spec 024 trigger is done: the built-in
+  `observability-disk` rule, live-checked in T010.)
+
+## RP-069 — The Telegram bot token is the whole credential
+
+- **Kind:** security. **Status:** Accepted, 2026-11-16. **Found:** spec
+  024 plan (Risks); built in T004.
+- **What:** anyone holding a bot's token can read the bot's chats
+  (`getUpdates`) and send as it. Telegram's Bot API takes the token in
+  the URL path (`/bot<token>/sendMessage`), so any error or log that
+  carries the URL carries the token.
+- **Mitigation:**
+  - it's a Secret (`botTokenSecretId`), read at send time and never
+    cached; responses show only `secretSet`;
+  - errors are cleaned down to the host, and Go's `url.Error` is
+    unwrapped (`core/notify/telegram.go`), so no Alert, event or log
+    holds it. T010 searched the store, audit rows, events and
+    `serendipd`'s log for the live token and found none;
+  - naming it on a channel needs the Secret's value read;
+  - "Find chat" (`POST /v1/secrets/{id}/telegramchats`) answers chats
+    only, never the token, and needs the same value read.
+- **Residual:** Telegram itself, and the Secrets provider, hold it.
+  BotFather's `/revoke` is the only rotation.
+- **Revisit:** if Telegram offers scoped or expiring bot credentials, or
+  when reading replies (account linking) needs the bot to read more.
+
+## RP-070 — Alert content leaves the machine
+
+- **Kind:** data exposure. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks).
+- **What:** every notification sends the rule's summary, the Project,
+  Application, Component and Environment names, the value and threshold,
+  and a console link to a third party: Telegram's servers, the SMTP relay
+  (Gmail, Brevo) and the mail providers after it, or a webhook receiver
+  and whatever it forwards to.
+- **Mitigation:**
+  - **never log lines:** a `logMatch` Alert records the count;
+  - the console says so on the channel form and the Notifications
+    page (`LeavesNotice`);
+  - channel, SMTP and heartbeat writes are left off MCP, so people,
+    not AI agents, decide where content goes;
+  - the console link needs a sign-in to show anything.
+- **Residual:** a summary is free text a person writes; it can name
+  anything.
+- **Revisit:** if a profile needs on-premises-only delivery (a LAN
+  webhook with `allowPrivateDestination` already does it), or a redacted
+  body mode.
+
+## RP-072 — Rules are polled
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks).
+- **What:** each rule is evaluated on its interval (1–60 minutes) over
+  its window, not on every data point. So:
+  - a condition shorter than the interval can fall between two
+    evaluations and be missed (a `metric` rule's `for` reads every point
+    in its window, which narrows this; a restart counter's max − min
+    still sees restarts inside the window);
+  - a firing is seen up to one interval late, 1 minute at best, plus the
+    data's own lag (RP-061 for disk).
+- **Mitigation:** the 1-minute floor, windows that cover the interval,
+  and next runs counted from the due time (T011's 66 s drift fixed).
+- **Revisit:** if a use needs sub-minute alerting. That needs push from
+  the backend, which ADR 0022 turned down for this install.
+
+## RP-073 — A `logMatch` threshold is capped at 999
+
+- **Kind:** correctness (limit). **Status:** Accepted, 2026-11-16.
+  **Found:** spec 024 plan (Risks).
+- **What:** the logs adapter pages at 1,000 lines. T001 found its answer
+  carries `total`, but if `total` were ever absent the fallback counts a
+  page of `above + 1`, which can't go past 1,000. So `above` is capped at
+  999 (`resource.MaxCountAbove`), and "more than N lines" can't count
+  higher.
+- **Revisit:** if the adapter's `total` is confirmed stable across
+  releases (the fallback could go), or a rule needs higher counts.
+
+## RP-074 — The heartbeat proves Serendip can alert, not that a person was told
+
+- **Kind:** operability. **Status:** Accepted, 2026-11-16. **Found:**
+  spec 024 plan (Risks); the header limit in T013.
+- **What:**
+  - the heartbeat beats while the evaluator, the delivery loop and the
+    store work. A revoked Telegram token, a full mailbox or a broken
+    relay still lets it beat; those show as `failed` deliveries on the
+    Alert, not as a missing heartbeat;
+  - it sends a plain `GET` or empty `POST` and can't set headers. Gatus's
+    `external-endpoints` push needs `Authorization: Bearer`, so Gatus
+    (plan 024's suggestion for `small-3` and `standard-5`) works only
+    through a relay that adds it.
+- **Mitigation:** a channel's test send and `lastTestResult`; deliveries'
+  recorded errors; healthchecks.io and Uptime Kuma take the token in the
+  URL (`docs/guides/alert-integrations.md`).
+- **Residual:** nothing alerts on failed deliveries themselves.
+- **Revisit:** if a monitor people want needs a header (an optional
+  header from a Secret would be small), or with a "deliveries failing"
+  rule.
+
+## RP-075 — Alerting authorization: checks made before the write, and wide custom roles
+
+- **Kind:** security. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T003 (go-reviewer).
+- **What:**
+  - A rule's channels and a channel's Secrets are checked against the
+    stored channel before the rule or channel is written, not in the
+    same transaction. If a channel's owner or `default` flag changes in
+    that window, a rule could name a channel its writer couldn't read a
+    moment later.
+  - A platform default channel can be named by anyone who may write a
+    rule (decision 9), so a caller can tell a platform default channel's
+    ID from any other ID they can't read.
+  - Only the built-in Contributor role leaves out
+    `serendip/notificationchannels/allowPrivateDestination/action`. A
+    custom role granting `serendip/notificationchannels/*` (or `*`)
+    includes it, as Azure's wildcards do.
+- **Mitigation:** the window is one request's length, and changing a
+  channel's owner or default flag needs write on it. Channel IDs are
+  random. Custom roles are made by access administrators, who see their
+  actions.
+- **Residual:** as above.
+- **Revisit:** if channels become shared across Projects other than
+  through platform defaults, or if a custom-role editor should warn about
+  wildcards covering Owner-only actions.
+
+## RP-071 — Resolved Alerts are removed after 30 days by system retention
+
+- **Kind:** audit, data retention. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 plan decision 11; built in T005.
+- **What:** `serendipd` removes resolved Alerts that resolved more than 30
+  days ago, at most 500 a pass, hourly (`sqlite.PurgeResolvedAlerts`).
+  It's system retention of operational records, not a person's delete
+  (spec 019's RP-003 left that open), but still a delete: each pass
+  records one Approval per rule, decided by policy and Executed in the
+  same transaction, naming the removed Alerts (constitution 5, ADR 0016;
+  plan decision 11's "no Approval" was amended in T005 review). Azure
+  Monitor keeps fired alerts for 30 days the same way.
+- **Mitigation:** the purge can remove nothing but resolved Alerts, which
+  nothing depends on and no route deletes. Each removed Alert gets an
+  audit row under `system:alerts` naming its Approval. A backlog is
+  purged in batches (up to 20 × 500 a run), so it can't outgrow the
+  hourly pass.
+- **Residual:** a removed Alert's history (its deliveries) is gone; the
+  Approval keeps its ID and name. The purge scans Alerts' JSON status (no
+  index on `resolvedAt`), which is fine at this scale.
+- **Revisit:** if a profile needs longer retention, or an export before
+  removal.
+
+## RP-076 — The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs
+
+- **Kind:** security (SSRF). **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T006.
+- **What:** `core/notify` refuses the cluster's own ranges whatever a
+  channel allows. `serendipd` learns them from the cluster
+  (`kubernetes.Client.ClusterRanges`): each node's `spec.podCIDRs` and
+  addresses, and the ServiceCIDR API's ranges, re-read every 5 minutes
+  (30 s after a failed read). So:
+  - pod ranges are the per-node slices, not the cluster-wide pool, which
+    the API doesn't expose. A CNI that allocates pod addresses without
+    `podCIDRs` (Cilium's cluster-pool IPAM, spec 025) leaves them out;
+  - a node that joins is unknown for up to 5 minutes;
+  - before the first read, a private address is refused even where a
+    channel allows one (the check fails closed, T006 review).
+- **Mitigation:** these ranges are private addresses, refused anyway
+  unless a channel has `allowPrivateDestination`, an Owner-only action
+  with a reason (T003). A failed or empty read never clears ranges a good
+  read set; a partial read adds what it found to the last ranges.
+- **Residual:** a channel allowed private destinations could reach a pod
+  address outside the nodes' `podCIDRs` while that's so.
+- **Revisit:** with spec 025 (Cilium): read its IPAM pool ranges too.
+
+## RP-077 — Alert condition trade-offs found in T006
+
+- **Kind:** correctness; footprint. **Status:** Accepted, 2026-11-15.
+  **Found:** spec 024 T001 and T006.
+- **What:**
+  - **Restarts** are `max − min` of kube-state-metrics' counter over the
+    window (T001: `increase()` overstated 6 restarts as 7.08). A pod's
+    restarts before its first scrape aren't counted (1 per pod in the
+    spike), and a restart is seen ~40 s to ~2 minutes late. An empty
+    answer is 0 only when the pods' restart series exist (a second
+    `count` query); otherwise it's no data, so a stopped exporter can't
+    resolve a firing Alert. A Deployment scaled to 0 reads `NoData`.
+  - **The built-in disk rule is owned by its package**, so removing the
+    package cascades (the console now sends `cascade=true`, and its
+    confirmation lists the rule). The rule's Alerts go with it, so a
+    firing disk Alert gets no "resolved" message when the package is
+    removed; other rules' Alerts resolve with `packageRemoved` as
+    planned.
+  - **One more series per container**
+    (`kube_pod_container_status_restarts_total` in `metricAllowlist`),
+    next to ~9,600 head series. The package's measured footprint
+    predates it.
+- **Mitigation:** a crash loop keeps counting, so the first missed
+  restart only delays a firing. A disk alert for a package being removed
+  is moot: its data is deleted. T011's benchmark measures the package
+  with the new series.
+- **Residual:** as above.
+- **Revisit:** if T011's numbers move the package's stated cost, or a
+  restart alert must catch a single restart.
+
+## RP-078 — Alerting API trade-offs found in T007
+
+- **Kind:** audit volume; correctness; footprint. **Status:** Accepted,
+  2026-11-15. **Found:** spec 024 T007.
+- **What:**
+  - **The heartbeat's status is written only when its result changes,
+    or every 10 minutes while it's steady** (`HeartbeatStatusEvery`).
+    Every store write is an audit row, and a beat a minute would add
+    1,440 rows a day. So `lastSent` can lag the real last send by up to
+    10 minutes. The outside monitor, not `lastSent`, is the alarm.
+  - **The address check at save refuses only a refused address.** A name
+    that doesn't resolve yet (DNS down, a host not created yet) is saved,
+    and every send checks again. A name re-pointed at a private address
+    after it's saved is refused at the send (tested at test send: 422).
+  - **Status is the server's on rules, channels and SMTP servers**
+    (`WithServerStatus`): a PUT's `status` is ignored. Before this, the
+    generic PUT stored a client's status, so writing a rule could set its
+    silence without `silence/action`. The other generic kinds still
+    store a body's status (spec 002's behaviour), which isn't
+    authorization-relevant for them today.
+  - **A rule PUT can answer 409** when the evaluator flushed the rule's
+    status (at most once a minute) between the client's read and its
+    write. The client re-reads and retries, as for any conflict.
+  - **The channel list reads each named Secret** for `secretSet` (one
+    store read per Secret per channel). That's fine at this size (a few
+    dozen channels). Revisit if lists get slow.
+  - **Alert lists filter in memory**: every Alert is read, the request's
+    own filters (state, severity, Component, Environment; firing for the
+    summary) are applied, and only the survivors are authorized one by
+    one, then capped at 500. Retention keeps resolved Alerts for 30 days
+    (RP-071), and 200 rules fold flaps into one Alert each. The console's
+    bell polls the summary, which authorizes only firing Alerts.
+  - **Test sends run two at a time**; a third answers 429 with
+    `Retry-After`. Each holds a connection for up to 40 s.
+  - **The heartbeat retries a failed send within a minute**, and while
+    it's paused re-checks every 15 s, so its first beat after Serendip
+    recovers isn't held back an interval.
+- **Mitigation:** as above. A test send and a heartbeat test always
+  write, so each has its audit row.
+- **Residual:** `lastSent` granularity; one extra query per Secret on
+  channel lists.
+- **Revisit:** if a console view needs `lastSent` to the minute, or Alert
+  lists pass about 10,000 rows.
+
+## RP-079 — The API drops unknown fields in a resource document
+
+- **Kind:** correctness. **Status:** Mitigated in spec 024 T012 (unknown
+  metadata fields refused). **Found:** spec 024 T010.
+- **What:** `decodeBody` ignores fields it doesn't know. A typo'd or
+  invented field is dropped and the request succeeds. In T010, channels
+  created with `metadata.ownerId` (what the catalogue's description
+  said, F3) were stored without an owner, so they became platform
+  channels, and nothing said so. The description is fixed; the silent
+  drop isn't.
+- **Mitigation:**
+  - the description now names `ownerRefs` and `resourceVersion`;
+  - **since T012, `decodeBody` refuses unknown `metadata` fields** for
+    every client and every route that takes a resource document: 400
+    "unknown metadata fields", naming them and listing the known ones.
+    Keys still match case-insensitively, as `encoding/json` does. Store
+    reads stay tolerant (the check is in `api/`, not `core/resource`);
+  - `TestResourceBody_UnknownMetadataRefused`;
+  - the console builds its documents from typed forms.
+- **Why metadata only:** metadata decides ownership and so
+  authorization, and its shape hasn't changed since spec 001. Refusing
+  unknown `spec` or top-level fields everywhere would break clients that
+  send back a response's view-only fields (a channel's `secretSet`,
+  `platformChannel`). That's an API-wide contract change, not a spec 024
+  fix.
+- **Residual:** an unknown `spec` field is still dropped silently. A
+  dropped spec field can't change who owns a resource; at worst a
+  setting is left at its default.
+- **Revisit:** a versioned API (`v2`) or a `strict=true` query option, if
+  a dropped spec field causes a real mistake.
+
+## RP-080 — 200 alert rules load the observability backends, and their status writes fill the audit log
+
+- **Kind:** footprint; audit volume. **Status:** the backend load is
+  Accepted; the status writes are Mitigated (the user chose option a,
+  2026-11-16; done in spec 024 T012). Recorded 2026-11-16. **Found:** spec 024 T011 (the
+  simulated T470, `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`).
+- **What:**
+  - **Backend load.** With 200 rules at 1 minute and spec 023's log
+    load running:
+    - `serendipd` itself used +4.2 mcores and +5.5 MiB;
+    - the node used +149 to +234 mcores mean (peak 1.2 cores) and about
+      +177 MiB;
+    - OpenObserve averaged 179 mcores and 375 MiB, against 40 mcores and
+      264 MiB with the same load and no rules (spec 023).
+
+    That's 7–12% of a 2-core T470. The run's cadence was 66 s, which is
+    fixed now, so about 11% more queries are expected than were
+    measured.
+  - **Status writes.** About 26 AlertRule writes a minute:
+    - up to 20 of them are the 10-minute `lastEvaluated` refresh
+      (`alertStaleEvaluated`), which every rule gets even when nothing
+      changed;
+    - the rest are values that changed, flushed once a minute.
+
+    Each write is an audit row of about 2 KiB (a snapshot of the rule).
+    That's about 37,000 rows and 75 MiB a day, more than 25 GiB a year,
+    and the audit log has no retention yet (RP-003).
+- **Why the backend load is accepted:** 200 rules at 1 minute is the
+  worst case the caps allow (plan decision 2), and a real install has far
+  fewer. The evaluation latency held a plateau over 2.5 hours (p95 under
+  1.2 s, worst 4.9 s, against a 20 s timeout).
+- **Mitigation:**
+  - the 200-rule cap and the 1-minute floor;
+  - at most 2 queries at once;
+  - `logMatch` is a `limit = 1` count.
+- **The status writes (option a, the user's choice, 2026-11-16):** of
+  the options in plan 024 "Findings from T011" 5 (a: refresh hourly; b:
+  answer from the evaluator's memory only; c: accept until the retention
+  spec), a was chosen. In spec 024 T012:
+  - `alertStaleEvaluated` is 1 hour, not 10 minutes. A rule whose value
+    holds is written once an hour, so 200 rules make about 3 refresh
+    writes a minute instead of 20. Values that changed are still flushed
+    once a minute. That's about 3–9 writes a minute in all, roughly
+    4,000–13,000 audit rows a day instead of 37,000 (not re-measured);
+  - the evaluator keeps each rule's live time (`LastEvaluated`), and
+    the API's rule answers (get, list, silence and unsilence) show it
+    when it's newer than the stored one (`api.WithRuleEvaluated`). So
+    the console, CLI and MCP see a live time;
+  - `TestAlerts_SteadyRuleWritesHourly` and
+    `TestAlertRules_LiveLastEvaluated` cover it.
+- **Residual:** the store's `lastEvaluated` can be up to an hour old,
+  and after a restart the API shows that stored time until the rule's
+  next evaluation (within one interval). Changed values still write. The
+  audit log still has no retention (RP-003).
+- **Revisit:**
+  - T013's run on the reference laptop;
+  - a raised rule cap;
+  - the audit retention spec.

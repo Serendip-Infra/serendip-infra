@@ -106,7 +106,35 @@ type ObservabilityProvider interface {
 	// BuildLogs reads a Build's stored lines, for once its pods are gone.
 	BuildLogs(ctx context.Context, b resource.Build, q LogQuery) (LogPage, error)
 	Metrics(ctx context.Context, t LogTarget, q MetricsQuery) (Metrics, error)
+	// EvaluateCondition reads one alert condition for t over window
+	// (specs/024-alerts plan decision 2): core passes the condition in its
+	// own terms and the provider builds the backend query. A packageDisk
+	// condition has no target (t is zero). Missing data is ErrNoData,
+	// never a zero value: an alert never resolves for lack of data.
+	EvaluateCondition(ctx context.Context, t LogTarget, c resource.AlertCondition, window time.Duration) (ConditionValue, error)
 }
+
+// ConditionValue is one evaluation. Value is what's compared with the
+// condition's threshold (for a metric, the lowest point in the window, so
+// it's above only when every point is); Current is the latest reading,
+// shown in notifications.
+type ConditionValue struct {
+	Value   float64
+	Current float64
+}
+
+// ErrNoData is a condition whose window has too few points to decide.
+var ErrNoData = errors.New("reconcile: no data for the condition's window")
+
+// ConditionRefusedError is a condition that can't be evaluated as
+// written, such as a percentage of a request the Component doesn't set.
+// Retrying won't help until the rule or the Component changes. Why is
+// shown on the rule, so a provider words it in Serendip's terms.
+type ConditionRefusedError struct {
+	Why string
+}
+
+func (e *ConditionRefusedError) Error() string { return "reconcile: condition refused: " + e.Why }
 
 // LogCursor is where the next page of a time-ordered, newest-first search
 // starts: before Time, after skipping Seen lines at exactly Time (lines

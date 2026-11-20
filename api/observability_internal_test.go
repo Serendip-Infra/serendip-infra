@@ -117,6 +117,10 @@ func (s *storedPages) SearchLogs(context.Context, []reconcile.LogTarget, reconci
 	return reconcile.LogPage{}, nil
 }
 
+func (*storedPages) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{}, reconcile.ErrNoData
+}
+
 func (s *storedPages) Metrics(context.Context, reconcile.LogTarget, reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	return reconcile.Metrics{}, nil
 }

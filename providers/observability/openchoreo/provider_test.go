@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -51,8 +52,17 @@ type fakeObserver struct {
 	// emptyAdminSecret answers it with an empty password.
 	noAdminSecret, emptyAdminSecret bool
 
+	// prom answers Prometheus' /api/v1/query, with promStatus (0: 200).
+	prom       string
+	promStatus int
+	// promCount, when set, answers count(...) queries instead of prom.
+	promCount string
+	// noTotal leaves total out of the logs answer.
+	noTotal bool
+
 	logRequests     []map[string]any
 	metricsRequests []map[string]any
+	promQueries     []url.Values
 	gets            int
 }
 
@@ -96,6 +106,16 @@ func (f *fakeObserver) handler(t *testing.T) http.HandlerFunc {
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			f.metricsRequests = append(f.metricsRequests, req)
 			_ = json.NewEncoder(w).Encode(f.metrics)
+		case r.Method == http.MethodGet && strings.HasSuffix(p, "/services/"+prometheusService+":"+fmt.Sprint(prometheusPort)+"/proxy/api/v1/query"):
+			f.promQueries = append(f.promQueries, r.URL.Query())
+			if f.promStatus != 0 {
+				w.WriteHeader(f.promStatus)
+			}
+			if f.promCount != "" && strings.HasPrefix(r.URL.Query().Get("query"), "count(") {
+				_, _ = io.WriteString(w, f.promCount)
+				return
+			}
+			_, _ = io.WriteString(w, f.prom)
 		case r.Method == http.MethodGet && strings.HasSuffix(p, "/proxy/metrics"):
 			for svc, text := range f.storeMetrics {
 				if strings.Contains(p, "/services/"+svc+":") {
@@ -155,6 +175,7 @@ func (f *fakeObserver) answerLogs(t *testing.T, w http.ResponseWriter, r *http.R
 		_, _ = io.WriteString(w, strings.Repeat(" ", 9<<20))
 		return
 	}
+	total := len(match)
 	if len(match) > req.Limit {
 		match = match[:req.Limit]
 	}
@@ -171,7 +192,11 @@ func (f *fakeObserver) answerLogs(t *testing.T, w http.ResponseWriter, r *http.R
 	if _, ok := scope["workflowRunName"]; !ok {
 		out = append(out, f.extra...)
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"logs": out, "total": len(out), "tookMs": 1})
+	answer := map[string]any{"logs": out, "total": total, "tookMs": 1}
+	if f.noTotal {
+		delete(answer, "total")
+	}
+	_ = json.NewEncoder(w).Encode(answer)
 }
 
 var t0 = time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)

@@ -207,6 +207,11 @@ func (*observabilityStub) SearchLogs(context.Context, []reconcile.LogTarget, rec
 func (*observabilityStub) BuildLogs(context.Context, resource.Build, reconcile.LogQuery) (reconcile.LogPage, error) {
 	return reconcile.LogPage{}, nil
 }
+
+func (*observabilityStub) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{}, reconcile.ErrNoData
+}
+
 func (o *observabilityStub) Metrics(context.Context, reconcile.LogTarget, reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	o.metrics.Add(1)
 	return reconcile.Metrics{}, nil

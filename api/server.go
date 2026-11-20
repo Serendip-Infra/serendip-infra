@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"maps"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/graph"
 	"github.com/serendip-infra/serendip-infra/core/identity"
+	"github.com/serendip-infra/serendip-infra/core/notify"
 	"github.com/serendip-infra/serendip-infra/core/policy"
 	"github.com/serendip-infra/serendip-infra/core/provider"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
@@ -73,7 +75,7 @@ func NewServer(db *sql.DB, bus event.Bus, apiKeys map[string]string, authn ident
 	engine, stopPolicy := newPolicyEngine(db, bus)
 	migrateAPIKeys(engine, db, bus, apiKeys)
 	approvals := sqlite.NewStore[resource.ApprovalSpec, resource.ApprovalStatus](db, resource.KindApproval).SetBus(bus)
-	apiMux := &authzMux{mux: http.NewServeMux(), a: newAuthorizer(engine, graph.NewSQLiteGraph(db), recordDeniedIn(db), approvals, resourceExistsIn(db))}
+	apiMux := &authzMux{mux: http.NewServeMux(), a: newAuthorizer(engine, graph.NewSQLiteGraph(db), recordDeniedIn(db), approvals, resourceExistsIn(db), singletonIn(db))}
 	registerAPI(apiMux, db, bus, engine, approvals, secretReconciler, providers, console, o)
 
 	topMux := http.NewServeMux()
@@ -246,6 +248,11 @@ type serverOptions struct {
 	obs       reconcile.ObservabilityProvider
 	metadata  *ResourceMetadata
 	mcp       bool
+	// notifier and notifySecrets send test notifications (spec 024).
+	notifier      Notifier
+	notifySecrets notify.SecretReader
+	// evaluated is a rule's live evaluation time (spec 024, RP-080).
+	evaluated func(id string) (time.Time, bool)
 }
 
 // WithDirectory lets the authorization routes read the identity provider's
@@ -374,7 +381,51 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	instances.Register(apiMux)
 	(&PackageHandler{catalogue: opts.packages, instances: instStore}).Register(apiMux)
 	mountResource[resource.IncidentSpec, resource.IncidentStatus](apiMux, db, bus, resource.KindIncident, "incidents")
-	mountResource[resource.AlertSpec, resource.AlertStatus](apiMux, db, bus, resource.KindAlert, "alerts")
+	// Alerting (spec 024). Alerts are written only by serendipd, so they
+	// get only reads and acknowledge; the heartbeat is a singleton with its
+	// own routes. Status is the server's on every alerting kind: a rule's
+	// silence changes only through its own action.
+	channelStore := sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](db, resource.KindNotificationChannel).SetBus(bus)
+	ruleStore := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus)
+	smtpStore := sqlite.NewStore[resource.SMTPServerSpec, resource.SMTPServerStatus](db, resource.KindSMTPServer).SetBus(bus)
+	notifications := &notificationsHandler{
+		channels:     channelStore,
+		smtp:         smtpStore,
+		heartbeats:   sqlite.NewStore[resource.HeartbeatSpec, resource.HeartbeatStatus](db, resource.KindHeartbeat).SetBus(bus).SetUniqueKey(resource.HeartbeatKey),
+		secrets:      sqlite.NewStore[resource.SecretSpec, resource.SecretStatus](db, resource.KindSecret),
+		notifier:     opts.notifier,
+		read:         opts.notifySecrets,
+		recordDenied: recordDeniedIn(db),
+		// UTC, as every other stored time is (spec 024 T010 F4).
+		now:     func() time.Time { return time.Now().UTC() },
+		sending: make(chan struct{}, maxTestSends),
+	}
+	NewResourceHandler[resource.AlertRuleSpec, resource.AlertRuleStatus](ruleStore, "alertrules").
+		WithServerStatus().
+		WithView(liveRuleView(opts.evaluated)).
+		WithValidate(builtInKept(ruleStore)).
+		WithPrepare(prepareAlertRule).
+		WithAuthorize(resource.KindAlertRule, recordDeniedIn(db), channelUse{channels: channelStore}.check).Register(apiMux)
+	notifications.registerChannels(apiMux, NewResourceHandler[resource.NotificationChannelSpec, resource.NotificationChannelStatus](channelStore, "notificationchannels").
+		WithServerStatus().
+		WithPrepare(prepareNotificationChannel).
+		WithAuthorize(resource.KindNotificationChannel, recordDeniedIn(db), notifications.channelAuthorize).
+		WithView(notifications.channelView))
+	NewResourceHandler[resource.SMTPServerSpec, resource.SMTPServerStatus](smtpStore, "smtpservers").
+		WithServerStatus().
+		WithValidate(notifications.checkSMTP).
+		WithPrepare(prepareSMTPServer).
+		WithAuthorize(resource.KindSMTPServer, recordDeniedIn(db), smtpSecrets).
+		WithView(notifications.smtpView).Register(apiMux)
+	notifications.registerHeartbeat(apiMux)
+	(&alertsHandler{
+		alerts: sqlite.NewStore[resource.AlertSpec, resource.AlertStatus](db, resource.KindAlert).SetBus(bus),
+		rules:  ruleStore,
+		comps:  compStore,
+		now:    time.Now,
+		// The rule actions' answers show the live time too (RP-080).
+		evaluated: opts.evaluated,
+	}).register(apiMux)
 	mountResource[resource.VolumeSpec, resource.VolumeStatus](apiMux, db, bus, resource.KindVolume, "volumes")
 	// Not mountResource -- SecretHandler isn't the generic
 	// ResourceHandler[S,St] (its Delete and value routes need
@@ -431,6 +482,18 @@ func mountResource[S, St any](mux Mux, db *sql.DB, bus event.Bus, kind resource.
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// singletonIn finds a singleton kind's one resource (the heartbeat), for
+// targetSingleton routes.
+func singletonIn(db *sql.DB) func(ctx context.Context, kind resource.Kind) (string, bool, error) {
+	return func(ctx context.Context, kind resource.Kind) (string, bool, error) {
+		list, err := sqlite.NewStore[json.RawMessage, json.RawMessage](db, kind).List(ctx, store.ListOptions{})
+		if err != nil || len(list) == 0 {
+			return "", false, err
+		}
+		return list[0].Metadata.ID, true, nil
+	}
 }
 
 // resourceExistsIn says whether a resource of any kind exists in db.

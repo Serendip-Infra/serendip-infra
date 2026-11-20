@@ -66,6 +66,9 @@ type logEntry struct {
 
 type logsResponse struct {
 	Logs []logEntry `json:"logs"`
+	// Total is how many lines match in all, past the limit (spec 024
+	// T001: exact at v1.3.1). Nil when the answer doesn't say.
+	Total *int `json:"total"`
 }
 
 // metricsRequest is POST /api/v1/metrics/query's body.
@@ -102,16 +105,22 @@ type adapters struct {
 }
 
 func (a adapters) queryLogs(ctx context.Context, req logsRequest) ([]logEntry, error) {
+	out, err := a.countLogs(ctx, req)
+	return out.Logs, err
+}
+
+// countLogs is queryLogs with the answer's total.
+func (a adapters) countLogs(ctx context.Context, req logsRequest) (logsResponse, error) {
 	path := kubernetes.ServiceProxyPath(PlaneNamespace, logsAdapterService, logsAdapterPort) + "/api/v1/logs/query"
 	raw, err := a.client.PostRaw(ctx, path, req)
 	if err != nil {
-		return nil, adapterError("logs", err)
+		return logsResponse{}, adapterError("logs", err)
 	}
 	var out logsResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("openchoreo observability: decode the logs answer: %w", err)
+		return logsResponse{}, fmt.Errorf("openchoreo observability: decode the logs answer: %w", err)
 	}
-	return out.Logs, nil
+	return out, nil
 }
 
 func (a adapters) queryResourceMetrics(ctx context.Context, req metricsRequest) (resourceMetrics, error) {

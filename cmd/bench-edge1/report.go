@@ -235,11 +235,17 @@ func memWithinTolerance(a, b float64) bool {
 // group. A group missing from run B fails (something disappeared); a group
 // only in run B is marked New and left out of the verdict.
 func compareRuns(a, b Result) []GroupComparison {
+	return compareAggregates(a.Platform, b.Platform)
+}
+
+// compareAggregates checks two phases' agreement, group by group, as
+// compareRuns does for the platform phase.
+func compareAggregates(a, b Aggregate) []GroupComparison {
 	names := map[string]bool{}
-	for g := range a.Platform.Groups {
+	for g := range a.Groups {
 		names[g] = true
 	}
-	for g := range b.Platform.Groups {
+	for g := range b.Groups {
 		names[g] = true
 	}
 	merged := map[string]GroupAggregate{}
@@ -248,8 +254,8 @@ func compareRuns(a, b Result) []GroupComparison {
 	}
 	var out []GroupComparison
 	for _, g := range sortedGroups(merged) {
-		ga, okA := a.Platform.Groups[g]
-		gb, okB := b.Platform.Groups[g]
+		ga, okA := a.Groups[g]
+		gb, okB := b.Groups[g]
 		c := GroupComparison{Group: g, MemA: ga.MemoryMiB.Mean, MemB: gb.MemoryMiB.Mean, CPUA: ga.CPUMillicores.Mean, CPUB: gb.CPUMillicores.Mean}
 		c.MemOK = okA && okB && memWithinTolerance(c.MemA, c.MemB)
 		c.CPUOK = okA && okB && math.Abs(c.CPUA-c.CPUB) <= cpuAbsToleranceMilli

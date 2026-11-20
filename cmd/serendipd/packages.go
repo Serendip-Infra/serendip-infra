@@ -26,10 +26,25 @@ const buildsRemoval = "Build history stays, but run logs and the stored images b
 	"Components running a built image keep running, but can't be rebuilt, or started on a node that doesn't have the image, until the package is back."
 
 // observabilityRemoval is what removing the observability package loses
-// (specs/023-observability plan decision 13), shown before the request to
+// (specs/023-observability plan decision 13, and specs/024-alerts spec
+// IN 13 for alerting), shown before the request to
 // remove it.
 const observabilityRemoval = "All stored logs and metrics history are deleted. Recent logs and events on the Runtime tab keep working. " +
-	"Finished builds' logs can no longer be read once their pods are gone."
+	"Finished builds' logs can no longer be read once their pods are gone. " +
+	"Alert rules stop being evaluated and show as inactive, open Alerts are resolved as \"package removed\", " +
+	"and the built-in disk rule goes with the package. Notification channels stay."
+
+// observabilityDiskRule is the observability package's built-in rule
+// (specs/024-alerts plan decision 4): stored data at 85% of its disk
+// budget, sent to the platform's default channels.
+var observabilityDiskRule = reconcile.BuiltInAlertRule{
+	Name: "observability-disk",
+	Spec: resource.AlertRuleSpec{
+		Condition: resource.AlertCondition{Type: resource.ConditionTypePackageDisk, PackageDisk: &resource.PackageDiskCondition{PercentOfBudget: 85}},
+		Severity:  resource.SeverityWarning,
+		Summary:   "Stored logs and metrics are near the observability package's disk budget",
+	},
+}
 
 // packageCatalogue is the optional packages this build offers (specs/020
 // plan decision 5). builds installs the workflow plane (spec 022) and
@@ -52,6 +67,7 @@ func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcil
 			Installer:    observability,
 			Requirements: obsplane.Requirements,
 			Removal:      observabilityRemoval,
+			AlertRules:   []reconcile.BuiltInAlertRule{observabilityDiskRule},
 		},
 	}
 }
@@ -72,7 +88,8 @@ func registerPackages(db *sql.DB, bus event.Bus, engine *reconcile.Engine, regis
 		}
 	}
 	instances := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).SetBus(bus)
-	r := reconcile.NewProviderInstanceReconciler(instances, c, report)
+	rules := sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus)
+	r := reconcile.NewProviderInstanceReconciler(instances, c, report).WithAlertRules(rules)
 	if err := r.ReportStart(context.Background()); err != nil {
 		log.Printf("serendipd: packages: report readiness at start: %v", err)
 	}

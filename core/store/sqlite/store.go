@@ -381,6 +381,12 @@ func (s *Store[S, St]) Delete(ctx context.Context, resourceID string, cascade bo
 	}
 
 	ref := graph.ResourceRef{Kind: s.kind, ID: resourceID}
+	// Only the target: a cascade from its owner removes it.
+	if k, ok := any(before.Spec).(resource.OwnerKept); ok {
+		if why := k.KeptByOwner(); why != "" {
+			return fmt.Errorf("%w: %s %s: %s", store.ErrInUse, s.kind, before.Metadata.Name, why)
+		}
+	}
 	if err := checkReviewed(ctx, tx, intent, ref, before.Metadata.ResourceVersion); err != nil {
 		return err
 	}
@@ -394,12 +400,15 @@ func (s *Store[S, St]) Delete(ctx context.Context, resourceID string, cascade bo
 	if err != nil {
 		return err
 	}
+	if len(children) > 0 && !cascade {
+		return store.ErrHasChildren
+	}
+	if err := checkNotInUse(ctx, tx, ref, len(children) > 0); err != nil {
+		return err
+	}
 	actor := audit.ActorFrom(ctx)
 	var cascaded []removedRow
 	if len(children) > 0 {
-		if !cascade {
-			return store.ErrHasChildren
-		}
 		visited := map[graph.ResourceRef]bool{ref: true}
 		for _, child := range children {
 			if err := cascadeDeleteChild(ctx, tx, child, actor, visited, &cascaded); err != nil {
@@ -451,6 +460,45 @@ func (s *Store[S, St]) Delete(ctx context.Context, resourceID string, cascade bo
 	}
 	s.publish(event.EventDeleted, resourceID, actor, now)
 	s.publishKind(approvalEvent.Type, approvalEvent.Kind, approvalEvent.ID, approvalEvent.Actor, now)
+	return nil
+}
+
+// checkNotInUse refuses a delete that would remove a resource of a kind
+// that refuses deletion while used (resource.RefusesDeleteWhileUsed)
+// while something the delete doesn't also remove depends on it. With
+// cascade, everything ref owns is checked too.
+func checkNotInUse(ctx context.Context, tx *sql.Tx, ref graph.ResourceRef, cascade bool) error {
+	removed := []graph.ResourceRef{ref}
+	if cascade {
+		desc, err := graph.Descendants(ctx, tx, ref)
+		if err != nil {
+			return err
+		}
+		removed = append(removed, desc...)
+	}
+	gone := make(map[graph.ResourceRef]bool, len(removed))
+	for _, r := range removed {
+		gone[r] = true
+	}
+	for _, r := range removed {
+		if !resource.RefusesDeleteWhileUsed(r.Kind) {
+			continue
+		}
+		users, err := graph.Dependents(ctx, tx, r)
+		if err != nil {
+			return err
+		}
+		for _, u := range users {
+			if gone[u] {
+				continue
+			}
+			var name string
+			if err := tx.QueryRowContext(ctx, `SELECT name FROM resources WHERE id = ? AND kind = ?`, u.ID, string(u.Kind)).Scan(&name); err != nil {
+				name = u.ID
+			}
+			return fmt.Errorf("%w: %s %s is used by %s %s; remove that use first", store.ErrInUse, r.Kind, r.ID, u.Kind, name)
+		}
+	}
 	return nil
 }
 

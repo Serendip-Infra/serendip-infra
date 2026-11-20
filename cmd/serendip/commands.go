@@ -430,7 +430,8 @@ func describe(item map[string]any) (id, name, status string) {
 	if verb := str(item, "spec", "action", "verb"); verb != "" {
 		name = fmt.Sprintf("%s %s/%s", verb, str(item, "spec", "action", "target", "kind"), str(item, "spec", "action", "target", "id"))
 	}
-	status = str(item, "status", "phase")
+	// An Alert's status is its state: firing or resolved.
+	status = cmpOr(str(item, "status", "phase"), str(item, "status", "state"))
 	if st, _ := item["status"].(map[string]any); status == "" && st != nil {
 		if conds, ok := st["conditions"].([]any); ok {
 			for _, c := range conds {
@@ -438,9 +439,22 @@ func describe(item map[string]any) (id, name, status string) {
 					status = "Ready=" + fmt.Sprint(m["status"])
 				}
 			}
+			// Without Ready (an AlertRule's is Evaluating, a heartbeat's
+			// Sending), the first condition, with its reason.
+			if m, ok := firstCondition(conds); status == "" && ok {
+				status = fmt.Sprintf("%v=%v (%v)", m["type"], m["status"], m["reason"])
+			}
 		}
 	}
 	return id, name, status
+}
+
+func firstCondition(conds []any) (map[string]any, bool) {
+	if len(conds) == 0 {
+		return nil, false
+	}
+	m, ok := conds[0].(map[string]any)
+	return m, ok
 }
 
 func cmpOr(vals ...string) string {

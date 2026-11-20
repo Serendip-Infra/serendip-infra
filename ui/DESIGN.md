@@ -80,7 +80,7 @@ Two other vocabularies map onto the same five (`src/lib/health.ts`):
 
 | Component | Purpose |
 |---|---|
-| `Shell` | The rail (Overview, Applications, Secrets, Approvals with how many wait for a decision, Platform, Packages; Volumes labelled "not available yet"), skip link, signed-in person, sign-out, and the banner slot. |
+| `Shell` | The rail (Overview, Applications, Secrets, Approvals with how many wait for a decision, Platform, Packages, Settings; Volumes labelled "not available yet"), skip link, signed-in person, sign-out, the top bar with the alerts bell (firing counts by severity in words, linking to the Alerts page; spec 024), and the banner slot. |
 | `Tabs` | Sections of one page as links (`?tab=`), the current one marked `aria-current="page"`, so a tab can be bookmarked and opened in a new tab. |
 | `PageHeader` | Breadcrumb, title, status, actions, and a meta line ("Updated 12 seconds ago"). |
 | `StatusText`, `ReadyStatus` | The status vocabulary above. |

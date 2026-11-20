@@ -139,6 +139,29 @@ the process list shows it:
 - **Limits:** at most 3 queries at once per person and 20 per server,
   each stopped after 20 seconds.
 
+## Alerts and notifications
+
+- **Alerts:** `serendip alerts list [--state firing|resolved]
+  [--severity] [--componentId|--applicationId|--environmentId]
+  [--limit]` (newest first, 100 by default, at most 500), `alerts get`,
+  `alerts ack <id>` and `alerts summary`. **The `alerts_list` tool
+  answers at most 50**: 50 by default, and a larger `limit` is refused
+  (`limit must be from 1 to 50`). An agent narrows with the filters, or
+  reads `alerts_summary`.
+- **Rules:** `serendip alertrules create|list|get|update|delete`, and
+  `silence <id> --until <RFC 3339> --reason <why>` / `unsilence <id>`.
+  These are MCP tools too, under the agent's roles.
+- **Channels, SMTP servers and the heartbeat:**
+  `serendip channels create|list|get|update|delete|test`,
+  `serendip smtp create|list|get|update|delete`,
+  `serendip heartbeat set|get|test|delete` (`create`, `update` and `set`
+  take `--file`). **CLI only:** people set these up, since they name
+  Secrets and where alert content leaves the laptop (RP-070). An agent
+  reads channels through `resources_list` and `resources_get`.
+- **Tokens and passwords stay in their Secrets.** A channel, SMTP server
+  or heartbeat shows only which of its Secrets are set (`secretSet`);
+  a failed test send names the host, never the token or the URL's path.
+
 ## Packages and builds
 
 - **`serendip packages list`** shows each optional package's measured
@@ -237,11 +260,17 @@ tools.
 | `serendip access roles delete <id>` | — | `DELETE /v1/authorization/roleDefinitions/{id}` | Delete a custom role definition |
 | `serendip access roles get <id>` | `access_roles_get` | `GET /v1/authorization/roleDefinitions/{id}` | One role definition |
 | `serendip access roles list` | `access_roles_list` | `GET /v1/authorization/roleDefinitions` | Role definitions, built-in and custom |
-| `serendip alerts create` | — | `POST /v1/alerts` | Create a Alert |
-| `serendip alerts delete <id>` | — | `DELETE /v1/alerts/{id}` | Delete a Alert. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
-| `serendip alerts get <id>` | — | `GET /v1/alerts/{id}` | Get one Alert |
-| `serendip alerts list` | — | `GET /v1/alerts` | List alerts the caller may read |
-| `serendip alerts update <id>` | — | `PUT /v1/alerts/{id}` | Replace a Alert's spec (send the version read, for a conflict check) |
+| `serendip alertrules create` | `alertrules_create` | `POST /v1/alertrules` | Create a AlertRule |
+| `serendip alertrules delete <id>` | `alertrules_delete` | `DELETE /v1/alertrules/{id}` | Delete a AlertRule. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip alertrules get <id>` | `alertrules_get` | `GET /v1/alertrules/{id}` | Get one AlertRule |
+| `serendip alertrules list` | `alertrules_list` | `GET /v1/alertrules` | List alertrules the caller may read |
+| `serendip alertrules silence <id>` | `alertrules_silence` | `POST /v1/alertrules/{id}/silence` | Silence a rule's notifications until a time (at most 30 days away). Its Alerts still open and resolve; only sending stops |
+| `serendip alertrules unsilence <id>` | `alertrules_unsilence` | `POST /v1/alertrules/{id}/unsilence` | End a rule's silence now |
+| `serendip alertrules update <id>` | `alertrules_update` | `PUT /v1/alertrules/{id}` | Replace a AlertRule's spec (send the version read, for a conflict check) |
+| `serendip alerts ack <id>` | `alerts_acknowledge` | `POST /v1/alerts/{id}/acknowledge` | Acknowledge an Alert: records who is looking at it. Notifications still go out |
+| `serendip alerts get <id>` | `alerts_get` | `GET /v1/alerts/{id}` | One Alert |
+| `serendip alerts list` | `alerts_list` | `GET /v1/alerts` | Alerts the caller may read, newest first: firing and resolved, with their value against the threshold, who acknowledged them and how each notification went |
+| `serendip alerts summary` | `alerts_summary` | `GET /v1/alerts/summary` | How many of the caller's Alerts are firing, by severity, and how many of those nobody has acknowledged |
 | `serendip applications create` | `applications_create` | `POST /v1/applications` | Create a Application |
 | `serendip applications delete <id>` | `applications_delete` | `DELETE /v1/applications/{id}` | Delete a Application. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip applications get <id>` | `applications_get` | `GET /v1/applications/{id}` | Get one Application |
@@ -266,6 +295,13 @@ tools.
 | `serendip capabilities update <id>` | — | `PUT /v1/capabilities/{id}` | Replace a Capability's spec (send the version read, for a conflict check) |
 | `serendip capabilities default get <name>` | `capability_default_get` | `GET /v1/capabilities/{name}/default` | A capability's default provider |
 | `serendip capabilities default set <name>` | — | `PUT /v1/capabilities/{name}/default` | Set a capability's default provider |
+| `serendip channels create` | — | `POST /v1/notificationchannels` | Create a NotificationChannel |
+| `serendip channels delete <id>` | — | `DELETE /v1/notificationchannels/{id}` | Delete a NotificationChannel. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip channels get <id>` | — | `GET /v1/notificationchannels/{id}` | Get one NotificationChannel |
+| `serendip channels list` | — | `GET /v1/notificationchannels` | List notificationchannels the caller may read |
+| `serendip channels test <id>` | — | `POST /v1/notificationchannels/{id}/test` | Send a test notification to a channel now, whatever its minimum severity, and record the result on it |
+| `serendip channels find-chat <id>` | — | `POST /v1/secrets/{id}/telegramchats` | List the Telegram chats a bot (its token in Secret `<id>`) has seen a message from, to find a channel's `chatId`. Send the bot a message first. Needs the Secret's value read |
+| `serendip channels update <id>` | — | `PUT /v1/notificationchannels/{id}` | Replace a NotificationChannel's spec (send the version read, for a conflict check) |
 | `serendip clusters create` | — | `POST /v1/clusters` | Create a Cluster |
 | `serendip clusters delete <id>` | — | `DELETE /v1/clusters/{id}` | Delete a Cluster. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip clusters get <id>` | — | `GET /v1/clusters/{id}` | Get one Cluster |
@@ -295,6 +331,10 @@ tools.
 | `serendip graph blast-radius <kind> <id>` | `graph_blast_radius` | `GET /v1/graph/{kind}/{id}/blast-radius` | Everything deleting a resource would affect |
 | `serendip graph children <kind> <id>` | `graph_children` | `GET /v1/graph/{kind}/{id}/children` | What a resource directly owns |
 | `serendip graph dependents <kind> <id>` | `graph_dependents` | `GET /v1/graph/{kind}/{id}/dependents` | What depends on a resource |
+| `serendip heartbeat delete` | — | `DELETE /v1/heartbeat` | Stop the heartbeat. Recorded as an Approval. The outside monitor will then raise its alarm |
+| `serendip heartbeat get` | — | `GET /v1/heartbeat` | The heartbeat to an outside monitor: where it goes (the URL is a Secret), how often, and its last result |
+| `serendip heartbeat set` | — | `PUT /v1/heartbeat` | Set the heartbeat: a request to an outside monitor every interval, sent only while Serendip can alert |
+| `serendip heartbeat test` | — | `POST /v1/heartbeat/test` | Send one heartbeat now, whatever Serendip's health, and record the result |
 | `serendip incidents create` | — | `POST /v1/incidents` | Create a Incident |
 | `serendip incidents delete <id>` | — | `DELETE /v1/incidents/{id}` | Delete a Incident. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip incidents get <id>` | — | `GET /v1/incidents/{id}` | Get one Incident |
@@ -331,6 +371,11 @@ tools.
 | `serendip providers list` | — | `GET /v1/providers` | List providers the caller may read |
 | `serendip providers update <id>` | — | `PUT /v1/providers/{id}` | Replace a Provider's spec (send the version read, for a conflict check) |
 | `serendip readiness` | `readiness_get` | `GET /v1/readiness` | Readiness of each capability |
+| `serendip smtp create` | — | `POST /v1/smtpservers` | Create a SMTPServer |
+| `serendip smtp delete <id>` | — | `DELETE /v1/smtpservers/{id}` | Delete a SMTPServer. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
+| `serendip smtp get <id>` | — | `GET /v1/smtpservers/{id}` | Get one SMTPServer |
+| `serendip smtp list` | — | `GET /v1/smtpservers` | List smtpservers the caller may read |
+| `serendip smtp update <id>` | — | `PUT /v1/smtpservers/{id}` | Replace a SMTPServer's spec (send the version read, for a conflict check) |
 | — | `resources_get` | `GET /v1/{kind}/{id}` | Get one resource of one kind |
 | — | `resources_list` | `GET /v1/{kind}` | List resources of one kind (infrastructure, organisation, operations) |
 | `serendip secrets create` | `secrets_create` | `POST /v1/secrets` | Create a Secret |
@@ -361,25 +406,27 @@ tools.
 |---|---|---|
 | `/` | CLI | the catch-all route only ever answers 404 |
 | `/` | MCP | the catch-all route only ever answers 404 |
-| `DELETE /v1/alerts/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/authorization/roleAssignments/{id}` | MCP | agents never manage access (spec 018 guardrail); the API would refuse every call |
 | `DELETE /v1/authorization/roleDefinitions/{id}` | MCP | agents never manage access (spec 018 guardrail); the API would refuse every call |
 | `DELETE /v1/capabilities/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/clusters/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/environments/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `DELETE /v1/heartbeat` | MCP | a platform-wide setting, changed by people |
 | `DELETE /v1/incidents/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/nodes/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `DELETE /v1/notificationchannels/{id}` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `DELETE /v1/organizations/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/projects/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/provider-instances/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/providers/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/sites/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `DELETE /v1/smtpservers/{id}` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `DELETE /v1/teams/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `DELETE /v1/volumes/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `GET /v1/authorization/directory` | MCP | directory data, readable only by those who may assign roles, which agents never may |
-| `GET /v1/authorization/principals` | MCP | directory data, readable only by those who may assign roles, which agents never may |
 | `GET /v1/authorization/principals/person/{id}/groups` | MCP | directory data, readable only by those who may assign roles, which agents never may |
-| `POST /v1/alerts` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `GET /v1/authorization/principals` | MCP | directory data, readable only by those who may assign roles, which agents never may |
+| `GET /v1/heartbeat` | MCP | a platform-wide setting, changed by people |
 | `POST /v1/approvals/{id}/approve` | MCP | only a person or an API key decides an approval (spec 019); an AI never does |
 | `POST /v1/approvals/{id}/reject` | MCP | only a person or an API key decides an approval (spec 019); an AI never does |
 | `POST /v1/authorization/roleAssignments` | MCP | agents never manage access (spec 018 guardrail); the API would refuse every call |
@@ -387,26 +434,32 @@ tools.
 | `POST /v1/capabilities` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/clusters` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/environments` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `POST /v1/heartbeat/test` | MCP | a platform-wide setting, changed by people |
 | `POST /v1/incidents` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/nodes` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `POST /v1/notificationchannels/{id}/test` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
+| `POST /v1/notificationchannels` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `POST /v1/organizations` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/projects` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/provider-instances` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/providers` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/sites` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `POST /v1/smtpservers` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `POST /v1/teams` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `POST /v1/volumes` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
-| `PUT /v1/alerts/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/capabilities/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/capabilities/{name}/default` | MCP | a platform-wide setting, changed by people |
 | `PUT /v1/clusters/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/environments/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `PUT /v1/heartbeat` | MCP | a platform-wide setting, changed by people |
 | `PUT /v1/incidents/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/nodes/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `PUT /v1/notificationchannels/{id}` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `PUT /v1/organizations/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/projects/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/provider-instances/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/providers/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/sites/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
+| `PUT /v1/smtpservers/{id}` | MCP | notification channels and SMTP relays are set up by people: they name Secrets and where alert content leaves the laptop (RP-070); read through resources_list and resources_get |
 | `PUT /v1/teams/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |
 | `PUT /v1/volumes/{id}` | MCP | infrastructure and organisation writes are outside spec 021's MCP scope (applications, components, secrets); read through resources_list and resources_get |

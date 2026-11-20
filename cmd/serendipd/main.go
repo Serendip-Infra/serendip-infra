@@ -146,6 +146,13 @@ func run() error {
 		webConsole.Login = kube.login.client
 	}
 	var serverOpts []api.ServerOption
+	// Alerts (spec 024), built before the API so test sends share their
+	// sender; started below with the other loops.
+	var alerts *alerting
+	if kube != nil {
+		alerts = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String(), kube.clusterRanges)
+		serverOpts = append(serverOpts, api.WithNotifier(alerts.client, alerts.secrets), api.WithRuleEvaluated(alerts.evaluator.LastEvaluated))
+	}
 	if kube != nil {
 		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithRuntime(kube.runtime), api.WithConfigSchemas(kube.schemas), api.WithPlatformView(kube.platformView), api.WithPackages(kube.packages), api.WithBuilds(kube.builds), api.WithObservability(kube.observability), api.WithResourceMetadata(api.ResourceMetadata{
 			Issuer: kube.issuer, CLIClient: thunderid.ClientID, AssistantClient: thunderid.DelegateClientID,
@@ -184,7 +191,15 @@ func run() error {
 		}
 	}()
 
+	// alertsDone closes when the alert loops have stopped; without a
+	// cluster there are none.
+	stopped := make(chan struct{})
+	close(stopped)
+	var alertsDone <-chan struct{} = stopped
 	if kube != nil {
+		// Alerts (spec 024): the evaluator and delivery loop write the
+		// store, so they stop with ctx before it closes.
+		alertsDone = alerts.run(ctx)
 		// Setup goroutines touch only the cluster API and the registry,
 		// never the store, so shutdown doesn't wait for them.
 		kube.plan.start(ctx, newTracker(registry, setupBackoff, capStorage, capSecrets, capGateway, capAppPlatform, capIdentity))
@@ -196,6 +211,7 @@ func run() error {
 	case <-ctx.Done():
 		log.Print("serendipd: shutdown signal received")
 		<-engineDone
+		waitAlerts(alertsDone)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -204,11 +220,15 @@ func run() error {
 		log.Print("serendipd: shut down cleanly")
 		return nil
 	case err := <-errCh:
+		stop()
+		waitAlerts(alertsDone)
 		if err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
 		return nil
 	case err := <-engineErrCh:
+		stop()
+		waitAlerts(alertsDone)
 		return fmt.Errorf("reconcile engine: %w", err)
 	}
 }
@@ -291,4 +311,15 @@ func parseAPIKeys(raw string) map[string]string {
 		keys[token] = actor
 	}
 	return keys
+}
+
+// waitAlerts waits, at most 30 s, for the alert loops to stop, so the
+// store isn't closed under one of their writes (their sends are bounded
+// by the sender's own timeouts).
+func waitAlerts(done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		log.Print("serendipd: alert loops still running after 30 s; closing anyway")
+	}
 }

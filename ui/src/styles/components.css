@@ -77,6 +77,27 @@
   min-width: 0;
 }
 
+/* The top bar: the bell (spec 024). */
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-8) 0;
+}
+
+.bell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    padding: var(--space-2) var(--space-4) 0;
+  }
+}
+
 .content {
   max-width: var(--content-max);
   padding: var(--space-6) var(--space-8) var(--space-12);
@@ -159,6 +180,11 @@
 
 .section-title {
   font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.subsection-title {
+  font-size: var(--text-md);
   font-weight: 600;
 }
 

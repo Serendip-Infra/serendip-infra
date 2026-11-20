@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/netip"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -65,6 +66,9 @@ type kubeWiring struct {
 	// adminSubject is the identity provider's bootstrap administrator,
 	// made Owner at "/" on first start (spec 017).
 	adminSubject string
+	// clusterRanges reads the cluster's own address ranges, which
+	// notifications never reach (spec 024).
+	clusterRanges func(context.Context) ([]netip.Prefix, error)
 }
 
 // consoleURIs are the console's login callback and post-logout page,
@@ -342,9 +346,9 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	packages := packageCatalogue(buildInstaller, obsInstaller)
 	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages, onReadiness{
 		capBuild:         buildHandle(registry, builds, buildProvider),
-		capObservability: observabilityHandle(registry, observability, obsplane.NewProvider(client)),
+		capObservability: observabilityHandle(registry, observability, obsplane.NewProvider(client).WithDiskUsage(obsInstaller, obsplane.Requirements.Disk.BudgetMiB)),
 	})
-	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer}, nil
+	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer, clusterRanges: client.ClusterRanges}, nil
 }
 
 // ensureGatewayReady ensures the shared gateway and treats "not programmed

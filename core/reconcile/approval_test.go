@@ -405,3 +405,29 @@ func TestApprovalReconciler_FinishedApprovalsAreLeftAlone(t *testing.T) {
 		t.Errorf("reconcile of a missing approval = %v, want nil", err)
 	}
 }
+
+// A Secret the delete would remove became used from outside it (a
+// platform channel naming it) after the request: the store refuses with
+// ErrInUse, and the approval fails without deleting anything.
+func TestApprovalReconciler_InUseFails(t *testing.T) {
+	ctx := context.Background()
+	f := newApprovalFixture(t)
+	a := f.approved()
+	channels := sqlite.NewStore[resource.NotificationChannelSpec, resource.NotificationChannelStatus](f.db, resource.KindNotificationChannel)
+	spec := resource.NotificationChannelSpec{Type: resource.ChannelTelegram, Telegram: &resource.TelegramSettings{ChatID: "1", BotTokenSecretID: f.s1.Metadata.ID}}
+	if _, err := channels.Create(ctx, resource.NotificationChannel{Metadata: resource.Metadata{Name: "ops",
+		Relationships: resource.NotificationChannelRelationships(spec)}, Spec: spec}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.reconcile(a); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := f.get(a)
+	c := condition(got, resource.ApprovalConditionExecuted)
+	if got.Status.Phase != resource.ApprovalFailed || c.Reason != reconcile.ReasonDeleteFailed || !strings.Contains(c.Message, "used by NotificationChannel ops") {
+		t.Errorf("phase %q, Executed %+v; want Failed/DeleteFailed naming the channel", got.Status.Phase, c)
+	}
+	if !f.exists(resource.KindSecret, f.s1.Metadata.ID) || !f.exists(resource.KindOrganization, f.org.Metadata.ID) {
+		t.Error("an in-use delete removed something")
+	}
+}

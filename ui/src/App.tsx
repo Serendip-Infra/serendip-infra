@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch, apiList, apiPage, isShown, onSessionEnded, signOut, type ApiError, type NetworkError } from "./api/client";
-import type { Approval, NodeResource, SessionInfo } from "./api/types";
+import type { AlertSummary, Approval, NodeResource, SessionInfo } from "./api/types";
 import { RequestError } from "./components/RequestError";
 import { Shell } from "./components/Shell";
 import { Banner, LoadingState } from "./components/States";
@@ -11,7 +11,9 @@ import { ApplicationDetail, ApplicationList, NewApplication } from "./screens/Ap
 import { ComponentDetail, ComponentForm, NotFound } from "./screens/Components";
 import { parseScopeParam } from "./lib/permissions";
 import { AccessPage } from "./screens/AccessPage";
+import { AlertDetail, AlertsPage } from "./screens/Alerts";
 import { ApprovalDetail, ApprovalList } from "./screens/Approvals";
+import { NotificationsPage } from "./screens/Notifications";
 import { SecretDetail, SecretList } from "./screens/Secrets";
 import { DeploymentConfigure } from "./screens/Deploy";
 import { ApplicationTopology } from "./screens/Topology";
@@ -76,8 +78,10 @@ function SignedIn({ path, actor, onSignOut, children }: { path: string; actor: s
   // reads "100+" rather than a count it doesn't have.
   const pending = usePoll((s) => apiPage<Approval>("/v1/approvals?phase=Pending&limit=100", s), 30_000, "rail-pending");
   const waiting = pending.data ? (pending.data.next ? "100+" : String(pending.data.items.length)) : undefined;
+  // The bell's firing counts, by severity (spec 024).
+  const alerts = usePoll((s) => apiFetch<AlertSummary>("GET", "/v1/alerts/summary", undefined, s), 30_000, "bell");
   return (
-    <Shell path={path} actor={actor} onSignOut={onSignOut} banner={banner} waiting={waiting === "0" ? undefined : waiting}>
+    <Shell path={path} actor={actor} onSignOut={onSignOut} banner={banner} waiting={waiting === "0" ? undefined : waiting} alerts={alerts.data}>
       {children}
     </Shell>
   );
@@ -103,6 +107,9 @@ function Routes({ path, query }: { path: string; query: URLSearchParams }) {
   if (path === "/platform") return <PlatformPage />;
   if (path === "/packages") return <PackagesPage />;
   if (path === "/approvals") return <ApprovalList />;
+  if (path === "/alerts") return <AlertsPage query={query} />;
+  if ((p = match("/alerts/:id", path))) return <AlertDetail id={p.id!} />;
+  if (path === "/settings/notifications") return <NotificationsPage />;
   if ((p = match("/approvals/:id", path))) return <ApprovalDetail id={p.id!} />;
   return <NotFound />;
 }

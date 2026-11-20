@@ -2,7 +2,6 @@ package resource_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/resource"
 )
@@ -12,7 +11,6 @@ func TestOps_KindConstants(t *testing.T) {
 		kind resource.Kind
 		want string
 	}{
-		{resource.KindAlert, "Alert"},
 		{resource.KindIncident, "Incident"},
 	}
 	for _, tt := range tests {
@@ -21,24 +19,6 @@ func TestOps_KindConstants(t *testing.T) {
 				t.Errorf("kind = %q, want %q", tt.kind, tt.want)
 			}
 		})
-	}
-}
-
-func TestAlert_ValidEnvelope(t *testing.T) {
-	alert := resource.Alert{
-		Metadata: resource.Metadata{Name: "high-cpu-node-1", Kind: resource.KindAlert},
-		Spec: resource.AlertSpec{
-			Source:   "observability-backend",
-			Rule:     "cpu > 90% for 5m",
-			Severity: "warning",
-		},
-		Status: resource.AlertStatus{FiredAt: time.Now()},
-	}
-	if err := resource.Validate(alert.Metadata); err != nil {
-		t.Fatalf("Validate() = %v, want nil", err)
-	}
-	if alert.Status.FiredAt.IsZero() {
-		t.Error("FiredAt should be set")
 	}
 }
 

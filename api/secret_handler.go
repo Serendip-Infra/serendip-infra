@@ -55,7 +55,7 @@ func (h *SecretHandler) Register(mux Mux) {
 // Create validates the path before storing the Secret.
 func (h *SecretHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var sec resource.Secret
-	if !decodeBody(w, r, &sec) {
+	if !decodeResourceBody(w, r, &sec) {
 		return
 	}
 	if err := resource.ValidateSecretSpec(sec.Spec); err != nil {
@@ -77,7 +77,7 @@ func (h *SecretHandler) Create(w http.ResponseWriter, r *http.Request) {
 // under the Secret's identity and path, so a new path would orphan it.
 func (h *SecretHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var sec resource.Secret
-	if !decodeBody(w, r, &sec) {
+	if !decodeResourceBody(w, r, &sec) {
 		return
 	}
 	sec.Metadata.ID = r.PathValue("id")

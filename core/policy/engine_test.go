@@ -49,6 +49,7 @@ var (
 
 	alice = policy.Principal{Type: resource.PrincipalPerson, ID: "sub-alice"}
 	bob   = policy.Principal{Type: resource.PrincipalPerson, ID: "sub-bob"}
+	carol = policy.Principal{Type: resource.PrincipalPerson, ID: "sub-carol"}
 )
 
 func newWorld(t testing.TB) *world {
@@ -161,6 +162,30 @@ func TestContributorOnAnEnvironment(t *testing.T) {
 		check{alice, "serendip/applications/delete", false, devapp, false},
 		check{alice, policy.ActionRoleAssignmentsWrite, false, prod, false},
 		check{alice, policy.ActionRoleAssignmentsDelete, false, web, false},
+	)
+}
+
+// Spec 024 decision 9: the alerting actions. A Contributor does everything
+// but grant a private destination; a Reader only reads.
+func TestAlertingActionsByRole(t *testing.T) {
+	w := newWorld(t)
+	w.grant(alice, policy.ContributorRoleID, projA, nil)
+	w.grant(bob, policy.ReaderRoleID, projA, nil)
+	w.grant(carol, policy.OwnerRoleID, projA, nil)
+	w.expect(
+		check{alice, "serendip/alertrules/write", false, web, true},
+		check{alice, policy.ActionAlertRuleSilence, false, web, true},
+		check{alice, policy.ActionAlertAcknowledge, false, web, true},
+		check{alice, policy.ActionChannelTest, false, projA, true},
+		check{alice, policy.ActionAllowPrivateDestination, false, projA, false},
+		check{carol, policy.ActionAllowPrivateDestination, false, projA, true},
+		check{carol, policy.ActionAllowPrivateDestination, false, resource.RootScope, false},
+		check{bob, "serendip/alertrules/read", false, web, true},
+		check{bob, "serendip/alerts/read", false, web, true},
+		check{bob, "serendip/notificationchannels/read", false, projA, true},
+		check{bob, "serendip/alertrules/write", false, web, false},
+		check{bob, policy.ActionAlertAcknowledge, false, web, false},
+		check{bob, policy.ActionAllowPrivateDestination, false, projA, false},
 	)
 }
 

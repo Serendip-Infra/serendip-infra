@@ -59,12 +59,20 @@ type Param struct {
 	Enum []string
 	// Max bounds an integer parameter, when non-zero.
 	Max int
+	// MCPMax is an integer query parameter's bound on MCP, and the value
+	// an MCP tool sends when the parameter is left out, so an assistant's
+	// answer stays small whatever the API's default (spec 024: 50 Alerts).
+	// The CLI keeps Max and the API's default.
+	MCPMax int
 	// Expand marks a path parameter whose values name separate routes
 	// (/v1/{kind}/... for each kind in Enum).
 	Expand bool
 	// CLIOnly leaves the parameter off MCP, saying why: an MCP tool
 	// answers once, so a streaming option has no place there.
 	CLIOnly string
+	// dflt is sent when the parameter is absent: MCPMax, once ForMCP has
+	// made the operation a tool's.
+	dflt string
 }
 
 func (p Param) typ() Type { return cmp.Or(p.Type, String) }
@@ -139,6 +147,9 @@ func (o Operation) Request(args map[string]any) (Request, error) {
 		if !ok {
 			if p.Required {
 				return Request{}, fmt.Errorf("%s: %s is required", o.Name, p.Name)
+			}
+			if p.dflt != "" && p.In == InQuery {
+				query.Set(p.Name, p.dflt)
 			}
 			continue
 		}
@@ -254,10 +265,16 @@ func scalar(v any) (string, error) {
 }
 
 // ForMCP is the operation as an MCP tool offers it: without CLI-only
-// parameters, so neither its schema nor its requests can use them, and
-// with its MCPQuery on every request.
+// parameters, so neither its schema nor its requests can use them, with
+// each MCPMax as its parameter's bound and default, and with its MCPQuery
+// on every request.
 func (o Operation) ForMCP() Operation {
 	o.Params = slices.DeleteFunc(slices.Clone(o.Params), func(p Param) bool { return p.CLIOnly != "" })
+	for i, p := range o.Params {
+		if p.MCPMax > 0 {
+			o.Params[i].Max, o.Params[i].dflt = p.MCPMax, strconv.Itoa(p.MCPMax)
+		}
+	}
 	o.fixed = o.MCPQuery
 	return o
 }

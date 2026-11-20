@@ -40,6 +40,10 @@ func (f *fakeObs) BuildLogs(context.Context, resource.Build, reconcile.LogQuery)
 	return reconcile.LogPage{}, nil
 }
 
+func (*fakeObs) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{}, reconcile.ErrNoData
+}
+
 func (f *fakeObs) Metrics(_ context.Context, _ reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	f.mu.Lock()
 	f.queries = append(f.queries, q)

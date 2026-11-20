@@ -15,6 +15,12 @@ func TestEveryDeleteRouteCanNameItsApprovalTarget(t *testing.T) {
 		}
 		switch ru.target {
 		case targetResource, targetAssignment, targetRole:
+		case targetSingleton:
+			// The singleton's ID is found by kind (the heartbeat).
+			if ru.kind == "" || !singletonKinds[ru.kind] {
+				t.Errorf("%s: kind %q isn't a singleton kind", pattern, ru.kind)
+			}
+			continue
 		default:
 			t.Errorf("%s: target %d isn't one policyApproval names", pattern, ru.target)
 		}

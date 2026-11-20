@@ -312,7 +312,7 @@ export function PackagesPage() {
               {open?.pkg.provider === pkg.provider && open.kind === "remove" && (
                 <DeleteConfirm
                   target={{ kind: "ProviderInstance", id: open.instance.metadata.id, name: pkg.provider }}
-                  cascade={false}
+                  cascade={true}
                   noun="package"
                   note={pkg.removal ?? genericRemoval}
                   onDeleted={(approval) => (approval ? navigate(`/approvals/${enc(approval)}`) : done())}

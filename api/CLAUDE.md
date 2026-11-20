@@ -32,6 +32,17 @@
   - Naming a Secret that the system will read for the caller (a build's
     `source.credentialSecret`) needs the value's data action at that
     Secret, checked by the handler (`sourceChecker`).
+  - Body-dependent checks on a generic `ResourceHandler` go in
+    `WithAuthorize` (spec 024, `alerting_authz.go`): a rule's newly named
+    channels need read on each, and a channel's allowances need the
+    Owner-only `allowPrivateDestination/action`. Decide before checking
+    existence, so a 404/400 never tells an unauthorized caller a resource
+    exists.
+  - A singleton kind (the heartbeat) has no `{id}`: its DELETE uses
+    `targetSingleton`, which looks up the one resource so the Approval
+    names it. List it in `singletonKinds` so approval requests can name it.
+  - Unsilencing and similar undo actions are POSTs, never DELETE routes:
+    every DELETE is a delete with an Approval.
   - Agents (spec 018): `core/policy` denies them access management and
     answers `NeedsApproval` for their deletes. `deny()` turns that into a
     403 with `ProblemNeedsApproval`, and every DELETE route must check an

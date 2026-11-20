@@ -20,7 +20,9 @@ One command benchmarks the whole edge-1 stack as `serendipd` deploys it:
    CPU per component group** and `serendipd`'s own process.
 3. Deploys a **light workload** (3 exposed nginx Components by default),
    records each one's create → `Serving` time, settles, and samples again.
-4. Restarts `serendipd` and times a **warm restart**.
+4. Restarts `serendipd` and times a **warm restart**. The earlier run's
+   log is kept as `serendipd.1.log` (then `.2`, …), so the restart
+   doesn't overwrite it.
 5. Writes `result.json` (every sample, machine profile, verdicts) and
    `summary.md`.
 
@@ -104,6 +106,27 @@ built with `go build -overlay` and placeholder numbers.
   `--package-load-samples` (180) samples every 10 s, then
   `--package-disk-samples` (121) every `--package-disk-interval` (1m)
   for the volumes' growth per day, then the load's query latencies.
+- **Alert rules** (`--package-rules N`, observability only, at most 199:
+  the install's cap of 200 enabled, less the built-in disk rule; spec 024
+  T011). Between the load and the disk phases, still under the load:
+  1. deploys 3 nginx Components for the rules to watch;
+  2. samples a baseline with no rules;
+  3. creates N rules, disabled, and samples them (resync only);
+  4. enables them all and samples them evaluating, for
+     `--package-rules-samples` (180) samples every 10 s.
+
+  The rules stay on through the disk phase, which is the plateau check
+  for evaluation latency. The rule types are a third each of metric (cpu
+  or memory), restarts and logMatch (5 or 15 minutes), all at 1 minute.
+  Their thresholds can't be reached, so nothing fires.
+
+  The section reports, for each phase:
+  - node and `serendipd` CPU and memory;
+  - store writes a minute, by kind, and audit rows a minute, read from
+    `serendipd`'s SQLite file;
+  - the evaluator's 10-minute timing lines (`reconcile: alerts: stats:`
+    in `serendipd`'s log): queries, failed, no data, mean, p50, p95,
+    max, the slowest tick and the latest pick-up.
 
 Any `--sim-*` flag marks the run as a simulation. Its summary opens with
 "SIMULATION — does not satisfy the reference-hardware gate", and no

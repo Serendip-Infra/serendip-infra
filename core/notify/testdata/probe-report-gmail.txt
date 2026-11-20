@@ -1,0 +1,10 @@
+telegram: skipped (TG_TOKEN not set)
+gmail smtp.gmail.com:587: before TLS: STARTTLS=true AUTH=false("") SIZE=35882577
+gmail: TLS TLS 1.3 TLS_AES_128_GCM_SHA256
+gmail: after TLS: AUTH=true("LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH") SIZE=35882577
+gmail: sent in 4.135s
+gmail-implicit smtp.gmail.com:465: before TLS: STARTTLS=false AUTH=true("LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH") SIZE=35882577
+gmail-implicit: TLS TLS 1.3 TLS_AES_128_GCM_SHA256
+gmail-implicit: after TLS: AUTH=true("LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH") SIZE=35882577
+gmail-implicit: sent in 3.264s
+brevo: skipped

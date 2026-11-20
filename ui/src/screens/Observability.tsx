@@ -15,6 +15,7 @@ import { usePoll } from "../hooks/usePoll";
 import { availability } from "../lib/health";
 import { readLogs } from "../lib/permissions";
 import { orderEnvironments, ownerOf } from "../lib/pipeline";
+import { ComponentAlerts } from "./Alerts";
 import { useDeployData } from "./Deploy";
 
 // Spec 023's console: stored logs, searched by text and time, and a
@@ -82,6 +83,7 @@ export function ObservabilityTab({ app, comp }: { app: Application; comp: Compon
   return (
     <>
       <ComponentObservability app={app} comp={comp} />
+      <ComponentAlertsFor app={app} comp={comp} />
       <NotYet />
     </>
   );
@@ -93,13 +95,22 @@ function NotYet() {
     <section className="section unavailable" aria-labelledby="obs-later">
       <div className="pipeline-head">
         <h2 id="obs-later" className="section-title">
-          Traces and alerts
+          Traces
         </h2>
         <StatusText kind="unknown">Not available yet</StatusText>
       </div>
-      <p>Traces, alert rules and notifications aren't in this version of Serendip yet.</p>
+      <p>Traces aren't in this version of Serendip yet.</p>
     </section>
   );
+}
+
+/** The Component's alert rules and Alerts, with the Project's Environments for the rule form. */
+function ComponentAlertsFor({ app, comp }: { app: Application; comp: Component }) {
+  const projectId = ownerOf(app.metadata, "Project");
+  const data = useDeployData(projectId, comp.metadata.id);
+  if (projectId && !data.data) return null;
+  const envs = data.data ? orderEnvironments(data.data.project.spec.pipeline, data.data.envs).map(({ env }) => env) : [];
+  return <ComponentAlerts comp={comp} envs={envs} />;
 }
 
 function ComponentObservability({ app, comp }: { app: Application; comp: Component }) {

@@ -427,6 +427,14 @@ func (l *lazyObservability) BuildLogs(ctx context.Context, b resource.Build, q r
 	return p.BuildLogs(ctx, b, q)
 }
 
+func (l *lazyObservability) EvaluateCondition(ctx context.Context, t reconcile.LogTarget, c resource.AlertCondition, window time.Duration) (reconcile.ConditionValue, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.ConditionValue{}, err
+	}
+	return p.EvaluateCondition(ctx, t, c, window)
+}
+
 func (l *lazyObservability) Metrics(ctx context.Context, t reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	p, err := l.get()
 	if err != nil {

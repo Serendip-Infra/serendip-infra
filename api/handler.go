@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -35,6 +36,110 @@ type ResourceHandler[S, St any] struct {
 	// checkMeta, when set, checks metadata on create and update, before
 	// validate. Its error answers 400 (wrap resource.ErrValidation).
 	checkMeta func(m resource.Metadata) error
+	// prepare, when set, checks the whole resource on create and update,
+	// after checkMeta and validate, and may set what's derived from its
+	// spec (its depends-on relationships). Its error answers 400 (wrap
+	// resource.ErrValidation).
+	prepare func(r *resource.Resource[S, St]) error
+	// authorize, when set, makes checks beyond the route's rule that need
+	// the body (spec 024: naming a channel needs read on it), after
+	// prepare. current is the stored resource on update, nil on create.
+	// The returned context carries the checks' policy evidence. A
+	// *deployRefusal answers with its status; a 403 is audited.
+	authorize    func(ctx context.Context, res resource.Resource[S, St], current *resource.Resource[S, St]) (context.Context, error)
+	kind         resource.Kind
+	recordDenied dbForAudit
+	// serverStatus makes status the server's: empty on create, and the
+	// stored one kept on update, whatever the body says (spec 024: a
+	// rule's silence is changed only through its own action).
+	serverStatus bool
+	// view, when set, is what a response shows of a resource (spec 024:
+	// a channel's Secrets as secretSet).
+	view func(ctx context.Context, r resource.Resource[S, St]) (any, error)
+}
+
+// WithServerStatus makes the handler ignore a body's status: empty on
+// create, the stored one on update.
+func (h *ResourceHandler[S, St]) WithServerStatus() *ResourceHandler[S, St] {
+	h.serverStatus = true
+	return h
+}
+
+// WithView makes the handler answer with v's rendering of each resource.
+func (h *ResourceHandler[S, St]) WithView(v func(ctx context.Context, r resource.Resource[S, St]) (any, error)) *ResourceHandler[S, St] {
+	h.view = v
+	return h
+}
+
+// render is r as a response shows it.
+func (h *ResourceHandler[S, St]) render(ctx context.Context, r resource.Resource[S, St]) (any, error) {
+	if h.view == nil {
+		return r, nil
+	}
+	return h.view(ctx, r)
+}
+
+// respond writes r, rendered, with status.
+func (h *ResourceHandler[S, St]) respond(w http.ResponseWriter, r *http.Request, status int, res resource.Resource[S, St]) {
+	v, err := h.render(r.Context(), res)
+	if err != nil {
+		writeStoreErr(w, r, err)
+		return
+	}
+	writeJSON(w, status, v)
+}
+
+// WithAuthorize makes the handler run a's checks on each create and
+// update, auditing a refusal under kind through record.
+func (h *ResourceHandler[S, St]) WithAuthorize(kind resource.Kind, record dbForAudit,
+	a func(ctx context.Context, res resource.Resource[S, St], current *resource.Resource[S, St]) (context.Context, error)) *ResourceHandler[S, St] {
+	h.authorize, h.kind, h.recordDenied = a, kind, record
+	return h
+}
+
+// authorized runs the authorize hook, if any, answering a refusal itself.
+func (h *ResourceHandler[S, St]) authorized(w http.ResponseWriter, r *http.Request, res resource.Resource[S, St], update bool) (context.Context, bool) {
+	ctx := r.Context()
+	if h.authorize == nil {
+		return ctx, true
+	}
+	var current *resource.Resource[S, St]
+	if update {
+		got, err := h.store.Get(ctx, res.Metadata.ID)
+		if err != nil {
+			h.writeStoreError(w, r, err)
+			return ctx, false
+		}
+		current = &got
+	}
+	return h.authorizeWith(w, r, res, current)
+}
+
+// authorizeWith runs the authorize hook against current (nil on create).
+func (h *ResourceHandler[S, St]) authorizeWith(w http.ResponseWriter, r *http.Request, res resource.Resource[S, St], current *resource.Resource[S, St]) (context.Context, bool) {
+	ctx := r.Context()
+	if h.authorize == nil {
+		return ctx, true
+	}
+	ctx, err := h.authorize(ctx, res, current)
+	if err == nil {
+		return ctx, true
+	}
+	var rf *deployRefusal
+	if errors.As(err, &rf) {
+		auditRefusal(r, rf, h.kind, h.recordDenied)
+		h.writeError(w, r, rf.status, rf.title, rf.detail)
+		return ctx, false
+	}
+	h.writeStoreError(w, r, err)
+	return ctx, false
+}
+
+// WithPrepare makes the handler check and complete each resource with p
+// before storing it.
+func (h *ResourceHandler[S, St]) WithPrepare(p func(r *resource.Resource[S, St]) error) *ResourceHandler[S, St] {
+	h.prepare = p
+	return h
 }
 
 // WithMetadataCheck makes the handler check metadata with c before storing.
@@ -67,8 +172,12 @@ func (h *ResourceHandler[S, St]) Register(mux Mux) {
 
 func (h *ResourceHandler[S, St]) Create(w http.ResponseWriter, r *http.Request) {
 	var res resource.Resource[S, St]
-	if !decodeBody(w, r, &res) {
+	if !decodeResourceBody(w, r, &res) {
 		return
+	}
+	if h.serverStatus {
+		var zero St
+		res.Status = zero
 	}
 	if h.checkMeta != nil {
 		if err := h.checkMeta(res.Metadata); err != nil {
@@ -82,12 +191,22 @@ func (h *ResourceHandler[S, St]) Create(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	created, err := h.store.Create(r.Context(), res)
+	if h.prepare != nil {
+		if err := h.prepare(&res); err != nil {
+			h.writeStoreError(w, r, err)
+			return
+		}
+	}
+	ctx, ok := h.authorized(w, r, res, false)
+	if !ok {
+		return
+	}
+	created, err := h.store.Create(ctx, res)
 	if err != nil {
 		h.writeStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, created)
+	h.respond(w, r, http.StatusCreated, created)
 }
 
 func (h *ResourceHandler[S, St]) Get(w http.ResponseWriter, r *http.Request) {
@@ -96,15 +215,42 @@ func (h *ResourceHandler[S, St]) Get(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, got)
+	h.respond(w, r, http.StatusOK, got)
 }
 
 // List supports ?ownerId=<id> and ?label.<key>=<value> (repeated for
 // multiple labels), matching exactly what core/store.ListOptions already
 // supports -- nothing more (specs/002-http-api/plan.md open question 4).
 func (h *ResourceHandler[S, St]) List(w http.ResponseWriter, r *http.Request) {
-	opts := store.ListOptions{OwnerID: r.URL.Query().Get("ownerId")}
+	list, err := h.store.List(r.Context(), listOptions(r))
+	if err != nil {
+		h.writeStoreError(w, r, err)
+		return
+	}
+	// Only what the caller may read (specs/017-authorization decision 4).
+	if list, err = filterReadable(r.Context(), list); err != nil {
+		h.writeError(w, r, http.StatusInternalServerError, "authorization check failed", "the list couldn't be filtered; retry later")
+		return
+	}
+	if h.view == nil {
+		writeJSON(w, http.StatusOK, list)
+		return
+	}
+	out := make([]any, 0, len(list))
+	for _, it := range list {
+		v, err := h.view(r.Context(), it)
+		if err != nil {
+			writeStoreErr(w, r, err)
+			return
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
 
+// listOptions is a list's ?ownerId= and ?label.<key>=<value> filters.
+func listOptions(r *http.Request) store.ListOptions {
+	opts := store.ListOptions{OwnerID: r.URL.Query().Get("ownerId")}
 	labels := make(map[string]string)
 	const labelPrefix = "label."
 	for key, values := range r.URL.Query() {
@@ -115,23 +261,12 @@ func (h *ResourceHandler[S, St]) List(w http.ResponseWriter, r *http.Request) {
 	if len(labels) > 0 {
 		opts.Labels = labels
 	}
-
-	list, err := h.store.List(r.Context(), opts)
-	if err != nil {
-		h.writeStoreError(w, r, err)
-		return
-	}
-	// Only what the caller may read (specs/017-authorization decision 4).
-	if list, err = filterReadable(r.Context(), list); err != nil {
-		h.writeError(w, r, http.StatusInternalServerError, "authorization check failed", "the list couldn't be filtered; retry later")
-		return
-	}
-	writeJSON(w, http.StatusOK, list)
+	return opts
 }
 
 func (h *ResourceHandler[S, St]) Update(w http.ResponseWriter, r *http.Request) {
 	var res resource.Resource[S, St]
-	if !decodeBody(w, r, &res) {
+	if !decodeResourceBody(w, r, &res) {
 		return
 	}
 	// The path's {id} is authoritative over whatever the body claims --
@@ -149,13 +284,34 @@ func (h *ResourceHandler[S, St]) Update(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-
-	updated, err := h.store.Update(r.Context(), res)
+	if h.prepare != nil {
+		if err := h.prepare(&res); err != nil {
+			h.writeStoreError(w, r, err)
+			return
+		}
+	}
+	var ctx context.Context
+	var ok bool
+	if h.serverStatus {
+		current, err := h.store.Get(r.Context(), res.Metadata.ID)
+		if err != nil {
+			h.writeStoreError(w, r, err)
+			return
+		}
+		res.Status = current.Status
+		ctx, ok = h.authorizeWith(w, r, res, &current)
+	} else {
+		ctx, ok = h.authorized(w, r, res, true)
+	}
+	if !ok {
+		return
+	}
+	updated, err := h.store.Update(ctx, res)
 	if err != nil {
 		h.writeStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	h.respond(w, r, http.StatusOK, updated)
 }
 
 func (h *ResourceHandler[S, St]) Delete(w http.ResponseWriter, r *http.Request) {

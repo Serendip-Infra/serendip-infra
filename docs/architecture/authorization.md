@@ -59,7 +59,7 @@ Fixed IDs, the same on every install (`core/policy/builtins.go`):
 | Role | Actions | Data actions |
 |---|---|---|
 | Owner | `*` | none |
-| Contributor | `*` except `serendip/authorization/*/write` and `serendip/authorization/*/delete` | none |
+| Contributor | `*` except `serendip/authorization/*/write`, `serendip/authorization/*/delete` and `serendip/notificationchannels/allowPrivateDestination/action` (spec 024) | none |
 | Reader | `*/read` except `serendip/components/logs/read` | none |
 | User Access Administrator | `*/read`, `serendip/authorization/*`; no logs | none |
 | Role Based Access Control Administrator | `*/read`, role assignments write and delete; no logs | none |
@@ -179,6 +179,54 @@ unrestricted, as in Azure.
   `GET /v1/authorization/permissions` and reading role definitions.
   `GET /v1/authorization/principals` is a directory of people and groups,
   so it also requires being able to assign roles somewhere.
+
+## Alerts and notifications (spec 024)
+
+`api/authz.go`'s `alertingRoutes()`; the model is in `operations.md`
+"Alerts". Like Azure Monitor, alert rules are resources at their target's
+scope, and fired alerts inherit the rule's.
+
+| Route | Action, scope |
+|---|---|
+| `/v1/alertrules` CRUD | `serendip/alertrules/{read,write,delete}` at the rule (its Component or Application) |
+| `POST /v1/alertrules/{id}/silence`, `…/unsilence` | `serendip/alertrules/silence/action` at the rule |
+| `GET /v1/alerts`, `…/summary` | `serendip/alerts/read`, each Alert kept only if readable at its rule's scope |
+| `GET /v1/alerts/{id}` | `serendip/alerts/read` at its rule |
+| `POST /v1/alerts/{id}/acknowledge` | `serendip/alerts/acknowledge/action` at its rule (a write, so no Approval) |
+| `/v1/notificationchannels` CRUD | `serendip/notificationchannels/{read,write,delete}` at the channel (a Project, or `/`) |
+| `POST /v1/notificationchannels/{id}/test` | `serendip/notificationchannels/test/action` |
+| `/v1/smtpservers` CRUD | `serendip/smtpservers/{read,write,delete}` at `/` |
+| `GET`, `PUT /v1/heartbeat`, `POST /v1/heartbeat/test` | `serendip/heartbeat/read` or `/write` at `/` |
+| `DELETE /v1/heartbeat` | `serendip/heartbeat/delete` at `/`, through an Approval |
+| `POST /v1/secrets/{id}/telegramchats` | `serendip/secrets/value/read` (data) on the Secret |
+
+Checks beyond the route's own action:
+- **Naming a channel in a rule** needs `notificationchannels/read` on it,
+  so a Contributor in one Project can't route alerts to another's.
+  Platform `default` channels can be named by anyone who may write a
+  rule; their settings are shown only to readers at `/` ("platform
+  channel" to everyone else).
+- **A channel's Secrets** (bot token, URL, signing key) need
+  `serendip/secrets/value/read` where they're newly named, as a build's
+  credential does. An email channel's SMTP server needs nothing more.
+- **An SMTP server's Secrets** need `serendip/secrets/value/read` where
+  newly named and again when its host or port changes: the server sends
+  them to its host in AUTH (T012 security review,
+  `TestAuthz_SMTPServerSecretsNeedValueRead`). An Owner setting up a
+  relay needs Secrets User on them.
+- **`allowPrivateDestination` and `allowPlainHTTP`** (on a channel or the
+  heartbeat) need
+  `serendip/notificationchannels/allowPrivateDestination/action`, which
+  only Owner holds among the built-in roles, and a reason. So does
+  changing where a channel that has one sends. A custom role with
+  `serendip/notificationchannels/*` includes it (RP-075).
+- **Reader** gets every alerting read through `*/read`. Alerts carry no
+  log text, so `logMatch` needs no logs permission to read.
+- **Agents** use the same roles. Over MCP they can read Alerts and rules,
+  acknowledge, and write, silence and unsilence rules; channel, SMTP and
+  heartbeat writes are CLI and console only (RP-070).
+- **Status is the server's:** a body's `status` is ignored, so a silence
+  can't be set through the generic `PUT`.
 
 ## The evaluation (`core/policy`)
 

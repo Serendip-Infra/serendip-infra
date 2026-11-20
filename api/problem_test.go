@@ -22,6 +22,7 @@ func TestMapStoreError(t *testing.T) {
 		{"not found", store.ErrNotFound, 404},
 		{"conflict", store.ErrConflict, 409},
 		{"has children", store.ErrHasChildren, 409},
+		{"in use", fmt.Errorf("wrapped: %w", store.ErrInUse), 409},
 		{"validation", resource.ErrValidation, 400},
 		{"wrapped validation", errWrap(resource.ErrValidation), 400},
 		{"provider not ready", fmt.Errorf("read value: %w", reconcile.ErrProviderNotReady), 503},

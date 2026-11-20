@@ -12,14 +12,291 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-15 (after spec 023's GitHub close-out)
+Last updated: 2026-11-16 (spec 024: T001–T013 done, but one credential item open)
 
 ## Current phase
 
+**Spec 024 (alert rules and notification channels; epic #65): all 13
+tasks done and committed on local branch `spec-024`**, except one item of
+T013's verify: the T010 scratch credentials. Nothing pushed.
+**Next, in order:**
+1. **The user:** revoke the scratch bot's token (BotFather `/revoke`;
+   `getMe` still answered 200 on 2026-11-16), delete the Gmail app
+   password and the healthchecks.io check, then
+   `~/.serendip-t018/t024/secrets/`. Then tick T013 in tasks.md
+   (`getMe` 401 is the check).
+2. **GitHub batch: RUNNING since 15:40 UTC 2026-11-19** (the user said
+   yes), expected DONE about 17:00 UTC. T001–T013's task issues under
+   epic #65 (#339 T001, #340 T002, #341 T003, #342 T004, #343 T005, …),
+   then epic #65's body (IN PROGRESS; T013 unticked). Script, log and
+   state live in this session's scratchpad:
+   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/7e941eb3-e500-4941-93c6-42ca49fd8d5a/scratchpad/gh024/`
+   (`run.sh`, `run.log`, `state.txt` as "T### N"). **Check `run.log`'s
+   last line first:** `DONE`, or `FAILED: …` (then re-run
+   `bash <dir>/run.sh` only after reading why; it skips tasks in
+   `state.txt`, but a task created without its board fields needs them
+   set by hand). Never two runs at once.
+3. **Link commits to issues (the user said yes):** once `run.log` says
+   DONE, `bash <dir>/closes.sh` rewrites `main..spec-024` with
+   `Closes #N` from `state.txt` and checks the tree is unchanged. It
+   leaves T013 out unless run with `--with-t013`: use that only if the
+   scratch bot's `getMe` answers 401 (step 1).
+4. **The PR (the user said yes):** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
+   with `Closes #65`, merged by `serendipinfra` with a merge commit.
+5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66; the user said yes): `/new-spec` first. No code before its spec, plan and tasks are approved.
+- **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
+  "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
+  architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,
+  066 and 068 updated). docs-keeper's one finding is fixed. **Found:**
+  the heartbeat can't send headers, so Gatus (the plan's suggestion for
+  `small-3`) needs a relay; the guide suggests healthchecks.io or Uptime
+  Kuma, and RP-074 records it. An optional header from a Secret would be
+  a small follow-up if wanted.
+- **T012:** see tasks.md's "Done as" note.
+  - **RP-080:** option a (the user's choice). The lastEvaluated refresh
+    is hourly, and the API shows the evaluator's live time.
+  - **RP-079:** unknown `metadata` fields get a 400.
+  - **Security fix:** an SMTP server's Secrets now need value read, on
+    naming and on a host or port change. Before this, a Contributor at
+    `/` could exfiltrate any Secret through a relay pointed at its own
+    host.
+  - The go-reviewer shutdown fixes are in.
+  - contract-guardian passed.
+- **T011:** `profiles/edge-1/bench/results/2026-11-15-spec024-simulated-t470/`.
+  - **Passed:** rule 4 (79 MiB idle; a same-host A/B puts spec 024 at
+    +1 MiB over spec 023) and criterion 12 (every group).
+  - **Latency:** plateaued over 2.5 h (p95 0.8–1.2 s), which stands for
+    3 days by the user's method.
+  - **Cost:** 200 rules cost `serendipd` +4.2 mcores and the node +149
+    to +234 mcores (OpenObserve), recorded as RP-080.
+  - **Fixed after the run, not re-measured:** the 66 s cadence, lateness
+    counted from disabled time, and noData counted as failed.
+  - **Harness:** keeps `serendipd`'s log across restarts and validates
+    bench rules before a run.
+  - The run was started from the user's own Git Bash terminal, because
+    Claude Code's memory-pressure reaper killed two runs.
+  - `serendip-t018` is stopped (`docker start serendip-t018-control-plane`,
+    then `.\scripts\dev-up.ps1 -Restart -NoBuild`).
+  - `bench-t470` is still up; delete it with
+    `bash profiles/edge-1/bench/kind-t470-setup.sh down bench-t470`.
+- **T010:** `specs/024-alerts/verification.md`, criteria 1–12 and 14
+  live on `serendip-t018` (7's measurements and 13 are T011's).
+  - **Fixed:** F1 `core/notify`'s dialer gave one unreachable address
+    the whole 10 s (a broken IPv6 route timed out every send): families
+    now alternate and each attempt gets a share; F2 the Alerts page
+    showed IDs; F3 the catalogue's `--resource` description named
+    `ownerId`/`metadata.version` (real: `ownerRefs`,
+    `resourceVersion`); F4 alerting times now UTC; F5 the allowance
+    hint; F6 the CLI rule list's STATUS; F7 spec criterion 5 now says an
+    in-house LAN receiver (the cluster's ranges are always refused);
+    F8 the unused 15 min backoff step.
+  - **Not live:** a separate SMTP test server (an SMTP server can't be
+    private, and creating an ethereal.email inbox was denied by the
+    session), Telegram's own 429. Healthchecks.io going back UP after
+    the restart wasn't confirmed by the user (Serendip's beats resumed).
+  - **Tooling** in `~/.serendip-t018/t024/` (helpers, console scripts,
+    the `t024-alerty` image, the receiver, evidence; `secrets/` holds the
+    user's Telegram, Gmail and healthchecks values, to delete).
+  - **State left:** the test Component, receiver namespace, n8n,
+    tunnels and images removed; the heartbeat deleted; the observability
+    package reinstalled. **This session's `serendipd` (T010 build, on
+    `t024/t024.db`) runs on :8088**; the user's dev one (`dev-up.ps1`,
+    `t023.db`) was stopped for the run: restart it with
+    `.\scripts\dev-up.ps1 -Restart -NoBuild` (or `-Restart` for a fresh
+    build).
+  - **The user should** revoke the scratch bot's token (BotFather
+    `/revoke`), delete the Gmail app password and the healthchecks.io
+    check, then delete `~/.serendip-t018/t024/secrets/`.
+- **T009:** `ui/src/screens/Alerts.tsx` (Component and Application
+  sections, `/alerts`, `/alerts/{id}`), `Notifications.tsx`
+  (`/settings/notifications`), `lib/alerts.ts`, a top bar with the bell
+  in `Shell`, and Settings in the rail. **New route** `POST
+  /v1/secrets/{id}/telegramchats` for "Find chat" (Secret value read;
+  CLI `channels find-chat`; off MCP). Acknowledge is checked at the
+  rule's scope (the permissions route refuses `Alert/…`). Rule deletes
+  cascade to their Alerts. Package removal wording extended. Gzipped JS
+  104.1 → 118.7 KiB. The screens haven't been seen in a browser yet:
+  T010 does that.
+- **T008:** the commands and tools came from T007's catalogue; T008
+  added `Param.MCPMax` (an MCP-only bound and default: `alerts_list`
+  answers at most 50), Alert state in CLI tables,
+  `cmd/serendip/alerts_test.go` (every command's request and usage
+  errors, the cap, and the bot token in no CLI or MCP output) and
+  `docs/cli-and-mcp.md`'s "Alerts and notifications".
+- **T007:**
+  - `api/alerts_handler.go` and `api/notifications_handler.go`. Every
+    plan-decision-12 and -15 route is registered, and `pendingRoutes` is
+    gone.
+  - Secrets show only as `secretSet`. Platform default channels show as
+    `platformChannel` below `/`.
+  - Destinations are checked at save, after authorization, through
+    `api.Notifier`/`WithNotifier` (`core/notify`'s Client).
+  - Test sends answer 200, 422 or 502, two at a time.
+  - **Status is the server's** on rules, channels and SMTP servers
+    (`WithServerStatus`).
+  - **The heartbeat loop** is new (`core/reconcile/heartbeat.go`), started
+    with the evaluator. `wireAlerting` now runs before `NewServer`.
+  - Catalogue: CLI groups `alerts`, `alertrules`, `channels`, `smtp` and
+    `heartbeat`, with `get`, not `show`. Rule writes, Alert reads and ack
+    are MCP tools; channel, SMTP and heartbeat writes are CLI-only.
+  - RP-078 is new.
+  - Both reviews are in, no blockers, and the cheap findings are fixed.
+    tasks.md lists what's left as is, with reasons.
+- **T006:**
+  - `providers/observability/openchoreo/conditions.go` and
+    `prometheus.go` evaluate all four conditions, replayed against
+    T001's recordings. The restart counter is in the allowlist, and in
+    the bench copy.
+  - The built-in `observability-disk` rule (warning, 85%) is declared in
+    the catalogue and created on Ready. A delete aimed at it gets 409;
+    it goes by cascade. **Package removal now needs `cascade=true`**
+    (the console sends it), and the API refuses changing `builtIn`.
+  - The cluster's ranges reach `core/notify` every 5 minutes, and the
+    Checker refuses private destinations until the first read.
+  - New `ConditionRefusedError` → reason `ConditionRefused`. A metric
+    `value` is in millicores or MiB.
+  - Plan decisions 3 and 4 amended. RP-076 and RP-077 are new; RP-068's
+    residual is closed. Both reviews are in: contract-guardian pass;
+    go-reviewer's findings fixed, one left with its reason.
+- **T005:** `core/reconcile/alerts.go` (evaluator) and `delivery.go`
+  (delivery loop), wired in `cmd/serendipd/alerts.go`. **Retention
+  records Approvals** (one per rule per pass, by policy; contract-guardian
+  blocked the plan's "no Approval" under constitution 5, plan amended,
+  RP-071). go-reviewer's 9 findings fixed.
+- **T003:** actions in `core/policy/builtins.go`
+  (`allowPrivateDestination/action` Owner-only); `api/authz.go`
+  `alertingRoutes()` has every decision-12/15 route's rule, the
+  unregistered ones in `authz_routes_test.go`'s `pendingRoutes` (**T007
+  empties it**). Unsilence is now `POST …/unsilence` (plan amended: a
+  DELETE route is a delete with an Approval). `DELETE /v1/heartbeat` uses
+  `targetSingleton`. Body checks via the generic handler's
+  `WithAuthorize` (`api/alerting_authz.go`): a rule's channels need read
+  (platform defaults excepted), a channel's Secrets need
+  `secrets/value/read`, allowances (and changing an allowed channel's
+  destination) need the Owner action. **T007 must wire `allowancesAt`
+  for the heartbeat's allowance at `/`.** RP-075 accepted.
+- **T002:** the five kinds in `core/resource/alerting.go`; `store.ErrInUse`
+  (409) for a Secret, channel or SMTP server still in use. Paths
+  `alertrules`, `notificationchannels`, `smtpservers`, so **T003's actions
+  are `serendip/alertrules/*` etc.** (path-derived), not decision 9's
+  camelCase. Generic routes serve them until T007.
+- **T004:** `core/notify`, stdlib only; card matches T001's recording.
+  go-reviewer's keep-alive finding fixed (pooling would have skipped the
+  address check). contract-guardian: pass.
+- **T001** (plan "Spike findings" 1–6; recordings in
+  `providers/observability/openchoreo/testdata/condition-*.json` and
+  `core/notify/testdata/`):
+  - metric query as planned (a `for` of N min reads N + 1 points);
+  - the logs answer has an exact `total`, so `logMatch` queries
+    `limit: 1` and reads it;
+  - **restart counter wasn't collected:** T006 must add
+    `kube_pod_container_status_restarts_total` to
+    `prometheus-values.yaml`'s `metricAllowlist`. Pods match by
+    `kube_pod_labels` UIDs; `max − min` over the window, not `increase`;
+    lag ~40 s;
+  - latencies 10–460 ms. Scratch namespace deleted, kube-state-metrics
+    args restored.
+  - **Telegram:** card and URL button accepted; only a `localhost` host
+    is refused in a button (plain http is fine); threading via
+    `reply_parameters` works; no 429 at 70 messages (T004 uses the
+    documented shape); `getUpdates` finds the chat only after the person
+    messages the bot.
+  - **Email:** Gmail app password delivered to the inbox on 587 and 465
+    (the free default). Brevo with a `@gmail.com` sender: one inbox, one
+    Spam (DMARC unaligned), so a relay needs an owned, authenticated
+    domain. **Brevo offers AUTH before STARTTLS on 587**: auth only after
+    TLS is required, and T004 tests it.
+  - All scratch credentials revoked (bot `getMe` 401, SMTP key and app
+    password deleted). The probe lives in that session's scratchpad only.
+  - **No public domain exists yet.** The user may register one
+    (`serendipinfra.com` or `serendip-infra.dev` suggested) for email
+    sending with DKIM; not decided.
+- **`backfill.sh` is DONE** (22:47 UTC 2026-11-15). GitHub for spec 024
+  is now unblocked: epic #65's body to IN PROGRESS, and T001–T013's task
+  issues as one paced batch, created with assignee, milestone, a short
+  title and Priority/Area/Size set.
+  - **Deferred cleanup (the user, 2026-11-16: "later but keep in
+    mind"):** #283 is an orphan duplicate of #284 (Spec 019 T006), to be
+    closed. About 245 backfilled tasks lack an assignee and a milestone,
+    and 59 titles carry the whole tasks.md heading (up to 927 chars).
+    The fix is one paced PATCH per task (assignee, milestone, short
+    title), about 13 h. Board Priority/Area/Size are empty on finished
+    work; the plan is to skip them, Area not decided. Epic #65 → "Spec 024: Alert rules and notification channels" and
+#66 → "Spec 025: Networking: Cilium, Hubble and traces" (two paced
+writes, done or pending: check the epics).
+  - **Then link the finished tasks' commits (the user, 2026-11-15:
+    "neat and tidy").** They were committed before their issues existed,
+    so none says `Closes #N`. `spec-024` isn't pushed, so before its
+    first push, rewrite only `main..spec-024` to append `Closes #<T00N's
+    issue>` to the body of each task's commit. Match each commit by
+    `T00N` in its subject:
+    - T001 `214da35`, T002 `ee9cc97`, T003 `d8f35a1`, T004 `1f2d65c`,
+      T005 `c79f460`, T006 `2c0b616`, T007 `92ac3a1`, T008 `e107b49`, T009 `da3484a`, T010 `cb54de9`, T011 `66435ca`, T012 (its `feat(api): spec 024 T012` commit), T013 (its `docs: spec 024 T013` commit)
+      and the two `spec 024 T010` fix commits after it (hashes change
+      after the rewrite);
+    - non-interactively: `git filter-branch --msg-filter` over
+      `main..spec-024`, or `git rebase --exec`.
+
+    Check `git log main..spec-024` afterwards: every task commit should
+    carry its line, and the tree should match the pre-rewrite tip
+    (`git diff <old-tip> spec-024` is empty). The PR merge then closes
+    each issue. Later tasks put `Closes #N` in their own commit as usual.
+- **Traces moved to spec 025** (the user agreed, 2026-11-15), with
+  trace-based alert conditions. The research for them is in spec 024's
+  plan, "Carried to spec 025"; the earlier draft with full trace
+  decisions is commit `02c86b4`.
+- **The plan's main decision:** `serendipd` evaluates every rule itself
+  (polling the metrics and logs adapters, and Prometheus's
+  kube-state-metrics for restarts) and sends notifications through one
+  validating stdlib client, `core/notify`. OpenChoreo's alerting path
+  isn't used (its metric rules need the Prometheus Operator and
+  Alertmanager ADR 0021 removed; its Observer would send to person-typed
+  URLs, RP-062). Recorded as ADR 0022.
+- **Channels (all free, outbound only), settled 2026-11-15:** Telegram
+  first (cards with a "View in console" URL button, resolution threaded
+  as a reply), email through any SMTP relay (Gmail app password or Brevo;
+  no SES, no mail server on the laptop), and the signed webhook as the
+  integration point (n8n, Node-RED, Apprise API). Each channel has a
+  `minSeverity`. Slack, Discord, Teams and ntfy formats are deferred and
+  reached through the webhook for now. Phone calls and SMS go through a
+  webhook tool (Twilio, about 3 US cents a minute; none are free).
+  Unofficial WhatsApp clients are rejected.
+- **Heartbeat (dead man's switch)** added: `serendipd` pings an outside
+  monitor every minute, only while it can alert. Suggested monitors:
+  healthchecks.io (free, Telegram), or Gatus on a second device. All the
+  outside tools are suggestions, not dependencies (plan "Suggested
+  outside tools").
+- **ThunderID (checked at v1.1.0, repo now `thunder-id/thunderid`):**
+  email and SMS OTP as a second factor, yes; TOTP, no; passkeys exist but
+  aren't documented. A Telegram OTP relay through its Custom SMS sender is
+  possible but a workaround (plan "ThunderID OTP"). **ThunderID released
+  v1.0.2, v1.1.0 and v2.0.0-m1 (Oct–Nov 2026): ADR 0006's re-check and a
+  version bump are due.**
+- **Prior art:** WSO2 cs-tools' alert services (design adopted, code not).
+- **Next:** T012 (reviews), then T013.
+- **Later, after spec 024 (agreed 2026-11-15):** composite alert
+  conditions, like AWS CloudWatch composite alarms (plan "Explicitly NOT
+  done").
+- **After spec 024 (agreed 2026-11-15): a PIM spec, before spec 025.**
+  Numbered 026 (so #66 keeps 025), done first. Azure PIM-style eligible
+  role assignments and time-bound activation (reason, duration cap,
+  optional approver, per-role settings like Azure's role management
+  policies). Only principals eligible (usually through a group, like
+  Azure's role-assignable groups) can activate. **Also in that spec
+  (agreed 2026-11-15): permission ceilings**, like AWS IAM permission
+  boundaries and organizations' service control policies: a cap on what
+  a principal's roles can ever grant, whatever is assigned or activated,
+  mainly to bound agents (Azure has no direct equivalent; the nearest are
+  deny assignments). Approval once per
+  activation, not per delete; deletes under an activation stay
+  policy-approved Approvals, so constitution 5 holds. Mainly for agents,
+  whose deletes each wait for a person today. Delete locks (Azure's
+  `CanNotDelete`) possibly later. **Standing rule:** follow Azure's
+  procedures and structures whenever possible, and name the Azure
+  analogue each time.
+
 **Spec 023 (observability package): done and closed out on GitHub
-(2026-11-15): PR #197 merged (`b568806`), epic #64 closed. Next spec:
-024 (alerts), whose tasks must include validating alert destinations
-itself (RP-062).**
+(2026-11-15): PR #197 merged (`b568806`), epic #64 closed.**
 - **After the close-out (2026-11-15), upstream `main` = `5bb071d`:**
   - **#197's merge conflict:** `spec-023` had been cut while upstream
     `main` was stale, and `CLAUDE.md` conflicted. The cause: the

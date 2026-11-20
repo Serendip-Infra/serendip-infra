@@ -91,6 +91,10 @@ func (c *ctl023) BuildLogs(ctx context.Context, b resource.Build, q reconcile.Lo
 	return c.obs023.BuildLogs(ctx, b, q)
 }
 
+func (*ctl023) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{}, reconcile.ErrNoData
+}
+
 func (c *ctl023) Metrics(ctx context.Context, t reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	if err := c.enter(ctx); err != nil {
 		return reconcile.Metrics{}, err

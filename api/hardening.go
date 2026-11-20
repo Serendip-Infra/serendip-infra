@@ -6,10 +6,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/audit"
+	"github.com/serendip-infra/serendip-infra/core/resource"
 )
 
 // Server limits (specs/016-ui-mvp plan.md decision 9).
@@ -61,7 +66,42 @@ func writeTooLarge(w http.ResponseWriter, r *http.Request) {
 // decodeBody decodes r's JSON body into v. On failure it writes the
 // response (413 for an oversized body, 400 otherwise) and returns false.
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
-	err := json.NewDecoder(r.Body).Decode(v)
+	return decoded(w, r, json.NewDecoder(r.Body).Decode(v))
+}
+
+// decodeResourceBody is decodeBody for a resource document. Its metadata
+// may hold only Metadata's own fields: an unknown one (a typo, or
+// `ownerId` for `ownerRefs`) is refused with 400 naming it, never
+// dropped, since a dropped owner silently widens who a resource belongs
+// to (RP-079). Spec and status still ignore unknown fields.
+func decodeResourceBody[S, St any](w http.ResponseWriter, r *http.Request, v *resource.Resource[S, St]) bool {
+	var doc struct {
+		Metadata json.RawMessage `json:"metadata"`
+		Spec     *S              `json:"spec"`
+		Status   *St             `json:"status"`
+	}
+	doc.Spec, doc.Status = &v.Spec, &v.Status
+	if !decoded(w, r, json.NewDecoder(r.Body).Decode(&doc)) {
+		return false
+	}
+	if len(doc.Metadata) == 0 || string(doc.Metadata) == "null" {
+		return true
+	}
+	if err := json.Unmarshal(doc.Metadata, &v.Metadata); err != nil {
+		return decoded(w, r, err)
+	}
+	if unknown := unknownMetadataFields(doc.Metadata); len(unknown) > 0 {
+		WriteProblem(w, http.StatusBadRequest, "unknown metadata fields",
+			"metadata has fields the API doesn't know: "+strings.Join(unknown, ", ")+
+				" (known: "+strings.Join(metadataFields, ", ")+")", audit.RequestIDFrom(r.Context()))
+		return false
+	}
+	return true
+}
+
+// decoded answers a decode error: 413 for an oversized body, 400
+// otherwise. It reports whether err was nil.
+func decoded(w http.ResponseWriter, r *http.Request, err error) bool {
 	if err == nil {
 		return true
 	}
@@ -72,6 +112,37 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	WriteProblem(w, http.StatusBadRequest, "malformed request body", err.Error(), audit.RequestIDFrom(r.Context()))
 	return false
+}
+
+// metadataFields are resource.Metadata's JSON names.
+var metadataFields = func() []string {
+	t := reflect.TypeFor[resource.Metadata]()
+	out := make([]string, 0, t.NumField())
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			out = append(out, name)
+		}
+	}
+	return out
+}()
+
+// unknownMetadataFields are the keys of a metadata object that Metadata
+// doesn't have, sorted. As encoding/json does, a key matches a field
+// case-insensitively. Anything but an object has none.
+func unknownMetadataFields(meta json.RawMessage) []string {
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(meta, &keys) != nil {
+		return nil
+	}
+	var unknown []string
+	for k := range keys {
+		if !slices.ContainsFunc(metadataFields, func(f string) bool { return strings.EqualFold(f, k) }) {
+			unknown = append(unknown, strconv.Quote(k))
+		}
+	}
+	slices.Sort(unknown)
+	return unknown
 }
 
 // decodeOptionalBody is decodeBody for a body that may be absent: an empty

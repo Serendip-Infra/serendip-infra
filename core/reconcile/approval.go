@@ -135,6 +135,10 @@ func (r *ApprovalReconciler) execute(ctx context.Context, a resource.Approval) e
 		return nil
 	case errors.Is(err, store.ErrStale), errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrHasChildren):
 		return r.fail(ctx, a, ReasonStaleTarget, "the target changed since the request, so nothing was deleted: "+err.Error())
+	case errors.Is(err, store.ErrInUse):
+		// Something still names the target: retrying won't help until
+		// that use is removed, and a new request reviews it again.
+		return r.fail(ctx, a, ReasonDeleteFailed, "not executed: "+err.Error())
 	case errors.Is(err, store.ErrNoApproval):
 		// The record can't authorise the delete (no reviewed version or
 		// radius): retrying would never succeed.

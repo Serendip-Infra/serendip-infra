@@ -175,7 +175,7 @@ func (h *ComponentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *ComponentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var c resource.Component
-	if !decodeBody(w, r, &c) {
+	if !decodeResourceBody(w, r, &c) {
 		return
 	}
 	h.mu.Lock()
@@ -201,7 +201,7 @@ func (h *ComponentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *ComponentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var c resource.Component
-	if !decodeBody(w, r, &c) {
+	if !decodeResourceBody(w, r, &c) {
 		return
 	}
 	c.Metadata.ID = r.PathValue("id")
