@@ -48,11 +48,12 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      contract-guardian passed.
      - **Dev cluster `serendip-t025`** (Cilium, made by the script):
        state `~/.serendip-t025-dev` (kubeconfig, `dev-up.env`: `:8089`,
-       `serendipd.db`), gateway on host port 30083. **Stopped**
-       (`docker stop`) to save memory; nothing installed on it yet.
-       **Not run:** `dev-up.ps1` against it (the auto-mode check refused
-       the `powershell -ExecutionPolicy Bypass` launch); the user can run
-       `.\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025`.
+       `serendipd.db`), gateway on host port 30083. Nothing installed
+       on it yet (no OpenBao, no ThunderID). The user ran
+       `.\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025`
+       (2026-11-20 22:04): `serendipd` up on `:8089` (PID 37724 then),
+       console 200, log clean. It and its container are still running;
+       stop both if `t025` needs the memory in T006.
    - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
    - **Carried to T008 (in its Do/Verify):** run the pass on the
      re-ensure interval, adapting `HTTPWorkloads` to `cilium.Target`.

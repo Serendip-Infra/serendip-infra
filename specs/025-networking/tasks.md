@@ -178,9 +178,11 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   in T005": the K3s container went Ready with Cilium in about 7 minutes
   (cold pulls); `kind-t470-setup.sh up` with `CNI=cilium` gave a Ready
   node in 521 s.
-- **Not run:** `dev-up.ps1` against `serendip-t025` (the session's
-  permission check refused the PowerShell launch); its settings are in
-  place.
+- **`dev-up.ps1` against `serendip-t025`** (run by the user, the
+  session's permission check having refused the launch): built and
+  started `serendipd` on `:8089`, the console answered 200, the log
+  clean. Its two warnings are expected on a bare cluster (no OpenBao
+  unseal file, ThunderID not installed).
 - build-vs-adopt: Helm in the agent rejected for K3s's HelmChart.
 - **go-reviewer:** fixed: the manifest is written after the script
   downloads (a failed download changes nothing), `--cni default` removes
