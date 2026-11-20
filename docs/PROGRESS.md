@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024 closed: PR #352 merged, #351 and #65 closed)
+Last updated: 2026-11-20 (spec 025: T001–T004 done, T005 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T003 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T004 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,13 +31,27 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#355 closed (board Done); #66 says
-   "T001–T003 done; T004 next". T004–T015 are #356–#367. Before the spec
+   then check the board. #353–#356 closed (board Done); #66 says
+   "T001–T004 done; T005 next". T005–T015 are #357–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T004** (the `cilium` provider), then T005–T015 in order. T003
-   (`providers/networking/external`, commit a8ca27c, `Closes #355`) is
-   done: kindnet live on `serendip-t018` reported `enforced`, and a
-   deny-all policy held. T008 wires it in (it exports `New(Reader)`). T002 left for T009: the API must answer clearly (not a 500)
+3. **T005** (install path: `serendip-agent bootstrap --cni`, the values
+   copy with its equality test against `cilium.Values()`,
+   `kind-t470-setup.sh CNI=cilium`, dev cluster `serendip-t025`), then
+   T006–T015 in order.
+   - **T004 done** (commit 3b981fc, `Closes #356`). It added
+     `providers/networking/cilium`: `New(Client)`, `Facts`, `FlowSource`,
+     `EnsureVisibility([]Target) (Report, error)`, `Values()` and
+     `ChartVersion`.
+     - It also added `openchoreo.HTTPWorkloads`, since only OpenChoreo's
+       Workload knows which ports are HTTP (exposed ones only, RP-082).
+     - Live on `t025`, srv's `serendip-l7-openchoreo-cmp-ac7df9f12c` now
+       exists and is owned by Serendip (T001's hand-made one was
+       replaced).
+   - **Carried to T008 (in its Do/Verify):** run the pass on the
+     re-ensure interval, adapting `HTTPWorkloads` to `cilium.Target`.
+     When a pass writes, record an audit event naming `Report.Applied`
+     and `Report.Deleted`.
+   - T003 (`external`, a8ca27c) exports `New(Reader)` for T008. T002 left for T009: the API must answer clearly (not a 500)
    when the observability provider lacks `FlowReader`/`TrafficReader`,
    and clear a flow's unreadable end; for T015: custom `*/read` roles now
    include traces, as they include logs.
