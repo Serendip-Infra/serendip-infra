@@ -131,6 +131,8 @@ type AlertEvaluator struct {
 	s         AlertStores
 	writer    *alertWriter
 	provider  ObservabilityProvider
+	tracing   TracingProvider
+	requests  func(ctx context.Context) (bool, string)
 	installed func(ctx context.Context) (bool, error)
 	purge     func(ctx context.Context, cutoff time.Time, limit int) (int, error)
 	deliver   func(alertID string)
@@ -153,6 +155,16 @@ type AlertEvaluator struct {
 type AlertEvaluatorOptions struct {
 	Stores   AlertStores
 	Provider ObservabilityProvider
+	// Tracing reads trace conditions (specs/025-networking plan decision
+	// 13). Nil (a plain nil, never a typed nil pointer) means the tracing
+	// package isn't installed: trace conditions are refused with that
+	// reason. While it's installing, it returns ErrProviderNotReady.
+	Tracing TracingProvider
+	// RequestMetrics reports whether the network layer records HTTP
+	// requests, and why not, in Serendip's words. Request conditions are
+	// refused while it says no, and when it's nil: nothing is claimed
+	// that wasn't checked (constitution 6).
+	RequestMetrics func(ctx context.Context) (ok bool, why string)
 	// Installed reports whether the observability package is installed
 	// (whatever its readiness): when it's removed, open Alerts resolve
 	// with packageRemoved.
@@ -172,7 +184,8 @@ func NewAlertEvaluator(o AlertEvaluatorOptions, d DeliveryOptions) (*AlertEvalua
 	w := &alertWriter{alerts: o.Stores.Alerts}
 	loop := newDeliveryLoop(o.Stores, w, d, o.Now)
 	e := &AlertEvaluator{
-		s: o.Stores, writer: w, provider: o.Provider, installed: o.Installed, purge: o.Purge,
+		s: o.Stores, writer: w, provider: o.Provider, tracing: o.Tracing, requests: o.RequestMetrics,
+		installed: o.Installed, purge: o.Purge,
 		deliver: loop.Enqueue, now: o.Now,
 		rules: map[string]*ruleMemory{}, open: map[string]*openAlert{},
 	}
@@ -516,11 +529,32 @@ func (e *AlertEvaluator) evaluate(ctx context.Context, jobs []*evalJob) {
 			qctx, cancel := context.WithTimeout(ctx, AlertQueryTimeout)
 			defer cancel()
 			began := time.Now()
-			j.value, j.err = e.provider.EvaluateCondition(qctx, j.target, j.rule.Spec.Condition, conditionWindow(j.rule.Spec.Condition))
+			j.value, j.err = e.query(qctx, j)
 			j.took = time.Since(began)
 		}(j)
 	}
 	wg.Wait()
+}
+
+// query reads one job's condition from the source its type needs.
+func (e *AlertEvaluator) query(ctx context.Context, j *evalJob) (ConditionValue, error) {
+	c := j.rule.Spec.Condition
+	window := conditionWindow(c)
+	switch {
+	case c.TraceErrors != nil:
+		if e.tracing == nil {
+			return ConditionValue{}, &ConditionRefusedError{Why: "trace conditions need the tracing package installed"}
+		}
+		return e.tracing.EvaluateCondition(ctx, j.target, c, window)
+	case c.RequestErrorRate != nil, c.RequestLatency != nil:
+		if e.requests == nil {
+			return ConditionValue{}, &ConditionRefusedError{Why: "request metrics aren't available on this server"}
+		}
+		if ok, why := e.requests(ctx); !ok {
+			return ConditionValue{}, &ConditionRefusedError{Why: why}
+		}
+	}
+	return e.provider.EvaluateCondition(ctx, j.target, c, window)
 }
 
 // conditionWindow is the time a condition reads over.
@@ -532,6 +566,12 @@ func conditionWindow(c resource.AlertCondition) time.Duration {
 		return time.Duration(c.Restarts.WindowMinutes) * time.Minute
 	case c.LogMatch != nil:
 		return time.Duration(c.LogMatch.WindowMinutes) * time.Minute
+	case c.RequestErrorRate != nil:
+		return time.Duration(c.RequestErrorRate.WindowMinutes) * time.Minute
+	case c.RequestLatency != nil:
+		return time.Duration(c.RequestLatency.WindowMinutes) * time.Minute
+	case c.TraceErrors != nil:
+		return time.Duration(c.TraceErrors.WindowMinutes) * time.Minute
 	}
 	return 0
 }
@@ -547,6 +587,12 @@ func Threshold(c resource.AlertCondition) float64 {
 		return float64(c.LogMatch.Above)
 	case c.PackageDisk != nil:
 		return c.PackageDisk.PercentOfBudget
+	case c.RequestErrorRate != nil:
+		return c.RequestErrorRate.AbovePercent
+	case c.RequestLatency != nil:
+		return c.RequestLatency.AboveMs
+	case c.TraceErrors != nil:
+		return float64(c.TraceErrors.Above)
 	}
 	return math.Inf(1)
 }
@@ -605,7 +651,7 @@ func (e *AlertEvaluator) apply(ctx context.Context, jobs []*evalJob, now time.Ti
 		switch {
 		case o.notReady:
 			e.setRule(ctx, o.rule, false, resource.ReasonPackageNotReady, resource.ConditionFalse, resource.ReasonPackageNotReady,
-				"the observability package isn't ready", now)
+				notReadyMessage(o.rule.Spec.Condition), now)
 		case o.reason != "":
 			e.setRule(ctx, o.rule, true, "", resource.ConditionFalse, o.reason, o.msg, now)
 		default:
@@ -962,6 +1008,14 @@ func lastedWords(d time.Duration) string {
 	return fmt.Sprintf("%d h %d min", m/60, m%60)
 }
 
+// notReadyMessage names the package a not-ready condition waits for.
+func notReadyMessage(c resource.AlertCondition) string {
+	if c.TraceErrors != nil {
+		return "the tracing package isn't ready"
+	}
+	return "the observability package isn't ready"
+}
+
 // conditionDetail is the condition line a notification carries.
 func conditionDetail(c resource.AlertCondition, event string, current, threshold float64, lasted time.Duration) string {
 	what, unit := "value", ""
@@ -982,6 +1036,12 @@ func conditionDetail(c resource.AlertCondition, event string, current, threshold
 		what, unit = fmt.Sprintf("Log lines matching %q", c.LogMatch.Text), fmt.Sprintf(" in %d min", c.LogMatch.WindowMinutes)
 	case c.PackageDisk != nil:
 		what, unit = "Observability disk use", "% of budget"
+	case c.RequestErrorRate != nil:
+		what, unit = "Failed requests", fmt.Sprintf("%% over %d min", c.RequestErrorRate.WindowMinutes)
+	case c.RequestLatency != nil:
+		what, unit = fmt.Sprintf("p%d latency", c.RequestLatency.Percentile), fmt.Sprintf(" ms over %d min", c.RequestLatency.WindowMinutes)
+	case c.TraceErrors != nil:
+		what, unit = "Traces with errors", fmt.Sprintf(" in %d min", c.TraceErrors.WindowMinutes)
 	}
 	num := func(v float64) string { return fmt.Sprintf("%.4g", v) }
 	if event == resource.DeliveryEventResolved {

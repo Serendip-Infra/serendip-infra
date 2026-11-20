@@ -1,6 +1,6 @@
 # Tasks: Spec 025, Networking: Cilium, Hubble and traces
 
-Status: Approved, 2026-11-19. T001 done.
+Status: Approved, 2026-11-19. T001–T002 done.
 
 [P] = can run in parallel with the task before it. [A] = subagent-eligible.
 
@@ -42,7 +42,20 @@ it).
 - **Verify:** each item above recorded as checked live, with the answer
   files; `plan.md` updated where a decision changed.
 
-## T002: Core types
+## T002: Core types ✅
+
+**Done as** (2026-11-20): `core/reconcile/networking.go` (facts,
+`FlowSource`, flows, `RequestSeries`, `TrafficEdge`, and `FlowReader` /
+`TrafficReader` as optional interfaces on the observability provider, like
+`PackageUsage`, so providers build unchanged until T006);
+`core/reconcile/tracing.go` (`TracingProvider`, `ValidTraceID`,
+`ErrTraceNotFound`); `Metrics.Requests`; the three conditions with
+validation (`requestErrorRate` with an optional `minRequests`,
+`requestLatency` p95/p99, `traceErrors`); the evaluator's routing
+(`AlertEvaluatorOptions.Tracing` and `RequestMetrics`, both failing closed
+when unwired); `serendip/components/traces/read` out of Reader and the two
+access roles, in Log Reader. contract-guardian passed; its cheap notes
+fixed (fail closed, a wording test).
 
 - **Do:** `NetworkingProvider`, `NetworkFacts`, `FlowSource`
   (`core/reconcile/networking.go`); `Requests`, `TrafficEdge`, `Flow`,

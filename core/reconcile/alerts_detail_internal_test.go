@@ -35,3 +35,23 @@ func TestResolutionDetail(t *testing.T) {
 		})
 	}
 }
+
+// The request and trace conditions' notification lines (spec 025).
+func TestConditionDetail_RequestAndTrace(t *testing.T) {
+	for _, tt := range []struct {
+		c       resource.AlertCondition
+		current float64
+		want    string
+	}{
+		{resource.AlertCondition{RequestErrorRate: &resource.RequestErrorRateCondition{AbovePercent: 5, WindowMinutes: 5}},
+			12.5, "Failed requests above 5% over 5 min (now 12.5)"},
+		{resource.AlertCondition{RequestLatency: &resource.RequestLatencyCondition{Percentile: 99, AboveMs: 250, WindowMinutes: 10}},
+			900, "p99 latency above 250 ms over 10 min (now 900)"},
+		{resource.AlertCondition{TraceErrors: &resource.TraceErrorsCondition{Above: 0, WindowMinutes: 15}},
+			3, "Traces with errors above 0 in 15 min (now 3)"},
+	} {
+		if got := conditionDetail(tt.c, resource.DeliveryEventFiring, tt.current, Threshold(tt.c), 0); got != tt.want {
+			t.Errorf("conditionDetail = %q, want %q", got, tt.want)
+		}
+	}
+}
