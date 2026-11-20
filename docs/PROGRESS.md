@@ -27,6 +27,11 @@ and tasks approved 2026-11-19; T001 done** (live checks; see tasks.md's
    `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/ff900928-de70-45a4-8909-07814914986d/scratchpad/gh025/`
    (`run.sh`, `run.log`, `state.txt`). Check `run.log`'s last line
    (`DONE` or `FAILED: …`); never two runs at once.
+1b. **Queued after it (the user said yes, 2026-11-20):** `after.sh` in the
+   same folder waits for `run.log`'s DONE, then merges PR #352 as
+   `serendipinfra` with a merge commit, then sets assignee Yasindu007 and
+   P1/Area/Size on epics #65 (core, XL) and #66 (providers, XL, Status In
+   Progress). Log `after.log`; about 12 writes, one a minute.
 2. **T001's commit already says `Closes #353`.** Later task commits
    carry their own `Closes #N` (numbers in `state.txt`).
 3. **T002** (core types), then T003–T015 in order.
