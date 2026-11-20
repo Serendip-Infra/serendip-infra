@@ -101,7 +101,8 @@ purpose), **Closed** (fixed).
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
 | RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
 | RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
-| RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off, drift reported) | Spec 025 T001 |
+| RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off; on drift the L7 policies are removed, T004) | Spec 025 T001 |
+| RP-082 | Request visibility copies each Component's NetworkPolicy; a shape it can't copy faithfully leaves that Component without request metrics | Correctness (coverage); security (isolation) | Accepted | Spec 025 T004 |
 
 ---
 
@@ -2002,10 +2003,43 @@ The text below is the T013 record.
 - **Mitigation:** Serendip's Cilium values set `http-retry-count: "0"`
   and `http-normalize-path: "false"` (`extraConfig`); with retries off
   the 500s came through (5 of 39). The provider reports drift if either
-  is changed back (plan decision 4).
+  is changed back (plan decision 4). Since T004 drift does more than
+  report: the visibility pass (`EnsureVisibility`) removes every L7
+  policy it owns while either setting differs, so a Cilium upgrade that
+  brings the defaults back can't put a retrying proxy in front of a
+  Component; request metrics are then unavailable, with the reason.
 - **Residual:** Envoy's other defaults still apply to proxied traffic
   only: `http-request-timeout` 3600 s, `http-stream-idle-timeout` 300 s,
   and its connection limits (1024 per cluster). A long-lived stream or
   a very busy Component can behave differently behind the proxy.
 - **Revisit:** on every Cilium upgrade (`providers/networking/cilium/VERSIONS.md`),
   and with T013's latency measurement.
+
+## RP-082 — Request visibility copies each Component's NetworkPolicy, and skips what it can't copy
+
+- **Kind:** correctness (coverage); security (isolation). **Status:**
+  Accepted, 2026-11-20. **Found:** spec 025 T004.
+- **What:** Hubble sees HTTP requests only through a CiliumNetworkPolicy
+  with an HTTP rule on the port, and allows are a union, so that policy
+  must not admit anyone the platform's NetworkPolicy doesn't. The
+  `cilium` provider copies the NetworkPolicy's ingress peers and keeps
+  only its HTTP ports (`visibility.go`, `mirror`). It refuses, with a
+  reason, any shape it can't copy faithfully: an address-range peer, a
+  peer chosen by namespace labels, a rule admitting every source, a
+  named port or a port range, an unknown operator or field (decoded
+  strictly). Keys carry Cilium's `k8s:` source prefix, so a selector
+  can't match labels from another source. OpenChoreo 1.3.1's policies
+  (same namespace; the platform's system components in any namespace)
+  copy; live on `t025` a refused peer stayed refused.
+- **Cost:** a Component whose policy is skipped has no request metrics
+  (its flows are still recorded); Facts counts the skips. An HTTP port
+  that the platform marks TCP (a Component port that isn't exposed) gets
+  no L7 policy at all, because putting the proxy on non-HTTP traffic
+  would break it: east-west calls to an internal-only port show
+  connection counts only. The other way round, a port the platform marks
+  HTTP that carries something else (raw TCP, a protocol upgrade other
+  than Envoy handles) breaks behind the proxy; Serendip marks only exposed
+  ports HTTP, which the gateway already routes as HTTP.
+- **Revisit:** an OpenChoreo upgrade that changes the policy's shape (the
+  unit test holds 1.3.1's); a user-authored Network resource (a later
+  spec); per-port protocol in the Component model.

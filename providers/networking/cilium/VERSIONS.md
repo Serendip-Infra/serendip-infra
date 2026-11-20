@@ -8,8 +8,8 @@ unless marked otherwise. Recorded answers: `testdata/t001-*`.
 
 | Item | Version / value | Defined in |
 |---|---|---|
-| Cilium chart | `cilium` 1.20.5, `oci://quay.io/cilium/charts/cilium` (also `https://helm.cilium.io`); agent `quay.io/cilium/cilium:v1.20.5`, Envoy `cilium-envoy` v1.39.x (own DaemonSet), Hubble `1.20.5` | T004 (`values.yaml`) |
-| Values (T001's final, `testdata/t001-values.yaml`) | IPAM `kubernetes`; `kubeProxyReplacement: false`; `operator.replicas: 1`; Hubble on, relay and UI off; metrics `httpV2:labelsContext=source_namespace,source_pod,destination_namespace,destination_pod`, `drop`, `flow`; the static exporter (below); `extraConfig` `http-retry-count: "0"`, `http-normalize-path: "false"` | T004 |
+| Cilium chart | `cilium` 1.20.5, `oci://quay.io/cilium/charts/cilium` (also `https://helm.cilium.io`); agent `quay.io/cilium/cilium:v1.20.5`, Envoy `cilium-envoy` v1.39.x (own DaemonSet), Hubble `1.20.5` | `cilium.go` (`ChartName`, `ChartRepo`, `ChartVersion`), `values.yaml` |
+| Values (T001's final, `testdata/t001-values.yaml`) | IPAM `kubernetes`; `kubeProxyReplacement: false`; `operator.replicas: 1`; Hubble on, relay and UI off; metrics `httpV2:labelsContext=source_namespace,source_pod,destination_namespace,destination_pod`, `drop`, `flow`; the static exporter (below); `extraConfig` `http-retry-count: "0"`, `http-normalize-path: "false"` | `values.yaml` (embedded); the `pinned*` constants in `cilium.go`, kept in step by `TestPinnedMatchValues` |
 | Pod ranges | IPAM `kubernetes` keeps them on the Node: `spec.podCIDRs` `10.244.0.0/24` (kind), `10.42.0.0/24` (K3s) | T004, RP-076 |
 | `cilium-config` keys read | `ipam`, `hubble-metrics`, `hubble-export-*` (`file-path`, `allowlist`, `denylist`, `fieldmask`, `fieldaggregate`, `aggregation-interval`), `kube-proxy-replacement`, `enable-policy`, `http-retry-count`, `http-normalize-path` | T004 |
 | L7 visibility | A `CiliumNetworkPolicy` with `http: [{}]` on the port, `enableDefaultDeny: {ingress: false, egress: false}`, peers copied from OpenChoreo's NetworkPolicy (`testdata/t001-l7-policy.yaml`) | T004 |
@@ -79,3 +79,29 @@ Notes (T001):
     does this already; a real host doesn't need it.
 - **Kernel:** Docker Desktop's WSL2 kernel `6.6.87.2-microsoft-standard-WSL2`,
   cgroup v2: no problems seen.
+
+Checked live in T004 (2026-11-20, `t025`, Cilium 1.20.5, OpenChoreo 1.3.1):
+
+- **Facts** read the agent's tag (`v1.20.5` → `1.20.5`), `cilium-config`
+  as listed above (plus `enable-hubble`, `enable-k8s-networkpolicy`,
+  `enable-l7-proxy`), and the nodes' `podCIDRs`: `enforced`, flows and
+  requests readable, `10.244.0.0/24`. `FlowSource` gave
+  `/var/run/cilium/hubble` + `events.log`.
+- **Visibility:** OpenChoreo's `Workload` endpoints say which ports are
+  HTTP (only exposed ports, `endpointFor`); `HTTPWorkloads` found srv's
+  policy and not the TCP-only caller and spoofer. The provider's policy
+  was `Valid`, owned by field manager `serendip`, with the NetworkPolicy
+  as owner. A second pass made no writes against the real API server
+  (decoded and compared through the same struct). Probes: a pod in
+  `default` was dropped (`Policy denied`), a same-namespace pod and a
+  `openchoreo.dev/system-component` pod in `default` answered 200, and
+  their requests showed `to-proxy` and `http-request`. A new exposed
+  Component got its policy; deleting the Component removed the
+  NetworkPolicy and the garbage collector removed Serendip's policy.
+- **Label keys** carry the `k8s:` source prefix on both the endpoint
+  selector and the peers (T001's hand-written policy had none); Cilium
+  accepted it and the selections held.
+- **Unit-tested only:** IPAM other than `kubernetes` (CiliumNodes'
+  `spec.ipam.podCIDRs` and `pools.allocated[].cidrs`), `enable-policy:
+  never`, an agent older than 1.20, the skipped NetworkPolicy shapes
+  (RP-082), and the removal of every L7 policy on proxy drift (RP-081).

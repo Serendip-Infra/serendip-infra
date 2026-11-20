@@ -98,7 +98,45 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   failure); live on `serendip-t018`: kindnet reported, policies
   enforced.
 
-## T004: The `cilium` provider
+## T004: The `cilium` provider ✅
+
+**Done as** (2026-11-20): `providers/networking/cilium`:
+- **`Facts`:** version from the agent's tag; enforcement from
+  `enable-policy` and `enable-k8s-networkpolicy`; flows and requests
+  readable only with the pinned export mask and aggregation (1.20 and
+  later) and the `httpV2` metric with pod labels, each drift named in
+  `Unavailable`; pod ranges from the nodes (IPAM `kubernetes`) or the
+  CiliumNodes.
+- **The embedded `values.yaml`** (T001's final) with `ChartVersion`
+  1.20.5, and `FlowSource`.
+- **`EnsureVisibility`:** copies each target's NetworkPolicy into
+  `serendip-l7-<np>`, owned by it, with `http: [{}]` on its HTTP ports
+  only and `k8s:` label keys.
+  - Shapes it can't copy are skipped with a reason (RP-082).
+  - It writes only what differs, and remakes a policy someone else added
+    fields to.
+  - A target it can't read keeps its policy; the others go on.
+  - On proxy drift (retries, path rewriting) it removes every policy it
+    owns (RP-081).
+  - `Report` names what was applied and deleted, for T008's audit record.
+- **Which ports are HTTP:** only OpenChoreo's `Workload` says, so
+  `openchoreo.HTTPWorkloads` (a file beyond this task's list) lists
+  exposed endpoints and their NetworkPolicy per Environment, keyed by
+  Project and Component. T008 adapts it to `cilium.Target`.
+- **`kubernetes.ObjectMeta`** gained `OwnerReferences`.
+- **Live on `t025`:**
+  - srv's policy was made and `Valid`, and a second pass made no writes.
+  - A pod in `default` was still dropped (`Policy denied`); same-namespace
+    and system-component pods answered 200 through the proxy (`to-proxy`,
+    `http-request`).
+  - A new exposed Component got its policy, and deleting the Component
+    removed it (garbage collector).
+- **Reviews:** contract-guardian passed, and its notes are fixed:
+  matching by Project as well as Component; `Facts` says when no pass
+  has run or a pass failed; the audit record carried to T008. go-reviewer's
+  findings are fixed: a slice aliased and compacted in place, a stale
+  last report, per-target failures, ctx checks, duplicate targets, long
+  names, deletes counted only when made, and fields added by others.
 
 - **Do:** facts (version, Hubble settings, IPAM, ranges, drift from the
   pinned values); the embedded `values.yaml`; the L7 visibility ensurer
@@ -156,11 +194,16 @@ reasons say Serendip can't read them, not that the CNI lacks them).
 - **Do:** detect the CNI and register the provider; serve the cached
   facts; pass `FlowSource` and the OTLP endpoint between providers; the
   tracing catalogue entry (measured requirements left nil until T013,
-  so it can't be installed before); the notifier's ranges merge (RP-076).
+  so it can't be installed before); the notifier's ranges merge (RP-076);
+  the L7 visibility pass on the re-ensure interval (`EnsureVisibility`
+  with `openchoreo.HTTPWorkloads` adapted to `cilium.Target`), recording
+  an audit event naming `Report.Applied` and `Report.Deleted` when a pass
+  writes (T004's contract-guardian note).
 - **Files:** `cmd/serendipd/`, `providers/kubernetes/ranges.go`.
 - **Verify:** `go test ./cmd/... ./providers/kubernetes/...`;
   `serendipd` started on `t025` and on `serendip-t018` reports each
-  CNI in its log.
+  CNI in its log; on `t025` a pass that writes leaves an audit event
+  naming the policies, and one that doesn't leaves none.
 
 ## T009: API
 
