@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024's PR #352 merged, epic #65 open for T013)
+Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024 closed: PR #352 merged, #351 and #65 closed)
 
 ## Current phase
 
@@ -27,8 +27,13 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    #66. The merge's `Closes #65` closed spec 024's epic while T013 (#351)
    was open, so #65 was reopened (comment, status line "merged in #352;
    closes with #351", board Status In Progress).
-2. **T001's commit already says `Closes #353`.** Later task commits
-   carry their own `Closes #N` (numbers in `state.txt`).
+2. **GitHub is in step (03:11 UTC 2026-11-20), and stays so per task**
+   (the user, 2026-11-20: no tracking backlog). After each task: commit
+   with `Closes #N`, push `spec-025`, close #N by hand with a comment
+   naming the commit, tick it in epic #66's checklist and status line,
+   then check the board. #353–#355 closed (board Done); #66 says
+   "T001–T003 done; T004 next". T004–T015 are #356–#367. Before the spec
+   PR merges, check that every task issue is closed (#65 closed early).
 3. **T004** (the `cilium` provider), then T005–T015 in order. T003
    (`providers/networking/external`, commit a8ca27c, `Closes #355`) is
    done: kindnet live on `serendip-t018` reported `enforced`, and a
@@ -69,11 +74,11 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 - **Not done in T001:** Fluent Bit tailing the flow file live (moved
   into T006's verify).
 
-**Spec 024 (alert rules and notification channels; epic #65): T001–T012
-done, PR #352 merged 2026-11-20; epic #65 reopened until T013 (#351)
-closes** (only the credential cleanup below is left). When the user
-confirms it: tick T013 in tasks.md, set #65's status line to DONE, close
-#351 then #65, one write a minute. The task
+**Spec 024 (alert rules and notification channels; epic #65): DONE
+2026-11-20.** PR #352 merged; T013 ticked (77f068b), #351 and #65 closed
+(board Done). The user took the scratch credentials as revoked; the
+local folder `~/.serendip-t018/t024/secrets/` was still there (asked
+whether to delete it). The task
 issues (#339–#351) exist, and `main..spec-024` was rewritten so that
 T001–T012's commits carry `Closes #N` (T013 left out; tree unchanged,
 checked).
