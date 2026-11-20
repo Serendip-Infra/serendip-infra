@@ -71,7 +71,26 @@ fixed (fail closed, a wording test).
   `go build ./core/... ./api/...` with `providers/` absent from the
   import graph.
 
-## T003 [P]: The `external` networking provider
+## T003 [P]: The `external` networking provider ✅
+
+**Done as** (2026-11-20): `providers/networking/external` (`New(Reader)`,
+`Facts`). kindnet by its DaemonSet (version from the image tag;
+`enforced`, or `unknown` for a kindnetd image older than `v20240813`,
+before kube-network-policies); Flannel by a `kube-flannel*` DaemonSet or,
+on K3s, by the nodes' `flannel.alpha.coreos.com/*` annotations (`unknown`
+with the plan's reason; `notEnforced` when `k3s.io/node-args` holds
+`--disable-network-policy`, a true positive only); anything else
+`unknown`. Pod ranges from the nodes' `podCIDRs`. A failed read returns
+the facts it has with the error and names what's missing in
+`Unavailable`. Live on `serendip-t018`: kindnet `v20250512-df8de77b`,
+`enforced`, `10.244.0.0/24`; a deny-all ingress policy made a probe that
+had answered time out. `VERSIONS.md` records what's unit-tested only.
+contract-guardian passed; its notes fixed (an unparseable kindnetd tag is
+`unknown`, not `enforced`; `notEnforced` on K3s needs the DaemonSet list
+read and no other policy controller in it; a skipped pod range is named
+in `Unavailable`). Left as is, by design: the "doesn't record
+connections" reasons also show for an unknown CNI (spec criterion 2's
+wording).
 
 - **Do:** detection from kube-system DaemonSets and node annotations,
   the facts plan decision 3 lists.
