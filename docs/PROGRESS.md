@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T004 done, T005 next; spec 024 closed)
+Last updated: 2026-11-20 (spec 025: T001–T005 done, T006 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T004 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T005 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,22 +31,29 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#356 closed (board Done); #66 says
-   "T001–T004 done; T005 next". T005–T015 are #357–#367. Before the spec
+   then check the board. #353–#357 closed (board Done); #66 says
+   "T001–T005 done; T006 next". T006–T015 are #358–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T005** (install path: `serendip-agent bootstrap --cni`, the values
-   copy with its equality test against `cilium.Values()`,
-   `kind-t470-setup.sh CNI=cilium`, dev cluster `serendip-t025`), then
-   T006–T015 in order.
-   - **T004 done** (commit 3b981fc, `Closes #356`). It added
-     `providers/networking/cilium`: `New(Client)`, `Facts`, `FlowSource`,
-     `EnsureVisibility([]Target) (Report, error)`, `Values()` and
-     `ChartVersion`.
-     - It also added `openchoreo.HTTPWorkloads`, since only OpenChoreo's
-       Workload knows which ports are HTTP (exposed ones only, RP-082).
-     - Live on `t025`, srv's `serendip-l7-openchoreo-cmp-ac7df9f12c` now
-       exists and is owned by Serendip (T001's hand-made one was
-       replaced).
+3. **T006** (request metrics, traffic and flows in the observability
+   provider; its Verify carries T001's live Fluent Bit tail), then
+   T007–T015 in order.
+   - **T005 done** (commit 76adcfe, `Closes #357`; tasks.md "Done as").
+     `serendip-agent bootstrap --cni cilium|default` (cilium default):
+     `INSTALL_K3S_EXEC` flags and a HelmChart written after the script
+     downloads; `agent/bootstrap/cilium-values.yaml` kept identical to
+     the provider's by `TestCiliumCopyMatchesProvider`.
+     `kind-t470-setup.sh` `CNI=cilium`. RP-083 (first boot needs the
+     internet; offline via static charts later; what uninstall leaves on
+     a real host not checked). go-reviewer's findings fixed,
+     contract-guardian passed.
+     - **Dev cluster `serendip-t025`** (Cilium, made by the script):
+       state `~/.serendip-t025-dev` (kubeconfig, `dev-up.env`: `:8089`,
+       `serendipd.db`), gateway on host port 30083. **Stopped**
+       (`docker stop`) to save memory; nothing installed on it yet.
+       **Not run:** `dev-up.ps1` against it (the auto-mode check refused
+       the `powershell -ExecutionPolicy Bypass` launch); the user can run
+       `.\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025`.
+   - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
    - **Carried to T008 (in its Do/Verify):** run the pass on the
      re-ensure interval, adapting `HTTPWorkloads` to `cilium.Target`.
      When a pass writes, record an audit event naming `Report.Applied`
