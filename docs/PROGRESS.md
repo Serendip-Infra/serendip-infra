@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T002 done; spec 024's PR #352 open, merge queued)
+Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024's PR #352 open, merge queued)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T002 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T003 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -35,8 +35,10 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    Progress). Log `after.log`; about 12 writes, one a minute.
 2. **T001's commit already says `Closes #353`.** Later task commits
    carry their own `Closes #N` (numbers in `state.txt`).
-3. **T003** (the `external` networking provider), then T004–T015 in
-   order. T002 left for T009: the API must answer clearly (not a 500)
+3. **T004** (the `cilium` provider), then T005–T015 in order. T003
+   (`providers/networking/external`, commit a8ca27c, `Closes #355`) is
+   done: kindnet live on `serendip-t018` reported `enforced`, and a
+   deny-all policy held. T008 wires it in (it exports `New(Reader)`). T002 left for T009: the API must answer clearly (not a 500)
    when the observability provider lacks `FlowReader`/`TrafficReader`,
    and clear a flow's unreadable end; for T015: custom `*/read` roles now
    include traces, as they include logs.
