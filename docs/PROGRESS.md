@@ -12,14 +12,15 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001 done; spec 024's PR #352 open)
+Last updated: 2026-11-20 (spec 025: T001–T002 done; spec 024's PR #352 open, merge queued)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001 done** (live checks; see tasks.md's
-"Done as" note and plan.md's "Checked live in T001"). Local branch
-`spec-025`, off `spec-024`, not pushed. **Next, in order:**
+and tasks approved 2026-11-19; T001–T002 done** (see tasks.md's "Done
+as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
+`spec-024`, **pushed to the Yasindu007 fork after every task commit**
+(the user, 2026-11-20). **Next, in order:**
 1. **GitHub batch for spec 025: RUNNING since 01:08 UTC 2026-11-20
    (#353 is T001).** T001–T015's task issues under epic #66,
    then epic #66's body (IN PROGRESS, T001 ticked). About 65 writes at
@@ -34,7 +35,11 @@ and tasks approved 2026-11-19; T001 done** (live checks; see tasks.md's
    Progress). Log `after.log`; about 12 writes, one a minute.
 2. **T001's commit already says `Closes #353`.** Later task commits
    carry their own `Closes #N` (numbers in `state.txt`).
-3. **T002** (core types), then T003–T015 in order.
+3. **T003** (the `external` networking provider), then T004–T015 in
+   order. T002 left for T009: the API must answer clearly (not a 500)
+   when the observability provider lacks `FlowReader`/`TrafficReader`,
+   and clear a flow's unreadable end; for T015: custom `*/read` roles now
+   include traces, as they include logs.
 - **Spec 025 test bed** (`~/.serendip-t025/`):
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
