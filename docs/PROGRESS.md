@@ -82,12 +82,6 @@ whether to delete it). The task
 issues (#339–#351) exist, and `main..spec-024` was rewritten so that
 T001–T012's commits carry `Closes #N` (T013 left out; tree unchanged,
 checked).
-- **Still open, the user:** revoke the scratch bot's token (BotFather
-  `/revoke`), delete the Gmail app password and the healthchecks.io
-  check, then `~/.serendip-t018/t024/secrets/` (still there on
-  2026-11-20). Then tick T013 in tasks.md and close #351 by hand
-  (`getMe` 401 is the check; the session's classifier denied running
-  it, so the user checks).
 - **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
   "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
   architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,
