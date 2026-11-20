@@ -26,6 +26,14 @@
   resolved against the state dir. Keys: Kubeconfig, Db, OpenBaoCredentials,
   ApiKeysFile, Addr.
 
+  Two dev clusters exist (specs/025-networking T005):
+    serendip-t018   kindnet, state ~\.serendip-t018 (the default), :8088;
+                    the "external" networking case
+    serendip-t025   Cilium, state ~\.serendip-t025-dev, :8089; created with
+                    CNI=cilium profiles/edge-1/bench/kind-t470-setup.sh up
+                    serendip-t025 <state>\kubeconfig (KIND_CONFIG maps the
+                    gateway to host port 30083)
+
 .PARAMETER StateDir
   Folder holding the dev cluster's state. Default: ~\.serendip-t018.
 
@@ -46,6 +54,9 @@
   .\scripts\dev-up.ps1
 .EXAMPLE
   .\scripts\dev-up.ps1 -Restart -BuildUI
+.EXAMPLE
+  # The Cilium dev cluster:
+  .\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025
 .EXAMPLE
   # Stop it:
   Stop-Process -Id (Get-Content ~\.serendip-t018\serendipd.pid)

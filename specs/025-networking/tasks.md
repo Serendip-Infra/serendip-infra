@@ -147,7 +147,51 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   policy created, deleted with the Component, and a refused peer still
   refused.
 
-## T005: Install path
+## T005: Install path ✅
+
+**Done as** (2026-11-20):
+- **`serendip-agent bootstrap --cni cilium|default`** (`cilium` the
+  default): `agent/bootstrap/cni.go`. With `cilium`, `INSTALL_K3S_EXEC`
+  is `server --flannel-backend=none --disable-network-policy`, and
+  `Install` first writes the HelmChart (`bootstrap: true`, chart 1.20.5
+  from `helm.cilium.io`, the values as `valuesContent`) to
+  `/var/lib/rancher/k3s/server/manifests/serendip/cilium.yaml`.
+  `--dry-run` prints both. `--timeout` defaults to 10 minutes (was 5).
+  A kernel older than 5.10 (Cilium's documented minimum) is a warning,
+  not a refusal.
+- **The values copy:** `agent/bootstrap/cilium-values.yaml`, kept
+  identical to the provider's `values.yaml`, `ChartRepo` and
+  `ChartVersion` by `TestCiliumCopyMatchesProvider` (it reads the
+  provider's files; agent/ can't import providers/).
+- **Offline install (the plan left it to T005):** not supported; the
+  chart and images come from the internet at first boot, like K3s
+  itself (RP-083, with the static-charts route for later).
+- **`kind-t470-setup.sh` `CNI=cilium`:** adds `disableDefaultCNI` to the
+  kind config, installs the provider's chart version and values with
+  Helm (an empty repository config, so the user's own Helm repos can't
+  break it), then waits for the node.
+- **Dev cluster `serendip-t025`** (Cilium; state `~/.serendip-t025-dev`,
+  gateway on host port 30083, `serendipd` on `:8089` in its
+  `dev-up.env`); `dev-up.ps1`'s help names both dev clusters.
+  `serendip-t018` stays kindnet.
+- **Live:** see `providers/networking/cilium/VERSIONS.md`, "Checked live
+  in T005": the K3s container went Ready with Cilium in about 7 minutes
+  (cold pulls); `kind-t470-setup.sh up` with `CNI=cilium` gave a Ready
+  node in 521 s.
+- **Not run:** `dev-up.ps1` against `serendip-t025` (the session's
+  permission check refused the PowerShell launch); its settings are in
+  place.
+- build-vs-adopt: Helm in the agent rejected for K3s's HelmChart.
+- **go-reviewer:** fixed: the manifest is written after the script
+  downloads (a failed download changes nothing), `--cni default` removes
+  a Cilium manifest an earlier attempt left, `valuesContent: |2-` (stated
+  indentation; parses the same as T001's `|-`, checked), the dry run
+  shows the kernel warning, `--timeout` is 10 minutes with Cilium and 5
+  without, `--cni` is ignored on `--uninstall`, the version regex is
+  anchored, writes are sorted. Left as is, by design: the library's zero
+  `CNI` is Flannel (existing callers keep their behaviour; only the CLI
+  defaults to Cilium). Not checked: what `k3s-uninstall.sh` leaves of
+  Cilium on a real host (RP-083).
 
 - **Do:** `serendip-agent bootstrap --cni cilium|default` (K3s flags, the
   HelmChart manifest, wait for Ready, `--dry-run`); the values copy and

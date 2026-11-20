@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/agent/bootstrap"
@@ -147,12 +148,29 @@ func runBootstrap(args []string) error {
 	confirm := fs.Bool("confirm", false, "required to actually install or uninstall -- host mutation gate")
 	uninstall := fs.Bool("uninstall", false, "uninstall k3s instead of installing it")
 	version := fs.String("version", bootstrap.DefaultVersion, "k3s version to install (INSTALL_K3S_VERSION)")
-	timeout := fs.Duration("timeout", 5*time.Minute, "how long to wait for the node to become Ready after install")
+	cniFlag := fs.String("cni", string(bootstrap.CNICilium), "pod network: cilium (recommended; request metrics, flows and policy need it) or default (K3s's Flannel)")
+	timeout := fs.Duration("timeout", 0, "how long to wait for the node to become Ready after install (default 10m with --cni cilium, 5m otherwise)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// --cni means nothing to --uninstall; it isn't checked there.
+	cni := bootstrap.CNIDefault
+	if !*uninstall {
+		var err error
+		if cni, err = bootstrap.ParseCNI(*cniFlag); err != nil {
+			return err
+		}
+	}
+	if *timeout == 0 {
+		// With Cilium the node is Ready only once its images are pulled
+		// and running (about 7 minutes cold, RP-083).
+		*timeout = 5 * time.Minute
+		if cni == bootstrap.CNICilium {
+			*timeout = 10 * time.Minute
+		}
+	}
 
-	opts := bootstrap.InstallOptions{Version: *version}
+	opts := bootstrap.InstallOptions{Version: *version, CNI: cni}
 
 	if *dryRun {
 		printBootstrapPlan(opts, *uninstall)
@@ -195,6 +213,10 @@ func runBootstrap(args []string) error {
 	} else if warning != "" {
 		fmt.Fprintln(os.Stderr, "bootstrap: warning:", warning)
 	}
+	if warning := bootstrap.CheckKernelForCNI(opts.CNI); warning != "" {
+		fmt.Fprintln(os.Stderr, "bootstrap: warning:", warning)
+	}
+	fmt.Printf("bootstrap: waiting up to %s for the node to become Ready\n", *timeout)
 
 	// Install's own timeout is separate from --timeout (which is
 	// documented as, and only applies to, the post-install Ready-wait
@@ -222,6 +244,20 @@ func printBootstrapPlan(opts bootstrap.InstallOptions, uninstall bool) {
 	fmt.Println("Would run the official K3s install script (https://get.k3s.io) with:")
 	for _, e := range bootstrap.InstallEnv(opts) {
 		fmt.Println("  " + e)
+	}
+	manifests := bootstrap.Manifests(opts)
+	paths := make([]string, 0, len(manifests))
+	for p := range manifests {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		fmt.Printf("Would first write %s (K3s's Helm controller installs it):\n", p)
+		fmt.Print(string(manifests[p]))
+	}
+	// The real path warns about this too (on Linux; elsewhere nothing is read).
+	if warning := bootstrap.CheckKernelForCNI(opts.CNI); warning != "" {
+		fmt.Println("Warning:", warning)
 	}
 	fmt.Println("No changes made (dry-run, or --confirm not given).")
 }

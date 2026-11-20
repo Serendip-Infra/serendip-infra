@@ -105,3 +105,20 @@ Checked live in T004 (2026-11-20, `t025`, Cilium 1.20.5, OpenChoreo 1.3.1):
   `spec.ipam.podCIDRs` and `pools.allocated[].cidrs`), `enable-policy:
   never`, an agent older than 1.20, the skipped NetworkPolicy shapes
   (RP-082), and the removal of every L7 policy on proxy drift (RP-081).
+
+Checked live in T005 (2026-11-20, the install path; this file's chart and
+`values.yaml` are copied by `agent/bootstrap`, `TestCiliumCopyMatchesProvider`):
+
+- **K3s:** a `rancher/k3s:v1.36.4-k3s1` container started with the
+  agent's `INSTALL_K3S_EXEC` flags and the HelmChart from
+  `serendip-agent bootstrap --dry-run`. `helm-install-cilium` completed
+  on the host network, the node went Ready about 7 minutes after start
+  (cold image pulls, RP-083), CoreDNS got `10.42.0.213`, and
+  `cilium-config` held `http-retry-count: 0`, `http-normalize-path:
+  false`, the export path and IPAM `kubernetes`. Harness only: the
+  container must keep the image's entrypoint (K3s's own cgroup v2 setup);
+  `/` is made shared with `docker exec` right after start.
+- **kind:** `CNI=cilium kind-t470-setup.sh up` (Helm with this file's
+  values and version) gave a Ready node in 521 s with the image caches
+  warm, CoreDNS on Cilium addresses (`10.244.0.x`): the dev cluster
+  `serendip-t025`.

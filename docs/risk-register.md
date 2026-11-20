@@ -103,6 +103,7 @@ purpose), **Closed** (fixed).
 | RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
 | RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off; on drift the L7 policies are removed, T004) | Spec 025 T001 |
 | RP-082 | Request visibility copies each Component's NetworkPolicy; a shape it can't copy faithfully leaves that Component without request metrics | Correctness (coverage); security (isolation) | Accepted | Spec 025 T004 |
+| RP-083 | A Cilium bootstrap fetches the chart and images from the internet at first boot, and the node is NotReady until they arrive | Availability (install); footprint (first boot) | Accepted | Spec 025 T005 |
 
 ---
 
@@ -2043,3 +2044,30 @@ The text below is the T013 record.
 - **Revisit:** an OpenChoreo upgrade that changes the policy's shape (the
   unit test holds 1.3.1's); a user-authored Network resource (a later
   spec); per-port protocol in the Component model.
+
+## RP-083 — A Cilium bootstrap needs the internet at first boot
+
+- **Kind:** availability (install); footprint (first boot). **Status:**
+  Accepted, 2026-11-20. **Found:** spec 025 T005.
+- **What:** `serendip-agent bootstrap --cni cilium` writes a K3s
+  `HelmChart` naming `https://helm.cilium.io` and chart 1.20.5. K3s's Helm
+  controller fetches the chart, and the kubelet pulls Cilium's images from
+  quay.io. The node stays NotReady, with nothing else scheduled, until
+  Cilium runs. In a `rancher/k3s` container on a home link, with no image
+  cache, that took about 7 minutes (CoreDNS got a pod address about a
+  minute later). The bootstrap's `--timeout` default went from 5 to 10
+  minutes for it.
+- **Cost:** no offline (air-gapped) install with Cilium; a slow or
+  filtered link fails the bootstrap's wait, though K3s keeps retrying and
+  the node goes Ready once the pulls finish. `--cni default` (Flannel,
+  bundled in K3s) still installs offline as far as K3s itself does.
+- **Why accepted:** K3s itself already comes from `get.k3s.io` and its
+  images from Docker Hub; making Cilium alone offline gains nothing until
+  the whole install is.
+- **Revisit:** an air-gapped install: the chart goes into K3s's static
+  charts directory (`/var/lib/rancher/k3s/server/static/charts/`,
+  referenced by the HelmChart) and the images into K3s's airgap images
+  directory, both shipped by the agent.
+- **Not checked:** what `k3s-uninstall.sh` leaves of Cilium on a real host
+  (its interfaces, BPF mounts, `/etc/cni/net.d`): only containers were
+  used. Check on the reference hardware before calling uninstall clean.
