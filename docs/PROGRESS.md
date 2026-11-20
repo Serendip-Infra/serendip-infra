@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024's PR #352 open, merge queued)
+Last updated: 2026-11-20 (spec 025: T001–T003 done; spec 024's PR #352 merged, epic #65 open for T013)
 
 ## Current phase
 
@@ -21,18 +21,12 @@ and tasks approved 2026-11-19; T001–T003 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
-1. **GitHub batch for spec 025: RUNNING since 01:08 UTC 2026-11-20
-   (#353 is T001).** T001–T015's task issues under epic #66,
-   then epic #66's body (IN PROGRESS, T001 ticked). About 65 writes at
-   one a minute, so DONE about 02:15 UTC. Script, log and state:
-   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/ff900928-de70-45a4-8909-07814914986d/scratchpad/gh025/`
-   (`run.sh`, `run.log`, `state.txt`). Check `run.log`'s last line
-   (`DONE` or `FAILED: …`); never two runs at once.
-1b. **Queued after it (the user said yes, 2026-11-20):** `after.sh` in the
-   same folder waits for `run.log`'s DONE, then merges PR #352 as
-   `serendipinfra` with a merge commit, then sets assignee Yasindu007 and
-   P1/Area/Size on epics #65 (core, XL) and #66 (providers, XL, Status In
-   Progress). Log `after.log`; about 12 writes, one a minute.
+1. **GitHub batch for spec 025: DONE** (02:43 UTC 2026-11-20): task
+   issues #353–#367 (T001–T015) under epic #66, its body IN PROGRESS.
+   `after.sh` then merged PR #352 (02:45) and set the fields on #65 and
+   #66. The merge's `Closes #65` closed spec 024's epic while T013 (#351)
+   was open, so #65 was reopened (comment, status line "merged in #352;
+   closes with #351", board Status In Progress).
 2. **T001's commit already says `Closes #353`.** Later task commits
    carry their own `Closes #N` (numbers in `state.txt`).
 3. **T004** (the `cilium` provider), then T005–T015 in order. T003
@@ -75,9 +69,11 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 - **Not done in T001:** Fluent Bit tailing the flow file live (moved
   into T006's verify).
 
-**Spec 024 (alert rules and notification channels; epic #65): all 13
-tasks done; PR #352 opened 2026-11-20** (Yasindu007, `Closes #65`),
-waiting to be merged by `serendipinfra` with a merge commit. The task
+**Spec 024 (alert rules and notification channels; epic #65): T001–T012
+done, PR #352 merged 2026-11-20; epic #65 reopened until T013 (#351)
+closes** (only the credential cleanup below is left). When the user
+confirms it: tick T013 in tasks.md, set #65's status line to DONE, close
+#351 then #65, one write a minute. The task
 issues (#339–#351) exist, and `main..spec-024` was rewritten so that
 T001–T012's commits carry `Closes #N` (T013 left out; tree unchanged,
 checked).
