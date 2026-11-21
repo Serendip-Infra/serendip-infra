@@ -79,7 +79,10 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
   - A hand-added `hubble` scrape job in the live Prometheus ConfigMap
     (T006 makes it real).
   - `bench-t470` was **stopped** (`docker stop`), not deleted, to free
-    memory; `serendip-t018` and its `serendipd` still run.
+    memory. `serendip-t018` (and its `serendipd`) and `serendip-t025`
+    (and its `serendipd`) are **stopped** too (2026-11-21, for memory):
+    only `t025` runs. `serendip-t018` is still needed (T008: CNI reported
+    on both; T012: criterion 2): `.\scripts\dev-up.ps1` restarts it.
 - **T001's main findings** (`providers/networking/cilium/VERSIONS.md`,
   `providers/observability/openchoreo/VERSIONS.md` spec 025 section):
   - Cilium's Envoy retried every 5xx three times once L7 visibility was
