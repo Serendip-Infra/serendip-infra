@@ -67,7 +67,10 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
   - `serendipd` (spec-024 build) on `127.0.0.1:8095`, store
-    `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl);
+    `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
+    **Down since 2026-11-21:** Claude Code stopped it while the host was
+    low on memory (with `serendip-t025` and its `serendipd` also up).
+    Restart it, freeing memory first, when T006 needs it;
   - the observability package, and the tracing module installed by hand
     with Serendip's collector config (`t001/otel-cm.yaml`);
   - Project `t025`, Application `shop` with Components `srv` (10%
