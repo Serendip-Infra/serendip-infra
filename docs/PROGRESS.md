@@ -52,8 +52,15 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
        on it yet (no OpenBao, no ThunderID). The user ran
        `.\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025`
        (2026-11-20 22:04): `serendipd` up on `:8089` (PID 37724 then),
-       console 200, log clean. It and its container are still running;
-       stop both if `t025` needs the memory in T006.
+       console 200, log clean. **Sign-in there fails** ("The request is
+       invalid"): the gateway NodePort 30080 was mapped to host port
+       30083, so the issuer pointed at `serendip-t018`'s ThunderID. Fixed
+       in ca783b5 (`GatewayNodePort=30083` in its `dev-up.env`, its
+       `kind.yaml` maps 30083 to 30083), but the cluster must be
+       **recreated** (delete it, its `serendipd.db*` and
+       `openbao-init.json`; rerun the setup script, then dev-up). The user
+       chose to do that later, with `t025` stopped (T012 at the latest).
+       It and its `serendipd` are stopped.
    - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
    - **Carried to T008 (in its Do/Verify):** run the pass on the
      re-ensure interval, adapting `HTTPWorkloads` to `cilium.Target`.
@@ -68,9 +75,13 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
     kubeconfig `t001/kubeconfig`);
   - `serendipd` (spec-024 build) on `127.0.0.1:8095`, store
     `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
-    **Down since 2026-11-21:** Claude Code stopped it while the host was
-    low on memory (with `serendip-t025` and its `serendipd` also up).
-    Restart it, freeing memory first, when T006 needs it;
+    Restarted 2026-11-21 06:50 (it had been stopped on low memory) as a
+    background run of `bin/serendipd.exe` with SERENDIP_KUBECONFIG
+    `t001/kubeconfig`, SERENDIP_DB_PATH `t025.db`, SERENDIP_ADDR
+    `127.0.0.1:8095`, SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
+    SERENDIP_API_KEYS `<token from keys.env>:verifier`, logging to
+    `serendipd.log`. Rebuild `bin/serendipd.exe` from `spec-025` for T006's
+    live checks;
   - the observability package, and the tracing module installed by hand
     with Serendip's collector config (`t001/otel-cm.yaml`);
   - Project `t025`, Application `shop` with Components `srv` (10%
