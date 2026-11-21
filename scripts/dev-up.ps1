@@ -24,15 +24,22 @@
 
   dev-up.env in the state dir holds KEY=VALUE lines. Relative paths are
   resolved against the state dir. Keys: Kubeconfig, Db, OpenBaoCredentials,
-  ApiKeysFile, Addr.
+  ApiKeysFile, Addr, GatewayNodePort.
+
+  GatewayNodePort (SERENDIP_GATEWAY_NODE_PORT; default 30080) is the
+  gateway's NodePort, and serendipd also advertises it as the host port in
+  every external URL, the identity issuer's included. The kind cluster must
+  map it to the same host port (containerPort = hostPort), or sign-in goes
+  to whatever else holds that port on the host.
 
   Two dev clusters exist (specs/025-networking T005):
-    serendip-t018   kindnet, state ~\.serendip-t018 (the default), :8088;
-                    the "external" networking case
-    serendip-t025   Cilium, state ~\.serendip-t025-dev, :8089; created with
-                    CNI=cilium profiles/edge-1/bench/kind-t470-setup.sh up
-                    serendip-t025 <state>\kubeconfig (KIND_CONFIG maps the
-                    gateway to host port 30083)
+    serendip-t018   kindnet, state ~\.serendip-t018 (the default), :8088,
+                    gateway 30080; the "external" networking case
+    serendip-t025   Cilium, state ~\.serendip-t025-dev, :8089, gateway
+                    30083; created with CNI=cilium
+                    profiles/edge-1/bench/kind-t470-setup.sh up
+                    serendip-t025 <state>\kubeconfig, KIND_CONFIG mapping
+                    30083 to host port 30083
 
 .PARAMETER StateDir
   Folder holding the dev cluster's state. Default: ~\.serendip-t018.
@@ -86,6 +93,7 @@ $cfg = @{
     OpenBaoCredentials = 'openbao-init.json'
     ApiKeysFile        = 'api-keys.env'
     Addr               = '127.0.0.1:8088'
+    GatewayNodePort    = ''
 }
 $envFile = Join-Path $StateDir 'dev-up.env'
 if (Test-Path $envFile) {
@@ -201,6 +209,7 @@ $vars = @{
     SERENDIP_ADDR                     = $addr
     SERENDIP_OPENBAO_CREDENTIALS_PATH = $openbao
     SERENDIP_API_KEYS                 = $keys
+    SERENDIP_GATEWAY_NODE_PORT        = $cfg.GatewayNodePort
 }
 $log = Join-Path $StateDir 'serendipd.log'
 $out = Join-Path $StateDir 'serendipd.out.log'

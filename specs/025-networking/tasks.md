@@ -183,6 +183,16 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   started `serendipd` on `:8089`, the console answered 200, the log
   clean. Its two warnings are expected on a bare cluster (no OpenBao
   unseal file, ThunderID not installed).
+  - **Found after (2026-11-21):** serendipd then installed OpenBao,
+    ThunderID, the gateway and OpenChoreo itself, but sign-in failed
+    ("The request is invalid"). serendipd advertises the gateway's
+    NodePort as the host port (issuer `http://identity.localhost:30080`),
+    and the cluster mapped NodePort 30080 to host port 30083, so the
+    browser reached `serendip-t018`'s ThunderID. Fixed: `dev-up.ps1`
+    gained `GatewayNodePort` (`SERENDIP_GATEWAY_NODE_PORT`), and the state
+    dir's `kind.yaml` maps 30083 to 30083. The cluster has to be
+    recreated for the mapping (kind can't change it in place): deferred
+    to when the console is needed (the user, 2026-11-21).
 - build-vs-adopt: Helm in the agent rejected for K3s's HelmChart.
 - **go-reviewer:** fixed: the manifest is written after the script
   downloads (a failed download changes nothing), `--cni default` removes
