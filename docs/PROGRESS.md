@@ -94,6 +94,12 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
     (and its `serendipd`) are **stopped** too (2026-11-21, for memory):
     only `t025` runs. `serendip-t018` is still needed (T008: CNI reported
     on both; T012: criterion 2): `.\scripts\dev-up.ps1` restarts it.
+  - **After a laptop restart** Docker starts every kind node again
+    (restart policy `on-failure`), the stopped ones included, and no
+    `serendipd`. Stop all but `t025` (`docker stop
+    serendip-t018-control-plane serendip-t025-control-plane
+    bench-t470-control-plane`), then start the test bed's `serendipd` as
+    above. Done 2026-11-22 19:05; the registry caches stayed exited.
 - **T001's main findings** (`providers/networking/cilium/VERSIONS.md`,
   `providers/observability/openchoreo/VERSIONS.md` spec 025 section):
   - Cilium's Envoy retried every 5xx three times once L7 visibility was
