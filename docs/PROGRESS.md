@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T009 done, T010 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T010 done, T011 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T008 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T010 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,10 +31,18 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#361 closed (board Done); #66 says
-   "T001–T009 done; T010 next". T010–T015 are #362–#367. Before the spec
+   then check the board. #353–#362 closed (board Done); #66 says
+   "T001–T010 done; T011 next". T011–T015 are #363–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T010** (CLI and MCP), then T011–T015 in order.
+3. **T011** (console), then T012–T015 in order.
+   - **T010 done** (`Closes #362`; tasks.md "Done as"). No CLI code:
+     the catalogue entries already work (the parser takes `traces show
+     <dep> <trace-id>` by position). Traces stay on MCP, like stored
+     logs (the permission is the rule). `cmd/serendip/networking_test.go`
+     (CLI requests, usage errors, answers, exit codes; the five MCP
+     tools). Live on `t025` with `bin/serendip-t010.exe`
+     (`~/.serendip-t025/t010/live.txt`): facts, flows, traffic; traces
+     503 until T013.
    - **T009 done** (979c2ff, `Closes #361`; tasks.md "Done as"). The six
      routes of the plan's table (`api/networking_handler.go`,
      `api/traces_handler.go`, metrics' `requests`), catalogue entries
@@ -50,11 +58,7 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      20-Deployment cap; RP-086's missing index row added). Both reviews
      passed, findings fixed. Live on `t025`; `TestLiveTraces` opened
      traces as all targets.
-   - **For T010:** the catalogue entries exist; T010 is the CLI's
-     output for them (`traces show` has two positional IDs: check the
-     CLI handles a second path parameter) and the MCP parity test.
-     Whether traces stay on MCP is T010's call (plan "API, CLI, MCP").
-     The tracing package can't be installed through `serendipd` until
+   - **For T011+:** the tracing package can't be installed through `serendipd` until
      T013 sets its requirements, so live trace reads through the API
      answer 503 until then (provider-level live test works).
    - **T008 done** (`Closes #360`; tasks.md "Done as").

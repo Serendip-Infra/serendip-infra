@@ -483,6 +483,31 @@ reasons say Serendip can't read them, not that the CNI lacks them).
 - **Verify:** `go test ./cmd/serendip/... ./api/...` with the parity
   test passing.
 
+**Done as** (2026-11-23):
+
+- **No CLI code needed:** the commands are T009's catalogue entries,
+  and the CLI's generic parser already takes a second path parameter by
+  position (`traces show <deployment-id> <trace-id>`, or `--traceId`).
+  Answers print as indented JSON, like stored logs.
+- **Traces stay on MCP** (the plan's "unless that rule says otherwise"):
+  stored logs are MCP tools under their own permission, and spec 021's
+  rule is the permission, not the interface; an assistant acting for a
+  person reads traces only where the person may. No MCP cap below the
+  API's: a list is at most 200 short rows, and one trace's 1,000 spans
+  can pass `mcp.MaxResult`, which truncates with a note.
+- **Tests:** `cmd/serendip/networking_test.go`, against the real API
+  handler: each command's request (both ways of passing the trace ID),
+  usage errors sent nowhere (required `--environment`, the caps, the
+  verdict enum, a missing or extra ID), each answer printed, a trace the
+  Deployment has none of exits 5 and a malformed ID 1; on MCP the five
+  read-only tools, their answers, `traceId` required, and every request
+  declared `mcp`.
+- **Live on `t025`** (`bin/serendip-t010.exe` against the T009
+  `serendipd`, `~/.serendip-t025/t010/live.txt`): networking facts,
+  srv's flows (caller, spoofer, the collector as a platform service),
+  two traffic edges; traces 503 with the tracing package's reason, exit
+  7, until T013.
+
 ## T011: Console
 
 - **Do:** the Requests, Flows and Traces sections; the topology overlay;

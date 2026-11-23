@@ -150,7 +150,10 @@ the process list shows it:
   Reader does). A trace shows the spans of every Deployment in its
   Environment you may read traces of; `partial: true` says it has
   others. A trace with no span from any of those Deployments is 404,
-  whoever else sent spans.
+  whoever else sent spans. On MCP they're tools like stored logs: an
+  assistant reads traces only where the person it acts for may. A
+  trace's answer can pass the MCP result cap (1,000 spans with their
+  attributes); the tool says so when it's cut.
 - **A finished build's logs** stay readable after its run expires, from
   the store (`"stored": true` in the answer).
 - **Without the package ready,** these answer 503, saying whether it's
