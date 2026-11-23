@@ -81,11 +81,12 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    - F6 fixed: a trace opened through a Deployment with no span in it is
      now 404.
    - F7: the test app's scheme-less `TARGET`.
-   - **Test bed `serendip-t025` is stopped** (T014 stopped it). Its `serendipd` is
-     (rebuilt at 8657e3b, started by `bash
-     ~/.serendip-t025-dev/t012/start.sh` as a background run), the
+   - **Test bed `serendip-t025` is stopped** (T014). It still has the
      observability and tracing packages installed, and the
-     `otel-srv`/`otel-caller`/`spoofer` Components in `t012-a`.
+     `otel-srv`/`otel-caller`/`spoofer` Components in `t012-a`. To use
+     it, run `docker start serendip-t025-control-plane`, then `bash
+     ~/.serendip-t025-dev/t012/start.sh` as a background run. Its
+     `serendipd` binary was rebuilt at T014.
      - The rule `t012-otel-srv-trace-errors` evaluates. `reader-c` has
        `t012-trace-reader` at `otel-caller`'s Deployment.
      - Tooling and evidence: `~/.serendip-t025-dev/t012/` (`c7deploy.py`,
