@@ -151,6 +151,10 @@ type AlertEvaluator struct {
 	stats       evalStats
 }
 
+// WhyTracingNotInstalled is a trace condition's refusal while the tracing
+// package isn't installed.
+const WhyTracingNotInstalled = "trace conditions need the tracing package installed"
+
 // AlertEvaluatorOptions wires an AlertEvaluator.
 type AlertEvaluatorOptions struct {
 	Stores   AlertStores
@@ -543,7 +547,7 @@ func (e *AlertEvaluator) query(ctx context.Context, j *evalJob) (ConditionValue,
 	switch {
 	case c.TraceErrors != nil:
 		if e.tracing == nil {
-			return ConditionValue{}, &ConditionRefusedError{Why: "trace conditions need the tracing package installed"}
+			return ConditionValue{}, &ConditionRefusedError{Why: WhyTracingNotInstalled}
 		}
 		return e.tracing.EvaluateCondition(ctx, j.target, c, window)
 	case c.RequestErrorRate != nil, c.RequestLatency != nil:

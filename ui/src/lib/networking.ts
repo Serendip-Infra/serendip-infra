@@ -26,7 +26,7 @@ export function unavailableFor(facts: NetworkFacts | undefined, prefix: "flows" 
 
 /** "web", "web in staging", a platform workload, an outside address, or an end the caller can't see. */
 export function flowEndText(end: FlowEnd, names: ReadonlyMap<string, string>, envNames: ReadonlyMap<string, string> = new Map(), hereEnv?: string): string {
-  if (end.outside) return "Not visible to you";
+  if (end.outside) return "Not shown";
   if (end.external) return "Outside the cluster";
   if (end.component) {
     const name = names.get(end.component) ?? end.component;
@@ -92,6 +92,8 @@ export function trafficLevel(e: TrafficEdge): { kind: "ok" | "warn" | "error"; l
 /** "850 µs", "12 ms", "1.4 s" from nanoseconds. */
 export function durationText(ns: number): string {
   if (!Number.isFinite(ns) || ns < 0) return "";
+  // A chart's 0 tick reads in the axis's unit, not "0 µs" (T012).
+  if (ns === 0) return "0 ms";
   if (ns < 1_000_000) return `${Math.round(ns / 1000)} µs`;
   if (ns < 1_000_000_000) {
     const ms = ns / 1_000_000;

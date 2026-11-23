@@ -39,21 +39,22 @@ var uidRE = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 // restartsQuery is the restarts template: %[1]d is the window in
 // minutes; %[2]s, %[3]s and %[4]s the Component's, Environment's and
-// Project's UIDs.
+// Project's UIDs. The pods are those seen in the window, so a replaced
+// pod's restarts still count (spec 025 T012).
 const restartsQuery = `sum((max_over_time(kube_pod_container_status_restarts_total[%[1]dm])` +
 	` - min_over_time(kube_pod_container_status_restarts_total[%[1]dm]))` +
-	` * on (namespace, pod) group_left() max by (namespace, pod) (kube_pod_labels{` +
+	` * on (namespace, pod) group_left() max by (namespace, pod) (max_over_time(kube_pod_labels{` +
 	`label_openchoreo_dev_component_uid="%[2]s",` +
 	`label_openchoreo_dev_environment_uid="%[3]s",` +
-	`label_openchoreo_dev_project_uid="%[4]s"}))`
+	`label_openchoreo_dev_project_uid="%[4]s"}[%[1]dm])))`
 
 // restartSeriesQuery asks whether the target's pods have any restart
 // series in the window, with restartsQuery's arguments.
 const restartSeriesQuery = `count(last_over_time(kube_pod_container_status_restarts_total[%[1]dm])` +
-	` * on (namespace, pod) group_left() max by (namespace, pod) (kube_pod_labels{` +
+	` * on (namespace, pod) group_left() max by (namespace, pod) (max_over_time(kube_pod_labels{` +
 	`label_openchoreo_dev_component_uid="%[2]s",` +
 	`label_openchoreo_dev_environment_uid="%[3]s",` +
-	`label_openchoreo_dev_project_uid="%[4]s"}))`
+	`label_openchoreo_dev_project_uid="%[4]s"}[%[1]dm])))`
 
 // diskStale is how old a disk reading may be and still be used: the
 // reader caches for 30 s (usage.go), so an older one means it's stuck.

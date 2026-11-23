@@ -166,7 +166,7 @@ export function FlowsSection({ id, envId, envName, range, allowed }: { id: strin
               ]}
             />
           </div>
-          <p className="field-hint">Connections to and from the component, one row per connection, not per request. Refused connections are listed first. An end your roles don't let you read isn't named.</p>
+          <p className="field-hint">Connections to and from the component, one row per minute for each pair of ends, counting connections, not requests; a refused row counts the network layer's refusals, so one attempt's retries can count more than once. Refused connections are listed first. An end isn't named (Not shown) when it's in another Environment, your roles don't let you read it, or the Environment has more than 20 Deployments you can read.</p>
           {error ? (
             <RequestError error={error} what="connections" />
           ) : !flows ? (

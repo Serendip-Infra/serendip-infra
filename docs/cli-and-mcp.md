@@ -138,7 +138,9 @@ the process list shows it:
   `serendip/platform/read`).
 - **Connection records:** `serendip flows <deployment-id>
   [--verdict dropped]`, paged like stored logs. The other end is named
-  only if you may read it, else `outside`. **Traffic:** `serendip traffic
+  only if it's in the same Environment and you may read it (up to 20
+  Deployments), else `outside`; a refused record's count is the network
+  layer's refusals, where retries can count more than once, not attempts. **Traffic:** `serendip traffic
   <application-id> --environment <id>`, per edge between Components you
   may read both ends of. Both need `serendip/observability/read`; on a
   network layer that doesn't provide them they answer 409 with the
@@ -367,7 +369,7 @@ tools.
 | `serendip logs search-application <id>` | `applications_logs_search` | `GET /v1/applications/{id}/logs/search` | Search the stored log lines of an Application's Components in one Environment, newest first, paged like deployments_logs_search. Only the Deployments whose logs you may read are searched; omitted counts the others. Needs the observability package |
 | `serendip metrics <id>` | `deployments_metrics` | `GET /v1/deployments/{id}/metrics` | A Deployment's CPU (millicores) and memory (MiB) over a time range (the last hour by default, at least 15 minutes), against its requests and limits, and its HTTP requests (rate, 5xx rate, p50/p95/p99 latency in ms) where the network layer records them, with min, average, max and latest per series. What can't be measured is listed as unavailable, with why. Needs the observability package |
 | `serendip networking show` | `networking_get` | `GET /v1/networking` | The cluster's network layer: its name and version, whether network policies are enforced, whether connection records and request metrics can be read, its pod address ranges, what isn't available and why, and when this was read |
-| `serendip flows <id>` | `deployments_flows` | `GET /v1/deployments/{id}/flows` | A Deployment's connection records, newest first, each counting a minute's connections to or from it; refused ones carry the reason. The other end is named only if you may read it; otherwise it's marked outside. Paged like deployments_logs_search. Needs the observability package and a network layer that records connections |
+| `serendip flows <id>` | `deployments_flows` | `GET /v1/deployments/{id}/flows` | A Deployment's connection records, newest first, each counting a minute's connections to or from it (a refused one counts the network layer's refusals, so retries can count more than once); refused ones carry the reason. The other end is named only if it's in the same Environment and you may read it (up to 20 Deployments); otherwise it's marked outside. Paged like deployments_logs_search. Needs the observability package and a network layer that records connections |
 | `serendip traffic <id>` | `applications_traffic` | `GET /v1/applications/{id}/traffic` | The HTTP traffic between an Application's Components in one Environment over a time range (the last hour by default, at least a minute): requests and failed (5xx) requests per second on each edge. Only edges whose two ends you may read are shown; omitted counts the Deployments left out. Needs the observability package and a network layer that records requests |
 | `serendip traces list <id>` | `deployments_traces_list` | `GET /v1/deployments/{id}/traces` | A Deployment's stored traces, newest first: each with its start, duration, root span, span count and whether a span failed. Paged like deployments_logs_search. Span data can hold sensitive values, so traces need their own permission. Needs the tracing package |
 | `serendip traces show <id> <traceId>` | `deployments_traces_get` | `GET /v1/deployments/{id}/traces/{traceId}` | One trace's spans, in start order, from the Deployments in its Environment whose traces you may read; partial says it has spans you can't see. Needs the tracing package |

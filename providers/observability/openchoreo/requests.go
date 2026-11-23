@@ -36,13 +36,17 @@ const (
 // atTarget keeps expr's samples whose destination pod is one of scope's
 // pods. expr is an instant vector of Hubble series; the join reads the
 // pod as namespace and pod, which Hubble's series don't otherwise carry.
-// Every UID has been checked against uidRE.
-func atTarget(expr string, s componentScope) string {
+// win is expr's range ("[5m]"): the pods are those that existed at any
+// time in it, so a pod replaced inside the window (a rollout) still
+// counts. Joined to the pods alive at the instant alone, a rule resolved
+// as soon as the slow pod was replaced (found in spec 025 T012). Every
+// UID has been checked against uidRE.
+func atTarget(expr string, s componentScope, win string) string {
 	return `(label_replace(label_replace(` + expr + `, "namespace", "$1", "destination_namespace", "(.+)"), "pod", "$1", "destination_pod", "(.+)")` +
-		` * on (namespace, pod) group_left() max by (namespace, pod) (kube_pod_labels{` +
+		` * on (namespace, pod) group_left() max by (namespace, pod) (max_over_time(kube_pod_labels{` +
 		`label_openchoreo_dev_component_uid="` + s.ComponentUID + `",` +
 		`label_openchoreo_dev_environment_uid="` + s.EnvironmentUID + `",` +
-		`label_openchoreo_dev_project_uid="` + s.ProjectUID + `"}))`
+		`label_openchoreo_dev_project_uid="` + s.ProjectUID + `"}` + win + `)))`
 }
 
 // checkUIDs refuses a scope with a UID that isn't one, before it's put in
@@ -62,10 +66,10 @@ func checkUIDs(s componentScope) error {
 // requests but none failed.
 func requestQueries(s componentScope, w int) (rate, failed, p50, p95, p99 string) {
 	win := fmt.Sprintf("[%dm]", w)
-	rate = `sum(` + atTarget(`rate(`+hubbleRequests+win+`)`, s) + `)`
-	failed = `sum(` + atTarget(`rate(`+hubbleFailed+win+`)`, s) + `) or (` + rate + ` * 0)`
+	rate = `sum(` + atTarget(`rate(`+hubbleRequests+win+`)`, s, win) + `)`
+	failed = `sum(` + atTarget(`rate(`+hubbleFailed+win+`)`, s, win) + `) or (` + rate + ` * 0)`
 	q := func(p string) string {
-		return `histogram_quantile(` + p + `, sum by (le) (` + atTarget(`rate(`+hubbleLatency+win+`)`, s) + `)) * 1000`
+		return `histogram_quantile(` + p + `, sum by (le) (` + atTarget(`rate(`+hubbleLatency+win+`)`, s, win) + `)) * 1000`
 	}
 	return rate, failed, q("0.5"), q("0.95"), q("0.99")
 }
@@ -148,7 +152,7 @@ func (p *Provider) requestErrorRateCondition(ctx context.Context, t reconcile.Lo
 		return reconcile.ConditionValue{}, err
 	}
 	win := fmt.Sprintf("[%dm]", conditionMinutes(window))
-	total, ok, err := p.prometheus.instant(ctx, `sum(`+atTarget(`increase(`+hubbleRequests+win+`)`, s)+`)`, now)
+	total, ok, err := p.prometheus.instant(ctx, `sum(`+atTarget(`increase(`+hubbleRequests+win+`)`, s, win)+`)`, now)
 	if err != nil {
 		return reconcile.ConditionValue{}, err
 	}
@@ -157,7 +161,7 @@ func (p *Provider) requestErrorRateCondition(ctx context.Context, t reconcile.Lo
 		// or nothing is collected. Either way it's not a 0% error rate.
 		return reconcile.ConditionValue{}, reconcile.ErrNoData
 	}
-	failed, ok, err := p.prometheus.instant(ctx, `sum(`+atTarget(`increase(`+hubbleFailed+win+`)`, s)+`)`, now)
+	failed, ok, err := p.prometheus.instant(ctx, `sum(`+atTarget(`increase(`+hubbleFailed+win+`)`, s, win)+`)`, now)
 	if err != nil {
 		return reconcile.ConditionValue{}, err
 	}
@@ -182,8 +186,9 @@ func (p *Provider) requestLatencyCondition(ctx context.Context, t reconcile.LogT
 		return reconcile.ConditionValue{}, err
 	}
 	// Percentile is 95 or 99 (resource.ValidateCondition), so 0.95 or 0.99.
+	win := fmt.Sprintf("[%dm]", conditionMinutes(window))
 	q := fmt.Sprintf(`histogram_quantile(0.%d, sum by (le) (%s)) * 1000`, r.Percentile,
-		atTarget(fmt.Sprintf(`increase(%s[%dm])`, hubbleLatency, conditionMinutes(window)), s))
+		atTarget(`increase(`+hubbleLatency+win+`)`, s, win))
 	v, ok, err := p.prometheus.instant(ctx, q, now)
 	if err != nil {
 		return reconcile.ConditionValue{}, err

@@ -2147,6 +2147,12 @@ The text below is the T013 record.
     (`reporter="server"`): a call to something outside the mesh of L7
     policies (a platform service, the internet) isn't in the traffic
     overlay.
+  - **Replaced pods** (spec 025 T012): the request and restart
+    conditions now count every pod seen in the window
+    (`max_over_time(kube_pod_labels[window])`). Before, only pods alive at
+    the evaluation counted, so a rule resolved as soon as a rollout
+    replaced the bad pod. A pod that's gone still drops out up to one
+    1-minute scrape early, because `increase()` needs two samples.
 - **Cost:** latency alerts near a bucket edge fire a little early or
   late; a little log noise on `external` clusters.
 - **Why accepted:** Hubble's buckets are its defaults; finer ones cost
@@ -2217,7 +2223,9 @@ The text below is the T013 record.
     may read with observability read, at most 20 (`MaxLogTargets`). Past
     that, a readable end is shown as outside: never a wrong name, but
     less than the caller could see. An end in another Environment is
-    always outside, readable or not.
+    always outside, readable or not: for an Owner too. The console says
+    "Not shown", and the API and console texts name the three causes
+    (T012, which first worded it as "Not visible to you").
   - **Each flows read resolves every peer** (a scope lookup and the
     Component's workloads), even when the page comes back empty, and
     the API checks each Deployment's permission first.

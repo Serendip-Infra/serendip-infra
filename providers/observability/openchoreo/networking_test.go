@@ -111,9 +111,9 @@ func TestMetrics_RequestSeriesFromRecording(t *testing.T) {
 		t.Fatalf("queries = %q", queries)
 	}
 	scope := `kube_pod_labels{label_openchoreo_dev_component_uid="` + srvUID + `",label_openchoreo_dev_environment_uid="` + liveEnvUID +
-		`",label_openchoreo_dev_project_uid="` + liveProjectUID + `"}`
+		`",label_openchoreo_dev_project_uid="` + liveProjectUID + `"}[2m]`
 	want := []string{
-		`sum((label_replace(label_replace(rate(hubble_http_requests_total{reporter="server"}[2m]), "namespace", "$1", "destination_namespace", "(.+)"), "pod", "$1", "destination_pod", "(.+)") * on (namespace, pod) group_left() max by (namespace, pod) (` + scope + `)))`,
+		`sum((label_replace(label_replace(rate(hubble_http_requests_total{reporter="server"}[2m]), "namespace", "$1", "destination_namespace", "(.+)"), "pod", "$1", "destination_pod", "(.+)") * on (namespace, pod) group_left() max by (namespace, pod) (max_over_time(` + scope + `))))`,
 		`status=~"5.."`, `histogram_quantile(0.5, `, `histogram_quantile(0.95, `, `histogram_quantile(0.99, `,
 	}
 	if !slices.Contains(queries, want[0]) {
@@ -240,7 +240,10 @@ func TestEvaluateCondition_RequestErrorRate(t *testing.T) {
 				t.Errorf("= %+v, %v; want %v, %v", v, err, c.want, c.wantErr)
 			}
 			if q := f.promQueries[0].Get("query"); !strings.Contains(q, `increase(hubble_http_requests_total{reporter="server"}[10m])`) ||
-				!strings.Contains(q, `label_openchoreo_dev_component_uid="`+srvUID+`"`) {
+				!strings.Contains(q, `label_openchoreo_dev_component_uid="`+srvUID+`"`) ||
+				// The pods seen over the window, so a replaced pod's
+				// requests still count (spec 025 T012).
+				!strings.Contains(q, `max_over_time(kube_pod_labels{`) || !strings.Contains(q, `"}[10m])`) {
 				t.Errorf("query = %s", q)
 			}
 		})
@@ -259,7 +262,8 @@ func TestEvaluateCondition_RequestLatency(t *testing.T) {
 		t.Fatalf("= %+v, %v", v, err)
 	}
 	if q := f.promQueries[0].Get("query"); !strings.HasPrefix(q, "histogram_quantile(0.99, sum by (le) (") ||
-		!strings.Contains(q, `increase(hubble_http_request_duration_seconds_bucket{reporter="server"}[5m])`) || !strings.HasSuffix(q, ") * 1000") {
+		!strings.Contains(q, `increase(hubble_http_request_duration_seconds_bucket{reporter="server"}[5m])`) || !strings.HasSuffix(q, ") * 1000") ||
+		!strings.Contains(q, `max_over_time(kube_pod_labels{`) || !strings.Contains(q, `"}[5m])`) {
 		t.Errorf("query = %s", q)
 	}
 	// No requests in the window: the quantile is NaN, which is no data.

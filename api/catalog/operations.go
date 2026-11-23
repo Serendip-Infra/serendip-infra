@@ -344,7 +344,7 @@ var operations = func() []Operation {
 			Summary: "The cluster's network layer: its name and version, whether network policies are enforced, whether connection records and request metrics can be read, its pod address ranges, what isn't available and why, and when this was read",
 			Method:  "GET", Path: "/v1/networking", Hints: Hints{ReadOnly: true}},
 		Operation{Name: "deployments_flows", CLI: []string{"flows"}, MCP: true,
-			Summary: "A Deployment's connection records, newest first, each counting a minute's connections to or from it; refused ones carry the reason. The other end is named only if you may read it; otherwise it's marked outside. Paged like deployments_logs_search. Needs the observability package and a network layer that records connections",
+			Summary: "A Deployment's connection records, newest first, each counting a minute's connections to or from it (a refused one counts the network layer's refusals, so retries can count more than once); refused ones carry the reason. The other end is named only if it's in the same Environment and you may read it (up to 20 Deployments); otherwise it's marked outside. Paged like deployments_logs_search. Needs the observability package and a network layer that records connections",
 			Method:  "GET", Path: "/v1/deployments/{id}/flows",
 			Params: []Param{id("Deployment"),
 				{Name: "verdict", In: InQuery, Enum: []string{"all", "dropped"}, Description: "dropped keeps only refused connections (default all)"},

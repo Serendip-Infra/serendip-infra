@@ -132,7 +132,7 @@ describe("connections on the observability tab", () => {
     const rows = await within(section).findAllByRole("row");
     expect(within(rows[1]!).getByText("Refused")).toBeTruthy();
     expect(within(rows[1]!).getByText(/refused by a network policy/)).toBeTruthy();
-    expect(within(rows[1]!).getByText("Not visible to you")).toBeTruthy();
+    expect(within(rows[1]!).getByText("Not shown")).toBeTruthy();
     expect(within(rows[2]!).getByText("api")).toBeTruthy();
     expect(within(section).getByText("openchoreo-observability-plane/opentelemetry-collector")).toBeTruthy();
     const sent = calls.find((u) => u.startsWith("/v1/deployments/d1/flows?"))!;
@@ -252,7 +252,7 @@ describe("networking words", () => {
     const envNames = new Map([["e2", "staging"]]);
     expect(flowEndText({ component: "c1", environment: "e1" }, names, envNames, "e1")).toBe("web");
     expect(flowEndText({ component: "c1", environment: "e2" }, names, envNames, "e1")).toBe("web in staging");
-    expect(flowEndText({ outside: true, component: "c1" }, names)).toBe("Not visible to you");
+    expect(flowEndText({ outside: true, component: "c1" }, names)).toBe("Not shown");
     expect(flowEndText({ external: true }, names)).toBe("Outside the cluster");
     expect(flowEndText({ namespace: "kube-system", workload: "coredns" }, names)).toBe("kube-system/coredns");
   });
@@ -273,6 +273,7 @@ describe("networking words", () => {
     expect(trafficLevel({ from: "a", to: "b", rate: 10, errorRate: 0 })).toEqual({ kind: "ok", label: "10/s, 0% failed" });
     expect(trafficLevel({ from: "a", to: "b", rate: 100, errorRate: 1 }).kind).toBe("warn");
     expect(trafficLevel({ from: "a", to: "b", rate: 5.36, errorRate: 0.53 })).toEqual({ kind: "error", label: "5.4/s, 9.9% failed" });
+    expect(durationText(0)).toBe("0 ms");
     expect(durationText(850_000)).toBe("850 µs");
     expect(durationText(12_300_000)).toBe("12 ms");
     expect(durationText(1_400_000_000)).toBe("1.4 s");

@@ -150,7 +150,7 @@ func run() error {
 	// sender; started below with the other loops.
 	var alerts *alerting
 	if kube != nil {
-		alerts = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String(), kube.clusterRanges)
+		alerts = wireAlerting(db, bus, kube.observability, secretReconciler, origin.String(), kube.clusterRanges, kube.network.RequestMetrics, kube.tracing)
 		serverOpts = append(serverOpts, api.WithNotifier(alerts.client, alerts.secrets), api.WithRuleEvaluated(alerts.evaluator.LastEvaluated))
 	}
 	if kube != nil {
