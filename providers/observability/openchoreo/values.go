@@ -64,6 +64,10 @@ type release struct {
 	sets, strings []string
 	// valuesFile passes prometheusValues with -f.
 	valuesFile bool
+	// noWait leaves out Helm's --wait: the installer checks readiness
+	// itself, so a pod still crash-looping past Helm's timeout doesn't
+	// mark the release failed (T001's first tracing install).
+	noWait bool
 }
 
 // releases are installed in this order and removed in the reverse.
@@ -122,6 +126,12 @@ var releases = []release{
 			// chart can reach OpenObserve's API (plan decision 4).
 			"openobserve-standalone.extraEnv[1].name=ZO_SSRF_ALLOW_LOOPBACK",
 			"openobserve-standalone.extraEnv[1].value=true",
+			// A stream's deletion (the tracing package's removal) is done
+			// by the retention job, hourly by default; until it runs the
+			// stream can't be searched and spans written to it are lost
+			// (spec 025 T007, live). Every minute it's done within one.
+			"openobserve-standalone.extraEnv[2].name=ZO_COMPACT_DATA_RETENTION_INTERVAL",
+			"openobserve-standalone.extraEnv[2].value=60",
 		},
 	},
 	{
@@ -156,6 +166,9 @@ func (r release) installArgs() []string {
 	}
 	for _, s := range r.strings {
 		args = append(args, "--set-string", s)
+	}
+	if r.noWait {
+		return args
 	}
 	return append(args, "--wait", "--timeout", helmInstallTimeout)
 }

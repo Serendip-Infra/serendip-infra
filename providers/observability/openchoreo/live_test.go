@@ -512,3 +512,97 @@ func TestLiveNetworking(t *testing.T) {
 		record("t006-traffic.json", edges)
 	}
 }
+
+// TestLiveTracingInstall installs the tracing package through the real
+// installer (spec 025 T007), repeating Install until it's Ready.
+func TestLiveTracingInstall(t *testing.T) {
+	client, kc := liveClient(t)
+	inst, err := NewTracingInstaller(client, kc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	var applied string
+	for {
+		state, err := inst.Install(ctx, resource.ProviderInstance{Status: resource.ProviderInstanceStatus{Applied: applied}})
+		if err != nil {
+			t.Logf("%s install: %v", time.Now().Format(time.TimeOnly), err)
+		} else {
+			t.Logf("%s ready=%v applied=%v: %s", time.Now().Format(time.TimeOnly), state.Ready, state.Applied != "", state.Message)
+			if state.Applied != "" {
+				applied = state.Applied
+			}
+			if state.Ready {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("not ready in time")
+		case <-time.After(20 * time.Second):
+		}
+	}
+}
+
+// TestLiveTracingUninstall removes the tracing package.
+func TestLiveTracingUninstall(t *testing.T) {
+	client, kc := liveClient(t)
+	inst, err := NewTracingInstaller(client, kc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.Uninstall(context.Background(), "live"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLiveTraces lists each target's traces over the last 15 minutes and
+// opens the newest (spec 025 T007). OBS_LIVE_TRACE, when set, is a trace
+// ID opened as every target, which must be found only as its own.
+func TestLiveTraces(t *testing.T) {
+	client, _ := liveClient(t)
+	ctx := context.Background()
+	targets := liveTargets(t, ctx)
+	tr := NewTracing(client)
+	now := time.Now()
+	for _, tg := range targets {
+		name := tg.Component.Metadata.Name
+		page, err := tr.SearchTraces(ctx, []reconcile.LogTarget{tg}, reconcile.TraceQuery{From: now.Add(-15 * time.Minute), Limit: 5})
+		if err != nil {
+			t.Errorf("%s traces: %v", name, err)
+			continue
+		}
+		for _, x := range page.Traces {
+			t.Logf("%s trace %s %s %s spans %d errors %v root %q", name, x.TraceID, x.Start.Format(time.TimeOnly), x.Duration, x.Spans, x.HasErrors, x.Root)
+		}
+		t.Logf("%s: %d traces, next %v", name, len(page.Traces), page.Next != "")
+		failed, err := tr.SearchTraces(ctx, []reconcile.LogTarget{tg}, reconcile.TraceQuery{From: now.Add(-15 * time.Minute), ErrorsOnly: true, MinDuration: 10 * time.Millisecond, Limit: 3})
+		if err != nil {
+			t.Errorf("%s failed traces: %v", name, err)
+		}
+		for _, x := range failed.Traces {
+			if !x.HasErrors || x.Duration < 10*time.Millisecond {
+				t.Errorf("%s: filtered trace %+v", name, x)
+			}
+		}
+		if len(page.Traces) > 0 {
+			got, err := tr.Trace(ctx, tg, page.Traces[0].TraceID)
+			if err != nil {
+				t.Errorf("%s open %s: %v", name, page.Traces[0].TraceID, err)
+				continue
+			}
+			for _, sp := range got.Spans {
+				t.Logf("%s span %s parent %s %q %s %s failed %v %s/%s attrs %v", name, sp.SpanID, sp.ParentID, sp.Name, sp.Kind, sp.Duration, sp.Failed, sp.Component, sp.Environment, sp.Attributes)
+			}
+			t.Logf("%s: %d spans, %d hidden", name, len(got.Spans), got.Hidden)
+		}
+		c := resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: 0, WindowMinutes: 10}}
+		v, err := tr.EvaluateCondition(ctx, tg, c, 10*time.Minute)
+		t.Logf("%s traceErrors over 10m: %.0f, %v", name, v.Value, err)
+		if id := os.Getenv("OBS_LIVE_TRACE"); id != "" {
+			got, err := tr.Trace(ctx, tg, id)
+			t.Logf("%s opens %s: %d spans, %d hidden, %v", name, id, len(got.Spans), got.Hidden, err)
+		}
+	}
+}

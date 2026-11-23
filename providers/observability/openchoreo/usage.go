@@ -143,11 +143,7 @@ func (i *Installer) logsHTTPClient() (*http.Client, func()) {
 	if i.logsHTTP != nil {
 		return i.logsHTTP, func() {}
 	}
-	tr := &http.Transport{
-		DialContext:       i.client.ServiceDialer(PlaneNamespace, logsStoreService, logsStorePort),
-		DisableKeepAlives: true,
-	}
-	return &http.Client{Timeout: 15 * time.Second, Transport: tr}, tr.CloseIdleConnections
+	return storeHTTPClient(i.client)
 }
 
 // logsStoreBytes sums the logs streams' stored and index sizes. The store

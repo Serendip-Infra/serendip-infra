@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T006 done, T007 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T007 done, T008 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T006 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T007 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,10 +31,35 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#358 closed (board Done); #66 says
-   "T001–T006 done; T007 next". T007–T015 are #359–#367. Before the spec
+   then check the board. #353–#359 closed (board Done); #66 says
+   "T001–T007 done; T008 next". T008–T015 are #360–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T007** (the tracing package), then T008–T015 in order.
+3. **T008** (`serendipd` wiring), then T009–T015 in order.
+   - **T007 done** (`Closes #359`; tasks.md "Done as"). `tracing.go`
+     (`TracingInstaller`, `OTLPEndpoint`, `TracingFingerprint`),
+     `tracing_read.go` (`Tracing`, a `reconcile.TracingProvider`),
+     `tracing-collector.yaml`, `search.go` (shared with flows); the
+     application provider's `SetTraceEndpoint` (variables on a
+     Component's next **new** release). Found live: two identity
+     spoofs past T001's config (fixed: allow-list, `service.*` span
+     attributes dropped, unattributed spans filtered), and that a
+     stream's deletion is queued for an hourly job (now every minute,
+     `ZO_COMPACT_DATA_RETENTION_INTERVAL=60` on the logs store; removal
+     waits 90 s). RP-086. contract-guardian passed; its and
+     go-reviewer's findings fixed.
+   - **Carried to T008 (from T007):** register `NewTracing` and
+     `NewTracingInstaller` (catalogue entry, requirements nil until
+     T013, `Removal` naming the traces' deletion); pass
+     `openchoreo.OTLPEndpoint` to the application provider's
+     `SetTraceEndpoint` **while the tracing ProviderInstance exists**
+     (read from the store before the first pass), not while it reads
+     Ready, or a settling collector rolls every traced Component twice;
+     the package job must allow the 90 s removal wait; the
+     observability package's removal deletes the collector too (order
+     or refuse it). The observability fingerprint changed (logs store
+     env), so an installed package re-applies once.
+   - **To T009:** `Trace.Hidden` counts other Components' spans:
+     decide whether it's shown.
    - **T006 done** (commit 908f447, `Closes #358`; tasks.md "Done as").
      `requests.go`, `traffic.go`, `flows.go`, the Lua filter; the
      `hubble` scrape job; `Installer.SetFlowSource`. All request series
@@ -90,7 +115,7 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 - **Spec 025 test bed** (`~/.serendip-t025/`):
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
-  - `serendipd` (**spec-025 build at 908f447**) on `127.0.0.1:8095`,
+  - `serendipd` (**spec-025 build at 908f447**, so without T007) on `127.0.0.1:8095`,
     store `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
     Restarted 2026-11-23 06:55 as a background run of
     `bin/serendipd.exe` with SERENDIP_KUBECONFIG `t001/kubeconfig`,
@@ -104,8 +129,13 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
     (`taskkill //PID <pid> //F` in Git Bash);
   - T006's evidence in `~/.serendip-t025/t006/` (`live.db` store copy,
     `install.log`); a probe pod `t006-probe` (completed) in `default`;
-  - the observability package, and the tracing module installed by hand
-    with Serendip's collector config (`t001/otel-cm.yaml`);
+  - the observability package (re-applied by T007's live test, so the
+    logs store has `ZO_COMPACT_DATA_RETENTION_INTERVAL=60`), and the
+    tracing package installed by T007's installer (`TestLiveTracingInstall`;
+    the hand-made `serendip-otel-collector` ConfigMap deleted);
+  - T007's evidence in `~/.serendip-t025/t007/` (`q.sh` runs trace SQL
+    over a port-forward on 15080, `t007-o2auth` the store's credentials,
+    `live.db` a store copy, the spoof payload and results, logs);
   - Project `t025`, Application `shop` with Components `srv` (10%
     errors, 20 ms delay), `caller` and `spoofer`, all sending traces
     (IDs in `t001/ids.txt`); the test image `t025-http:1` (`t001/img/`).

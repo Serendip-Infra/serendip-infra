@@ -2146,3 +2146,56 @@ The text below is the T013 record.
   series on every pod pair (the cardinality risk in the plan).
 - **Revisit:** at the bench (T013), with the series count; if a latency
   rule is too coarse in practice, set Hubble's `httpV2` buckets.
+
+## RP-086 — Trace identity leans on the store's key flattening; removing traces waits for the store and rolls Components
+
+- **Kind:** security (identity of stored spans); availability (rollouts,
+  removal time); performance. **Status:** Accepted, 2026-11-23.
+  **Found:** spec 025 T007.
+- **What:**
+  - **Identity holds because of how OpenObserve names columns.** It
+    lowercases a key and turns other characters into `_`, prefixes
+    resource attributes with `service_`, and writes a span attribute as a
+    column of its own name unless that column is already set (then
+    `attr_*`). Seen live: with T001's collector config,
+    `OpenChoreo.dev/component-uid` (resource) and
+    `service.openchoreo.dev/component-uid` (span) from an unlabelled pod
+    both landed on `service_openchoreo_dev_component_uid`. T007's config
+    keeps an allow-list of resource keys, deletes `service.*` span
+    attributes in any spelling, and drops spans `k8s_attributes` couldn't
+    attribute (an unlabelled pod, one too new for its cache, the host
+    network) (`testdata/t007-spoof-check.json`). A store upgrade that
+    changes the flattening could reopen it.
+  - **A stream's deletion is queued, not done:** the store's retention
+    job runs it, hourly by default; until then spans written to a
+    re-created stream are deleted with the old ones, and searches fail.
+    Serendip runs that job every minute (`ZO_COMPACT_DATA_RETENTION_INTERVAL=60`,
+    which also applies the logs' retention sooner), and the tracing
+    removal waits 90 s after the request. A `serendipd` restart inside
+    that wait doesn't wait again (the second request answers 404), so an
+    install straight after could lose up to a minute of spans.
+  - **Removing tracing rolls traced Components:** the variables join a
+    Component's next new release (plan decision 11), but after removal an
+    unpinned Deployment's release is recomputed without them on its next
+    pass, so each traced Component restarts once. Installing rolls
+    nothing.
+  - **The observability package's removal takes the collector too:** it
+    deletes the namespace both share (T008's catalogue orders them).
+  - **Opening a trace scans the retention** (3 days) for its ID: there's
+    no time hint in `Trace`.
+  - **Listing pages by each trace's first stored span:** a span that
+    arrives late with an earlier start moves its trace between pages, so
+    it can show twice or be skipped; a trace started before the query's
+    start is summarised from its spans since then.
+- **Cost:** a regression test is the only guard on the flattening; a
+  minute-ly retention job on the store (its cost measured in T013); 90 s
+  per tracing removal; a restart per traced Component on removal; an
+  open trace's query time grows with the stream (measured in T013).
+- **Why accepted:** the flattening is the store's ingestion behaviour,
+  and the allow-list leaves almost nothing to spell; the store has no
+  status for a stream's deletion to wait on instead; keeping the
+  variables on removal would point workloads at a gone endpoint.
+- **Revisit:** on every OpenObserve or collector upgrade, resend
+  `testdata/t007-spoof-span-otlp.json` from an unlabelled pod and check
+  nothing is stored with an identity, and re-time a stream's deletion;
+  at T013 with the retention job's cost and the open-trace query time.

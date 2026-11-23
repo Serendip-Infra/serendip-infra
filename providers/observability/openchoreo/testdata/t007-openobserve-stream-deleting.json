@@ -1,0 +1,1 @@
+{"code":20008,"message":"Search SQL execute error","error_detail":"Execution error: code: 'Internal error', message: \"ErrorCode# {\\\"code\\\":20002,\\\"message\\\":\\\"Search stream not found: stream [default] is being deleted\\\",\\\"inner\\\":\\\"stream [default] is being deleted\\\"}\"","trace_id":"01a2067ee9097b92881d55d9ef80db34"}

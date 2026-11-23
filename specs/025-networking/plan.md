@@ -1,6 +1,7 @@
 # Plan: Spec 025, Networking: Cilium, Hubble and traces
 
-Status: Approved, 2026-11-19. Amended 2026-11-20 with T001's findings.
+Status: Approved, 2026-11-19. Amended 2026-11-20 with T001's findings,
+and 2026-11-23 with T006's and T007's.
 
 Spec: `spec.md` (approved 2026-11-19). Epic #66.
 
@@ -253,12 +254,21 @@ decisions below are already updated. What changed from the research:
       `tracingAdapter.enabled`).
     - **Serendip's own collector config** (as spec 023 did for Fluent
       Bit), through `opentelemetry-collector.configMap.existingName`: a
-      `transform` processor deletes incoming `k8s.*`, `openchoreo.dev/*`
-      and `container.*` resource attributes, then `k8sattributes` with
-      `pod_association` from the **connection only**. A workload can't
-      claim another's identity (spec criterion 8; checked in T001: a
+      `transform` processor keeps only an allow-list of resource
+      attributes (`service.*`, `telemetry.*`, `process.*`,
+      `deployment.*`, lowercase) and deletes span attributes named
+      `service.*` in any spelling; then `k8s_attributes` with
+      `pod_association` from the **connection only**; then a `filter`
+      drops spans with no component UID. A workload can't claim
+      another's identity (spec criterion 8; checked in T001: a
       Component claiming another's pod IP, UID and pod name had every
-      span stored under its own).
+      span stored under its own). **Amended in T007:** T001's
+      `delete_matching_keys` on `k8s.*|openchoreo.dev/*|container.*` let
+      other spellings through: the store lowercases keys and turns other
+      characters into `_`, so `OpenChoreo.dev/component-uid` (resource)
+      or `service.openchoreo.dev/component-uid` (span) from an
+      unlabelled pod landed on the attested column (RP-086,
+      `testdata/t007-spoof-check.json`).
     - The installer waits for the collector's readiness itself: T001's
       first install was marked `failed` when the collector crash-looped
       past Helm's wait.
@@ -278,7 +288,15 @@ decisions below are already updated. What changed from the research:
     passes (the cooperation pattern; neither provider names the other).
     No forced rollout of every Component at install; the console says
     "redeploy to send traces". A Component that sets either variable
-    itself keeps its own.
+    itself keeps its own. **Amended in T007:** an unpinned Deployment's
+    release is recomputed on every pass, so "next deploy" is the
+    Component's **next new release** (a change to it): a release that
+    already exists without the variables is kept. Removing tracing
+    does roll each traced Component once (RP-086). So `cmd/serendipd`
+    (T008) passes the endpoint while the `tracing` ProviderInstance
+    exists, read from the store before the first pass, not while it
+    reads Ready: a collector restarting or settling must not roll every
+    traced Component twice.
 12. **`TracingProvider`** (`core/reconcile/tracing.go`):
 
     ```go

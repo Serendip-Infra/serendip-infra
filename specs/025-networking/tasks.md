@@ -276,7 +276,62 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   from T001), a test Component's requests, a traffic edge, a dropped
   flow with its reason.
 
-## T007: The tracing package
+## T007: The tracing package ✅
+
+**Done as** (2026-11-23):
+- **Installer** (`tracing.go`, `TracingInstaller`): installs nothing
+  until the observability package's store and admin Secret are there;
+  Serendip's collector config (ConfigMap `serendip-trace-collector`,
+  its hash in the pod annotations), then the module 0.3.2 with its
+  store, adapter and tail sampling off and no Helm `--wait`; readiness
+  from the collector's pods, with the observability package's settle
+  and doubling repair; a changed config is re-applied and the pods
+  restarted. `TracingFingerprint`, `OTLPEndpoint` exported for T008.
+- **Collector config** (`tracing-collector.yaml`): an allow-list of
+  resource attributes, `service.*` span attributes deleted, attribution
+  by connection, and a `filter` dropping unattributed spans. T001's
+  strip rule let other spellings onto the attested columns (found live,
+  plan decision 10 amended, RP-086).
+- **Removal:** Helm uninstall, the ConfigMap, then the `traces` stream
+  (type only, so the logs stream of the same name stays), waiting 90 s:
+  the store queues a stream's deletion for its retention job, which the
+  logs store now runs every minute (`ZO_COMPACT_DATA_RETENTION_INTERVAL=60`,
+  `values.go`); spans written before it runs are lost (found live, the
+  oss-researcher read it from source). An install refuses while the
+  store says a deletion is pending.
+- **Reads** (`tracing_read.go`, `Tracing`): SQL on the traces stream by
+  the three attested UID columns (`search.go`, shared with `flows.go`);
+  summaries from the target's spans only, paged with the logs' cursor;
+  `ErrorsOnly`, `MinDuration` and the limit in the SQL; `Trace` reads
+  the target's spans (cap 1000) and counts the others as `Hidden`; span
+  attributes named like identity are never shown; `traceErrors` is one
+  `count(DISTINCT trace_id)`. Nothing stored, a deletion pending or
+  missing columns read as nothing, not as an error.
+- **Application provider** (`tracing.go`): `SetTraceEndpoint`; the
+  OTLP variables join a Component's next **new** release (plan decision
+  11 amended), unless it sets them itself.
+- **Verified:** unit tests (span filtering, caps, spoofed attributes,
+  paging with ties and straddling traces, the installer's paths, the
+  release rule). Live on `t025`: the hand-installed failed release
+  upgraded; Components' traces listed and opened, filters and
+  `traceErrors`; a caller trace opened as the spoofer is not found and
+  the spoofer's spans are under its own UID; a spoof span from an
+  unlabelled pod stored with no identity, then dropped
+  (`testdata/t007-spoof-check.json`); removal left logs working (store
+  and `serendipd`'s logs API); remove-then-reinstall lost no spans.
+- **Reviews:** contract-guardian passed; its and go-reviewer's findings
+  fixed (the root query on a stream without a parent column, missing
+  columns read as nothing, page windows ending at `to`, the repair's
+  settle time, number and kind decoding, error wording). Left as is, by
+  design: a cursor newer than `to` restarts (as logs and flows do);
+  `Hidden` counts other Components' spans (plan decision 12); internal
+  Service names in transport errors (as flows); `time.After` (Go 1.26
+  collects unfired timers). **Carried to T008:** the endpoint follows
+  the ProviderInstance's existence, not Ready (plan decision 11); the
+  package job's timeout must exceed the 90 s removal wait; the
+  observability package's removal also removes the collector (RP-086).
+  **To T009:** whether `Hidden` is shown, and only to readers of the
+  trace's other Components.
 
 - **Do:** `openchoreo-tracing` installer (module, Serendip's collector
   config, tail sampling off, memory limiter, the module's adapter off,

@@ -12,7 +12,7 @@ console, CLI and MCP) and integrates everything else.
 - **Accepted risks and costs** of these choices live in
   `docs/risk-register.md`.
 
-Last updated: 2026-11-16.
+Last updated: 2026-11-23.
 
 ## Built (Serendip's own code)
 
@@ -45,6 +45,7 @@ Last updated: 2026-11-16.
 | Alert evaluation (`core/reconcile/alerts.go`) and delivery (`delivery.go`) | OpenChoreo's path needs the Prometheus Operator and Alertmanager ADR 0021 removed, and its Observer would be a second alert store and sender; fixed conditions polled by `serendipd` cost +4.2 mcores for 200 rules (RP-080). Design from WSO2 cs-tools (folding, a separate retrying delivery loop, digests) | Spec 024, ADR 0022 |
 | The notification sender (`core/notify`): Telegram, SMTP, the signed `serendip.alert.v1` webhook, the heartbeat | A handful of HTTPS POSTs and one SMTP send, standard library only, through one client that checks every dialed address (SSRF). No library or product does that check for us | Spec 024 plan decision 5, ADR 0022 |
 | Request metrics, traffic and connection-record reads (spec 025 T006) | Serendip's own PromQL on Hubble's metrics, joined to the pods by UID, and SQL on OpenObserve for the records. OpenChoreo's `metric=http` has no p95 and doesn't define "unsuccessful" as 5xx, which the alert conditions use, so the chart and the alert would disagree; Hubble relay (gRPC) was rejected in the plan | Spec 025 plan decisions 7–9, T006 |
+| Trace reads, and the trace collector's config (spec 025 T007) | SQL on OpenObserve's traces stream, scoped by the identity columns the collector attests; a collector config of Serendip's own that keeps an allow-list of resource attributes, drops `service.*` span attributes and attributes the pod by its connection. The module's adapter can't scope by UIDs or names, and its shipped config trusts what a span says of itself | Spec 025 plan decisions 10 and 12, T001, T007 |
 
 ## Adopted (other projects, integrated)
 
@@ -71,6 +72,7 @@ Last updated: 2026-11-16.
 | Telegram's Bot API (`sendMessage`, `getUpdates`) | Alert notifications, as a protocol | Spec 024, ADR 0022 | Free; cards with a URL button, resolutions threaded as replies. The bot token is the whole credential (RP-069) |
 | SMTP relays (Gmail app password, Brevo; any STARTTLS or implicit-TLS relay) | Alert email, as a protocol | Spec 024 plan decision 6 | No mail server on the laptop. Content leaves the machine (RP-070) |
 | A signed JSON webhook (`serendip.alert.v1`, HMAC-SHA256) | The integration point for every other channel | Spec 024, `operations.md` | Serendip's own format, the GitHub/Stripe-style signature |
+| OpenChoreo's tracing module (`observability-tracing-openobserve` 0.3.2), its OTel Collector only | Trace collection (the `tracing` package) | Spec 025 plan decision 10, T007 | Writes to the logs package's OpenObserve; its bundled store, its adapter and its tail sampling are off; Serendip's collector config (above) |
 | healthchecks.io, Uptime Kuma (heartbeat monitors); n8n, Node-RED, Apprise API (webhook relays) | Suggested outside tools, **not dependencies** | `docs/guides/alert-integrations.md` | Nothing installed or bundled. Gatus needs a relay: its push wants a bearer header the heartbeat can't send |
 
 ## Rejected (considered and turned down)
@@ -110,6 +112,8 @@ Last updated: 2026-11-16.
 | Prometheus' Go API client (`prometheus/client_golang/api`) for the restarts condition | `prometheus.go`, one standard-library instant query through the Service proxy | One fixed query shape and one answer type; the client would be a dependency (and ADR) with its own transport, where the Service proxy needs the cluster client's credentials | Spec 024 T006 |
 | Alertmanager (with plain Prometheus) for alert routing | `serendipd`'s evaluator and `core/notify` | Reverses ADR 0021's measured saving, covers metrics only (logs and restarts would still be Serendip's), and keeps receivers' credentials in its own config | Spec 024, ADR 0022 |
 | Helm (the binary or its Go SDK) in `serendip-agent` to install Cilium at bootstrap | A K3s `HelmChart` manifest (`bootstrap: true`), installed by K3s's own Helm controller | Helm's SDK would be a heavy dependency (and ADR) in an agent meant to stay small (agent/CLAUDE.md); K3s already ships the controller, and its bootstrap Job runs before any CNI | Spec 025 plan decision 5, T005 |
+| The tracing module's adapter (`:9100`) for trace reads | SQL on OpenObserve (`tracing_read.go`) | Its scope by UIDs or names answers nothing (T001); no duration or error filter, no cursor. Off saves 128 MiB | Spec 025 plan decision 10, T001 |
+| The tracing module's tail sampling | No sampling; a memory limiter and the retention bound it | About 10 spans a second kept, nearly nothing on a real load, and it holds traces in memory | Spec 025 plan decision 10 |
 
 ## Open (decided later)
 

@@ -1,12 +1,9 @@
 package openchoreo
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -158,71 +155,14 @@ func (f *flowStore) deployments(ctx context.Context, s componentScope, now time.
 	return refs, nil
 }
 
-// errNoStream: nothing has been written to the stream yet.
-var errNoStream = errors.New("no connection records stored yet")
-
-// search runs sql over [from, to] (microseconds, as OpenObserve's
-// start_time and end_time) for up to size records.
+// search runs sql over [from, to] for up to size records.
 func (f *flowStore) search(ctx context.Context, sql string, from, to time.Time, size int) ([]flowRecord, error) {
-	auth, err := logsStoreAuth(ctx, f.client)
-	if err != nil {
-		return nil, err
+	var hits []flowRecord
+	err := searchStore(ctx, f.client, f.http, "logs", "connection records", sql, from, to, size, &hits)
+	if errors.Is(err, errNoField) {
+		return nil, errors.New("the connection records' store doesn't have the fields Serendip writes; is the log collector's configuration Serendip's?")
 	}
-	body, err := json.Marshal(map[string]any{"query": map[string]any{
-		"sql": sql, "start_time": from.UnixMicro(), "end_time": to.UnixMicro(), "from": 0, "size": size,
-	}})
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		fmt.Sprintf("http://%s.%s:%d/api/%s/_search", logsStoreService, PlaneNamespace, logsStorePort, logsStoreOrg), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", auth.Get("Authorization"))
-	req.Header.Set("Content-Type", "application/json")
-	hc, done := f.httpClient()
-	defer done()
-	resp, err := hc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("search the connection records: %w", err)
-	}
-	defer resp.Body.Close()
-	answer := io.LimitReader(resp.Body, 16<<20)
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			Code int `json:"code"`
-		}
-		_ = json.NewDecoder(io.LimitReader(answer, 64<<10)).Decode(&e)
-		// OpenObserve's codes (checked live, T006): 20002 is a stream not
-		// found, 20004 a field the stream has never had. Its message
-		// echoes the query, so it isn't passed on.
-		switch e.Code {
-		case 20002:
-			return nil, errNoStream
-		case 20004:
-			return nil, errors.New("the connection records' store doesn't have the fields Serendip writes; is the log collector's configuration Serendip's?")
-		}
-		return nil, fmt.Errorf("search the connection records: status %d", resp.StatusCode)
-	}
-	var out struct {
-		Hits []flowRecord `json:"hits"`
-	}
-	if err := json.NewDecoder(answer).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode the connection records: %w", err)
-	}
-	return out.Hits, nil
-}
-
-func (f *flowStore) httpClient() (*http.Client, func()) {
-	if f.http != nil {
-		return f.http, func() {}
-	}
-	tr := &http.Transport{
-		DialContext:       f.client.ServiceDialer(PlaneNamespace, logsStoreService, logsStorePort),
-		DisableKeepAlives: true,
-	}
-	return &http.Client{Timeout: 15 * time.Second, Transport: tr}, tr.CloseIdleConnections
+	return hits, err
 }
 
 // target is a Deployment's Serendip names.
