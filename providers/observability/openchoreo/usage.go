@@ -47,9 +47,12 @@ var metricsStoreUsage = []string{"prometheus_tsdb_storage_blocks_bytes", "promet
 // of the stream's files.
 const streamSizeUnit = 1 << 20
 
-// capacityMiB is the stores' volumes: logs 5 Gi, metrics 3 Gi
-// (values.go, prometheus-values.yaml).
-const capacityMiB = 5<<10 + 3<<10
+// capacityMiB is the stores' volumes: logs 5 Gi (logsCapacityMiB, which
+// traces share), metrics 3 Gi (values.go, prometheus-values.yaml).
+const (
+	logsCapacityMiB = 5 << 10
+	capacityMiB     = logsCapacityMiB + 3<<10
+)
 
 var _ reconcile.PackageUsage = (*Installer)(nil)
 

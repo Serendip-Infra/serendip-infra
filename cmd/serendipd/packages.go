@@ -60,9 +60,8 @@ var observabilityDiskRule = reconcile.BuiltInAlertRule{
 // observability the observability plane (spec 023) and tracing the trace
 // collector (spec 025); each is nil when there's no cluster to install it
 // on. The catalogue refuses any package without measured Requirements:
-// builds' were measured in spec 022's T013, and observability's in spec
-// 023's T012. Tracing's are measured in spec 025's T013, so until then it
-// can't be installed.
+// builds' were measured in spec 022's T013, observability's in spec 023's
+// T012, and tracing's in spec 025's T013.
 func packageCatalogue(builds, observability, tracing reconcile.PackageInstaller) reconcile.Catalogue {
 	return reconcile.Catalogue{
 		"openchoreo-workflow-plane": {
@@ -82,10 +81,9 @@ func packageCatalogue(builds, observability, tracing reconcile.PackageInstaller)
 		},
 		"openchoreo-tracing": {
 			Provider: "openchoreo-tracing", Capability: capTracing,
-			Description: "Traces Components send, kept in the observability package's store; needs that package",
-			Installer:   tracing,
-			// Measured in spec 025's T013.
-			Requirements: nil,
+			Description:  "Traces Components send, kept in the observability package's store; needs that package",
+			Installer:    tracing,
+			Requirements: obsplane.TracingRequirements,
 			Removal:      tracingRemoval,
 		},
 	}

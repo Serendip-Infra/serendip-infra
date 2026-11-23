@@ -426,7 +426,10 @@ func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampl
 	}
 	if po.diskSamples > 0 {
 		name := "disk, still under load"
-		if between != nil {
+		if po.traffic {
+			name += ", traffic on"
+		}
+		if po.rules > 0 {
 			name += ", rules on"
 		}
 		if p.Disk, err = phase(ctx, name, po.diskSamples, po.diskInterval); err != nil {

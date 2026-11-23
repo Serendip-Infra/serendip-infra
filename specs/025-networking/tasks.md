@@ -565,7 +565,7 @@ reasons say Serendip can't read them, not that the CNI lacks them).
 - **Verify:** `verification.md` lists each criterion with its evidence
   and result.
 
-## T013: Bench on the simulated T470
+## T013: Bench on the simulated T470 ✅
 
 - **Do:** `bench-t470` with kindnet and with Cilium (idle, and under the
   observability load with HTTP traffic), then with tracing installed;
@@ -575,6 +575,41 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   `cmd/serendipd/packages.go` (requirements).
 - **Verify:** spec criteria 12 and 13: control-plane idle within 10 MiB
   of spec 024's; node costs in the results summary.
+
+**Done as** (2026-11-23; results in
+`profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`, its
+README the summary):
+
+- **Harness** (`cmd/bench-edge1/traffic.go`): `--package-traffic` (a
+  caller calling an exposed server 10 times a second under the log load)
+  and `--package-tracing` (the tracing package installed, both
+  Components re-released, the same traffic traced). Cilium's and the
+  collector's pods are their own groups. The traffic image's source is
+  `profiles/edge-1/bench/traffic-app` (T012's `otelapp`, which now takes
+  a scheme-less `TARGET`: OpenChoreo gives a dependency as `host:port`
+  on a non-80 port).
+- **Runs:** kindnet, then Cilium (with a 1-hour disk phase), on fresh
+  clusters. The first Cilium attempt died in its cold start after the
+  memory reaper killed its shell (`helm` then failed `0xc0000142`); it
+  was rerun.
+- **Criterion 12: PASS.** `serendipd` idle: 33.2 MiB (kindnet), 82.1 MiB
+  (Cilium), against spec 024's 79.0. The 82 MiB is the Windows
+  working-set effect: the same process fell to 51 MiB later, and a
+  restart on the same stack read 28.6 MiB. Every group is within
+  tolerance of spec 024's run (`compare-kindnet-vs-spec024.md`).
+- **Criterion 13:**
+  - Cilium costs **+443 MiB, +92 mcores** at idle and +461 MiB,
+    +128 mcores under traffic. RP-089.
+  - Tracing costs **+145 to +180 MiB, ~10 mcores**, and ~730 MiB a day
+    in the logs store at 10 requests a second. RP-088.
+  - The heaviest sample was 3244 MiB, 23% of a 16 GB machine.
+  - **The edge-1 default stays Cilium** (ADR 0023 in T015).
+- **`TracingRequirements`** (`providers/observability/openchoreo/
+  requirements.go`): idle 180 MiB / 10 mcores, peak 370 MiB /
+  200 mcores, disk 730 MiB a day for 3 days in the logs store's 5 GiB
+  (`logsCapacityMiB`). The catalogue now installs the package.
+- **Reads** (`timings.txt`): trace list 119 ms, trace open 163 ms,
+  flows 64 ms (medians); RP-086 and RP-087 updated.
 
 ## T014 [A]: Reviews
 

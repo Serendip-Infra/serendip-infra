@@ -258,9 +258,16 @@ func TestTracingCatalogueEntry(t *testing.T) {
 	if !ok || p.Capability != capTracing || p.Removal == "" {
 		t.Fatalf("entry = %+v", p)
 	}
-	// Not installable until T013 measures it.
-	if err := p.Installable(); err == nil {
-		t.Error("the tracing package is installable without measured requirements")
+	// Installable with the cost T013 measured, stated as the package
+	// states it.
+	if err := p.Installable(); err != nil {
+		t.Errorf("Installable() = %v", err)
+	}
+	if p.Requirements != obsplane.TracingRequirements {
+		t.Errorf("Requirements = %+v, want the package's", p.Requirements)
+	}
+	if err := obsplane.TracingRequirements.Validate(); err != nil {
+		t.Errorf("TracingRequirements: %v", err)
 	}
 }
 

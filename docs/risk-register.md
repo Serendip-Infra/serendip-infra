@@ -108,6 +108,8 @@ purpose), **Closed** (fixed).
 | RP-085 | Request metrics from Hubble's histogram: coarse percentiles, extrapolated counts, a DNS lookup that fails on clusters without Cilium | Correctness (precision); log noise | Accepted | Spec 025 T006 |
 | RP-086 | Trace identity leans on the store's key flattening; removing traces waits for the store and rolls Components | Security (span identity); availability; performance | Accepted | Spec 025 T007 |
 | RP-087 | Flows and traces read the caller's readable Deployments in the Environment, capped at 20 | Correctness (names past the cap); performance (lookups per read) | Accepted | Spec 025 T009 |
+| RP-088 | Traces share the logs store: about 730 MiB a day at 10 traced requests a second, kept 3 days, in the same 5 GiB as logs | Footprint (disk); availability (logs) | Accepted | Spec 025 T013 |
+| RP-089 | Cilium costs about +450 to +500 MiB and +80 to +130 mcores on the edge-1 node (simulated); edge-1 keeps it as the default | Footprint | Accepted | Spec 025 T013 |
 
 ---
 
@@ -2210,8 +2212,11 @@ The text below is the T013 record.
   variables on removal would point workloads at a gone endpoint.
 - **Revisit:** on every OpenObserve or collector upgrade, resend
   `testdata/t007-spoof-span-otlp.json` from an unlabelled pod and check
-  nothing is stored with an identity, and re-time a stream's deletion;
-  at T013 with the retention job's cost and the open-trace query time.
+  nothing is stored with an identity, and re-time a stream's deletion.
+  T013 (simulated T470, ~1.5 h of traces stored): opening a trace took
+  163 ms median, a 1-hour list 119 ms. The retention job's cost isn't
+  separable from the observability group's (tracing cost: RP-088). Time
+  an open again with 3 days stored, on real hardware.
 
 ## RP-087 — Flows and traces read the caller's readable Deployments in the Environment, capped at 20
 
@@ -2241,4 +2246,63 @@ The text below is the T013 record.
   less is the safe side.
 - **Revisit:** at `small-3`, or if an Environment holds more than 20
   Components: resolve peers lazily (only the ends a page has), or page
-  the merge. T013 times a flows read and a trace open.
+  the merge. T013 (simulated T470, one peer): a 15-minute flows read
+  took 64 ms median and a trace open 163 ms.
+
+## RP-088 — Traces share the logs store, and their disk use is one slope at one rate
+
+- **Kind:** footprint (disk); availability (logs). **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T013.
+- **What:**
+  - Traces are kept in the observability package's logs store (plan
+    decision 11), for its 3 days, in its 5 GiB volume.
+  - At 10 traced requests a second (three spans each), they grew it
+    about 730 MiB a day: ~2.2 GiB of the 5 GiB at 3 days, beside about
+    1.5 GiB of logs under the bench's log load.
+  - The figure is the Cilium run's 1-hour slope with traces (1226 MiB a
+    day) less spec 023's 2-hour log-only slope (496 MiB a day): two runs,
+    one request rate, and not a steady state (RP-063's caveat).
+  - It overstates traces alone: the Cilium run's logs store also took
+    Hubble's connection records, and its Prometheus Hubble's request
+    series, which spec 023's run had none of (contract-guardian, T013).
+  - The tracing package's disk budget names the logs volume, which the
+    observability package's budget already counts. Nothing sums budgets
+    across packages today. A disk-fit check that does must count that
+    volume once.
+  - Traces grow with request rate. Twice the traffic would bring logs
+    and traces close to the volume's size.
+- **Cost:** a busy traced Component can fill the logs store, and logs
+  then share the shortfall. The package's built-in disk rule (spec 024)
+  warns first.
+- **Why accepted:** one store keeps edge-1 to one backend (spec 023's
+  choice), and edge-1's traffic is light. The requirements state the
+  rate they were measured at.
+- **Revisit:** on real hardware (the L470) with a day's run; if traces
+  crowd logs out, add head sampling in the collector or a separate
+  traces retention.
+
+## RP-089 — Cilium's node cost on edge-1
+
+- **Kind:** footprint. **Status:** Accepted, 2026-11-23. **Found:** spec
+  025 T013.
+- **What:**
+  - On the simulated T470, a node running Cilium (agent, operator,
+    Envoy, Hubble export; kube-proxy kept) used +443 MiB and +92 mcores
+    more than one running kindnet at platform idle.
+  - Under 10 requests a second of HTTP traffic, the difference was
+    +461 MiB and +128 mcores, and +496 MiB and +118 mcores with tracing.
+  - Cilium's own pods are 236–302 MiB of that. The rest is node overhead
+    (BPF maps, the runtime) and kube-apiserver (Cilium's CRDs).
+  - The heaviest sample of the whole stack was 3244 MiB, 23% of a
+    16 GB machine less 2 GB for the OS.
+- **Cost:** about half a GiB and up to 6.5% of a 2-core CPU, always on.
+- **Why accepted:** it's what request metrics, flows with drop reasons
+  and CNI-enforced policies cost, and the stack still fits a 16 GB T470
+  comfortably. So Cilium stays edge-1's default (`serendip-agent
+  bootstrap --cni cilium`), and `--cni default` stays for tighter
+  machines (ADR 0023).
+- **Revisit:**
+  - on real hardware (the L470: 2 cores, 8 to 16 GB): if half a GiB is
+    too much on an 8 GB machine, recommend `--cni default` for it;
+  - if the node is tight, measure kube-proxy-free first (plan decision
+    6).

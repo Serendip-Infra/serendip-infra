@@ -1,0 +1,14 @@
+Spec 025 T013: read timings on the Cilium bench-t470 stack, 2026-11-23 22:20 IST,
+after the run (serendipd restarted on the run's store; a new caller and exposed
+server pair at 10 calls a second; about 1.5 hours of traces stored). 10 reads
+each, from the host through serendipd's API.
+
+traces listed: 50 status 200
+traces list (1 h): median 119 ms, max 161 ms over 10
+  spans: 3 partial: False
+trace open: median 163 ms, max 214 ms over 10
+  flows keys: ['flows', 'from', 'to']
+flows (15 min): median 64 ms, max 95 ms over 10
+
+serendipd 4.5 minutes after a restart on the same stack (tasklist working set,
+6 reads 10 s apart): 28.6 MiB (29,240-29,352 K).

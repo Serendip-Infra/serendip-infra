@@ -170,8 +170,18 @@ read from files and never printed.
     - **Console:** the Alerts page lists all four with values and
       thresholds (`ui-c10-alerts.png`).
 11. **Removing tracing. PENDING** (after T013, with criterion 7).
-12. **Control-plane footprint:** T013.
-13. **Node cost and the edge-1 default:** T013.
+12. **Control-plane footprint. PASS** (T013,
+    `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`):
+    `serendipd` at idle read 33.2 MiB (kindnet) and 82.1 MiB (Cilium),
+    against spec 024's 79.0 MiB. The Cilium figure is the Windows working
+    set; a restart on the same stack read 28.6 MiB. Every group is
+    within tolerance of spec 024's run.
+13. **Node cost and the edge-1 default. PASS** (T013):
+    - Cilium costs +443 MiB and +92 mcores at idle, and +461 MiB and
+      +128 mcores under 10 requests a second (RP-089).
+    - Tracing costs +145 to +180 MiB and ~10 mcores, and ~730 MiB a day
+      of the logs store (RP-088).
+    - The edge-1 default stays Cilium. ADR 0023 (T015) gives the reason.
 14. **Audit. PASS for what ran; the tracing install and removal are
     PENDING** (after T013).
     - **Audited, from the live store:**
