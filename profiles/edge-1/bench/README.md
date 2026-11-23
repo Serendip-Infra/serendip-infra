@@ -127,6 +127,36 @@ built with `go build -overlay` and placeholder numbers.
   - the evaluator's 10-minute timing lines (`reconcile: alerts: stats:`
     in `serendipd`'s log): queries, failed, no data, mean, p50, p95,
     max, the slowest tick and the latest pick-up.
+- **HTTP traffic and tracing** (`--package-traffic`, `--package-tracing`,
+  observability only; spec 025 T013). After the load phase, before any
+  rules, still under the load:
+  1. deploys a server Component (its port exposed, which request
+     metrics need: RP-082) and a caller that depends on it and calls it
+     every `--package-traffic-call-ms` (100) ms. Both run
+     `--package-traffic-image` (`t012-otel:2`, a plain OpenTelemetry Go
+     SDK app; load it on the node first, as below);
+  2. samples **HTTP traffic** for `--package-traffic-samples` (60)
+     samples every 10 s;
+  3. with `--package-tracing`, installs the tracing package
+     (`openchoreo-tracing`), gives both Components a new release (a
+     changed variable) so they get the trace endpoint, waits until both
+     pods have it, and samples **HTTP traffic, traced** the same way. At
+     the end it counts the server's traces from the last 5 minutes.
+
+  The section gives node, Cilium, observability, collector and workload
+  use per phase, the traced phase minus the untraced one, and the
+  observability volumes' growth in each. Cilium and Hubble pods
+  (`kube-system/cilium-*`, `hubble-*`) count as **Networking (Cilium)**,
+  and the trace collector (`opentelemetry-collector-*`) as **Tracing
+  (collector)**, not under their namespaces' groups. The tracing
+  package's catalogue entry needs `Requirements` before it installs, so
+  the first measurement used a `go build -overlay` placeholder, as above.
+
+  The image is built from `traffic-app/` (`docker build -t t012-otel:2
+  profiles/edge-1/bench/traffic-app`; its own module, not part of
+  Serendip's build). Load it with
+  `docker save` and `ctr -n k8s.io images import` inside the node:
+  `kind load` fails on this machine.
 
 Any `--sim-*` flag marks the run as a simulation. Its summary opens with
 "SIMULATION — does not satisfy the reference-hardware gate", and no

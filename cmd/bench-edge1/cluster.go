@@ -166,3 +166,65 @@ func parseCPUQuantity(q string) float64 {
 	n, _ := strconv.ParseFloat(q, 64)
 	return n
 }
+
+// podsWithEnv counts running workload pods (in "dp-" namespaces) whose
+// first container gets the variable key, set directly or from a
+// ConfigMap (OpenChoreo passes a Component's variables in one).
+func (c *cluster) podsWithEnv(ctx context.Context, key string) (int, error) {
+	cms, err := c.client.List(ctx, "/api/v1/configmaps")
+	if err != nil {
+		return 0, err
+	}
+	has := map[string]bool{}
+	for _, cm := range cms {
+		if !strings.HasPrefix(cm.Metadata.Namespace, cellNamespacePrefix) {
+			continue
+		}
+		var data map[string]string
+		_ = json.Unmarshal(cm.Data, &data)
+		if _, ok := data[key]; ok {
+			has[cm.Metadata.Namespace+"/"+cm.Metadata.Name] = true
+		}
+	}
+	pods, err := c.client.List(ctx, "/api/v1/pods")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range pods {
+		if !strings.HasPrefix(p.Metadata.Namespace, cellNamespacePrefix) {
+			continue
+		}
+		var spec struct {
+			Containers []struct {
+				Env []struct {
+					Name string `json:"name"`
+				} `json:"env"`
+				EnvFrom []struct {
+					ConfigMapRef *struct {
+						Name string `json:"name"`
+					} `json:"configMapRef"`
+				} `json:"envFrom"`
+			} `json:"containers"`
+		}
+		var st struct {
+			Phase string `json:"phase"`
+		}
+		_ = json.Unmarshal(p.Spec, &spec)
+		_ = json.Unmarshal(p.Status, &st)
+		if st.Phase != "Running" || len(spec.Containers) == 0 {
+			continue
+		}
+		found := false
+		for _, e := range spec.Containers[0].Env {
+			found = found || e.Name == key
+		}
+		for _, f := range spec.Containers[0].EnvFrom {
+			found = found || (f.ConfigMapRef != nil && has[p.Metadata.Namespace+"/"+f.ConfigMapRef.Name])
+		}
+		if found {
+			n++
+		}
+	}
+	return n, nil
+}
