@@ -39,7 +39,7 @@ escape hatch").
 | Identity | Yes | ThunderID (ADR 0006; `identity.md`, built in spec 015) | Keycloak, external OIDC/Entra ID (the OIDC verifier is provider-neutral; no external-oidc registration yet) |
 | Secrets & PKI | Yes | OpenBao | External Secrets Operator + external vault |
 | Certificates | Yes | cert-manager | — |
-| Networking (CNI) | Yes | Cilium | — |
+| Networking (CNI) | Yes | Cilium, observed not installed: chosen by `serendip-agent bootstrap --cni`, detected by `serendipd` (spec 025, ADR 0023; `networking.md`) | `external` for any other CNI (kindnet, Flannel): facts only, no flows or request metrics |
 | Gateway / ingress | Yes | kgateway (ADR 0011; `gateway.md`) | WSO2 API Manager (advanced API management) |
 | Compute (Kubernetes) | Yes | K3s (ADR 0001) | RKE2 (future, hardened profiles) |
 | Cluster management | No | Rancher | — (native single-cluster mgmt below 3+ nodes) |
@@ -51,6 +51,7 @@ escape hatch").
 | Storage (backup) | No | S3-compatible / NFS | — (never counted as primary redundancy) |
 | Database | No | CloudNativePG (PostgreSQL) | Embedded, managed/external PostgreSQL |
 | Observability (telemetry collection) | Yes | OpenTelemetry | — |
+| Tracing (`tracing`, optional package) | No | OpenChoreo's tracing module (its OTel Collector, on Serendip's config) into the logs package's OpenObserve (spec 025, `networking.md`) | — |
 | Observability (backend) | Yes | OpenObserve (logs) and plain Prometheus (metrics), through OpenChoreo's adapters (ADR 0021) | SigNoz for larger installs; OpenSearch rejected for edge-1 |
 | Ticketing / ITSM | No | Native Serendip Incidents | Zammad, GLPI, ServiceNow, Jira |
 | API analytics | No | Native (via kgateway/Envoy + OTel) | Moesif adapter |

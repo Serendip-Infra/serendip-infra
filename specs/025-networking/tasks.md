@@ -1,6 +1,6 @@
 # Tasks: Spec 025, Networking: Cilium, Hubble and traces
 
-Status: Approved, 2026-11-19. T001–T006 done.
+Status: Approved, 2026-11-19. All 15 tasks done (2026-11-23).
 
 [P] = can run in parallel with the task before it. [A] = subagent-eligible.
 
@@ -695,7 +695,7 @@ README the summary):
 >   deadline (RP-087).
 > - The OTLP receivers have no per-pod rate limit (RP-092).
 
-## T015 [A]: Docs and close-out
+## T015 [A]: Docs and close-out ✅
 
 - **Do:** ADR 0023 (Networking: observed, Cilium, the edge-1 default
   with T013's numbers); `docs/architecture/networking.md`;
@@ -706,3 +706,29 @@ README the summary):
 - **Files:** `docs/`.
 - **Verify:** docs-keeper review passes; every risk the plan names is in
   the register or marked not found.
+
+> **Done as** (2026-11-23): ADR 0023 (networking observed, Cilium stays
+> edge-1's default, with T013's numbers); the new
+> `docs/architecture/networking.md` (facts, request visibility, the node
+> metrics guard, requests and traffic, flows, traces, conditions);
+> `operations.md` (the three conditions, a Networking section: CNI
+> reinstall, drift, flows, requests, traces, disk); `capability-model.md`
+> (Networking and Tracing rows); `bootstrap-agent.md` (`--cni`);
+> `authorization.md` (the traces data action); `application-platform.md`
+> (the OTLP variables); the architecture README; build-vs-adopt (Cilium,
+> Hubble metrics and export adopted; request visibility, the guard and
+> the facts built; Hubble relay and UI, kube-proxy replacement, a
+> `serendipd`-installed CNI and a non-Cilium edge-1 default rejected).
+>
+> **docs-keeper:** four findings, all fixed: the console's tab name in
+> `operations.md`, the console naming a "Trace Reader" role that doesn't
+> exist (now "Log Reader, Contributor or Owner", `Networking.tsx` and its
+> test), `authorization.md` and `application-platform.md` stale.
+>
+> **The plan's risks:** the L7 proxy and Envoy's defaults RP-081, RP-089;
+> a Cilium upgrade changing a default RP-081; the mirror RP-082; flow
+> volume RP-084; traces without sampling RP-088, RP-092; Hubble's
+> cardinality **RP-093 (new, Watch)**; the bootstrap's internet RP-083;
+> admin credentials for reads RP-054 (extended for flows and traces). The
+> agent's values copy isn't a register item: `TestCiliumCopyMatchesProvider`
+> holds it.

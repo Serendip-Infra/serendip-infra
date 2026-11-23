@@ -12,256 +12,71 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T014 done; T015 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025 done: T001–T015; spec PR open; spec 026 next)
 
 ## Current phase
 
-**Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T014 done** (see tasks.md's "Done
-as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
-`spec-024`, **pushed to the Yasindu007 fork after every task commit**
-(the user, 2026-11-20). **Next, in order:**
-1. **T015 (#367): docs and close-out**: ADR 0023 (the edge-1 default
-   stays Cilium, with T013's numbers), `docs/architecture/networking.md`,
-   `capability-model.md`, `operations.md`, `bootstrap-agent.md`,
-   build-vs-adopt, this file. The docs must cover T014's node metrics
-   guard (below). Then the spec PR (`Closes #66`); check that every task
-   issue is closed first.
-2. **GitHub is in step, per task** (the user, 2026-11-20: no tracking
-   backlog). After each task: commit with `Closes #N`, push `spec-025`,
-   close #N by hand with a comment naming the commit, tick it in epic
-   #66's checklist and status line, then check the board. T001–T014
-   (#353–#366) are closed; #66 says "T001–T014 done".
-   - **Issue numbers:** T012 #364, T013 #365, T014 #366, T015 #367.
-     T013's two commits first said `#366` by mistake. Both were reworded
-     to `#365` and `spec-025` was force-pushed (the user, 2026-11-23).
-3. **T014 done** (a14a6d5; tasks.md "Done as"). The reviews were
-   go-reviewer (two passes), contract-guardian (twice), security and
-   test-writer.
-   - **Security fix:** the `cilium` provider keeps
-     `serendip-node-metrics-guard` (`nodeguard.go`), a deny-only
-     CiliumClusterwideNetworkPolicy. It closes the node's metrics ports
-     9962–9965 to pods outside `kube-system` and
-     `openchoreo-observability-plane`. Before it, any pod could read every
-     Component's Hubble request metrics. It was checked live on `t025`
-     (evidence `~/.serendip-t025-dev/t012/evidence/t014-node-guard.txt`;
-     RP-091).
-   - **Race fix:** the observability removal and the tracing package's
-     jobs now share `opLock` (`cmd/serendipd/packages.go`). The removal
-     uses `RemoveCollector`.
-   - **Other fixes:** a truncated trace needs this Deployment's own
-     spans; the store's credentials are cached for a minute; atomic CNI
-     manifests; more in tasks.md.
-   - **New risks:** RP-090 (visibility audit rows in memory), RP-091,
-     RP-092 (OTLP flood).
-   - `t025` and its `serendipd` are stopped again.
-3. **T013 done** (a6f6cce, 3dc9709; tasks.md "Done as"; results
-   `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`,
-   its README the summary).
-   - **Harness:** `bench-edge1 --package-traffic --package-tracing`. The
-     traffic image's source is `profiles/edge-1/bench/traffic-app`
-     (`t012-otel:2`; load it with docker save + ctr import).
-   - **Criterion 12 PASS:** `serendipd` idle 33.2 MiB on kindnet and 82.1
-     MiB on Cilium. The 82 is the Windows working set: a restart on the
-     same stack read 28.6 MiB.
-   - **Criterion 13:**
-     - Cilium costs +443 MiB and +92 mcores at idle, and +461 MiB and
-       +128 mcores under 10 req/s (RP-089);
-     - tracing costs +145 to +180 MiB and ~10 mcores, and ~730 MiB a
-       day of the logs store (RP-088);
-     - **the edge-1 default stays Cilium** (to record in ADR 0023, T015).
-   - `TracingRequirements` (idle 180 MiB / 10 mc, peak 370 / 200, disk
-     730 MiB/day for 3 days in the logs store's 5 GiB) makes the tracing
-     package installable.
-   - The first Cilium attempt died: the memory reaper killed its shell,
-     then `helm` failed `0xc0000142`. It was rerun.
-   - `bench-t470` is deleted.
-4. **T012 done** (15406ad, 8657e3b; `specs/025-networking/verification.md`):
-   criteria 1–11 and 14 PASS.
-   - F6 fixed: a trace opened through a Deployment with no span in it is
-     now 404.
-   - F7: the test app's scheme-less `TARGET`.
-   - **Test bed `serendip-t025` is stopped** (T014). It still has the
-     observability and tracing packages installed, and the
-     `otel-srv`/`otel-caller`/`spoofer` Components in `t012-a`. To use
-     it, run `docker start serendip-t025-control-plane`, then `bash
-     ~/.serendip-t025-dev/t012/start.sh` as a background run. Its
-     `serendipd` binary was rebuilt at T014.
-     - The rule `t012-otel-srv-trace-errors` evaluates. `reader-c` has
-       `t012-trace-reader` at `otel-caller`'s Deployment.
-     - Tooling and evidence: `~/.serendip-t025-dev/t012/` (`c7deploy.py`,
-       `c789.py`, `c11.py`, `console/c-traces.mjs`, `evidence/`).
-     - Stop it for memory when not needed (`docker stop
-       serendip-t025-control-plane`).
-   - `serendip-t018` and `t025` stay stopped.
-5. **The user is buying a ThinkPad L470** (i5-7300U, 2c/4t, 8 GB in
-   slots, to go to 16 GB) as the first real T470-class node. Label its
-   results "L470". Whether it counts for the reference gate is the
-   user's call (an ADR).
+**Spec 025 (networking: Cilium, Hubble and traces; epic #66): DONE
+2026-11-23,** all 15 tasks (#353–#367 closed). Branch `spec-025` (off
+`spec-024`, which is merged) is pushed to the Yasindu007 fork; the spec
+PR (`Closes #66`) is opened by Yasindu007 and merged by
+`serendipinfra` with a merge commit. **If the PR isn't merged yet,
+that's the first thing to check.** Then the board: #66 in Done.
 
-### Older spec 025 notes (T001–T011)
+**Next: spec 026, Secrets into Components (epic #67).** Start with
+`/new-spec` (spec → plan → tasks, approval on plan.md). Task issues get
+opened as one paced batch when tasks.md is approved, and GitHub stays in
+step per task (commit with `Closes #N`, push, close by hand with the
+commit, tick the epic, check the board).
 
-   - **T011 done** (`Closes #363`; tasks.md "Done as"). Console:
-     `ui/src/screens/Networking.tsx` (HTTP requests block, Connections,
-     Traces with a span waterfall), `lib/networking.ts` (words, waterfall
-     layout, `notAvailableReason` for 409/503), the topology overlay
-     (off until turned on; status-coloured labelled edges, undeclared
-     calls dashed, a traffic table), "Network layer" on the **Platform**
-     page (not Settings: that's notifications only), the three rule
-     conditions (a refused rule shows the evaluator's message). 191 UI
-     tests; JS 118.7 → 124.9 KiB gz. **Not seen in a browser yet**:
-     `t025`'s `serendipd` is API-key only; T012 checks it on
-     `serendip-t025` (recreate that cluster first, see T005 below), and
-     needs `serendipd` rebuilt to embed the new console.
-   - **T010 done** (`Closes #362`; tasks.md "Done as"). No CLI code:
-     the catalogue entries already work (the parser takes `traces show
-     <dep> <trace-id>` by position). Traces stay on MCP, like stored
-     logs (the permission is the rule). `cmd/serendip/networking_test.go`
-     (CLI requests, usage errors, answers, exit codes; the five MCP
-     tools). Live on `t025` with `bin/serendip-t010.exe`
-     (`~/.serendip-t025/t010/live.txt`): facts, flows, traffic; traces
-     503 until T013.
-   - **T009 done** (979c2ff, `Closes #361`; tasks.md "Done as"). The six
-     routes of the plan's table (`api/networking_handler.go`,
-     `api/traces_handler.go`, metrics' `requests`), catalogue entries
-     (`networking_get`, `deployments_flows`, `applications_traffic`,
-     `deployments_traces_list`, `deployments_traces_get`; CLI words
-     `networking show`, `flows`, `traffic`, `traces list|show`; all on
-     MCP, traces like stored logs) and rows in `docs/cli-and-mcp.md`.
-     Two contract changes, recorded as plan amendments (decisions 9 and
-     12): `FlowQuery.Peers` (the caller's other readable Deployments in
-     the Environment, named, never searched) and `TracingProvider.Trace`
-     taking every readable target at once (two queries, not two per
-     Deployment). `reconcile.ErrNotCollected` → 409. RP-087 (the
-     20-Deployment cap; RP-086's missing index row added). Both reviews
-     passed, findings fixed. Live on `t025`; `TestLiveTraces` opened
-     traces as all targets.
-   - **For T011+:** the tracing package can't be installed through `serendipd` until
-     T013 sets its requirements, so live trace reads through the API
-     answer 503 until then (provider-level live test works).
-   - **T008 done** (`Closes #360`; tasks.md "Done as").
-     `cmd/serendipd/networking.go` (detection, a facts cache on the
-     re-ensure interval, the visibility pass with an audit row when it
-     writes, and the flow source, request metrics and pod ranges handed
-     on); the `openchoreo-tracing` catalogue entry (not installable
-     until T013); the tracing and observability installer wrappers (trace
-     endpoint; removing observability takes the collector);
-     `sqlite.RecordExternalChange`; `cilium.Detect`. RP-076 updated.
-     Live on `t025` (cilium) and `serendip-t018` (kindnet). Reviews
-     passed, findings fixed.
-   - **T007 done** (`Closes #359`; tasks.md "Done as"). `tracing.go`
-     (`TracingInstaller`, `OTLPEndpoint`, `TracingFingerprint`),
-     `tracing_read.go` (`Tracing`, a `reconcile.TracingProvider`),
-     `tracing-collector.yaml`, `search.go` (shared with flows); the
-     application provider's `SetTraceEndpoint` (variables on a
-     Component's next **new** release). Found live: two identity
-     spoofs past T001's config (fixed: allow-list, `service.*` span
-     attributes dropped, unattributed spans filtered), and that a
-     stream's deletion is queued for an hourly job (now every minute,
-     `ZO_COMPACT_DATA_RETENTION_INTERVAL=60` on the logs store; removal
-     waits 90 s). RP-086. contract-guardian passed; its and
-     go-reviewer's findings fixed.
-   - **T006 done** (commit 908f447, `Closes #358`; tasks.md "Done as").
-     `requests.go`, `traffic.go`, `flows.go`, the Lua filter; the
-     `hubble` scrape job; `Installer.SetFlowSource`. All request series
-     from Serendip's own PromQL (plan decision 7 amended). RP-084,
-     RP-085; RP-054 extended. contract-guardian passed; its and
-     go-reviewer's findings fixed (allow-listed flow ends, tie order,
-     SQL bounds, one-to-one pairing, ...).
-   - **Live-test gotcha:** in Git Bash, pass `OBS_LIVE_KUBECONFIG` as a
-     Windows path (`cygpath -w`) and set
-     `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`, or MSYS rewrites
-     `/var/run/...` into a Windows path.
-   - **T005 done** (commit 76adcfe, `Closes #357`; tasks.md "Done as").
-     `serendip-agent bootstrap --cni cilium|default` (cilium default):
-     `INSTALL_K3S_EXEC` flags and a HelmChart written after the script
-     downloads; `agent/bootstrap/cilium-values.yaml` kept identical to
-     the provider's by `TestCiliumCopyMatchesProvider`.
-     `kind-t470-setup.sh` `CNI=cilium`. RP-083 (first boot needs the
-     internet; offline via static charts later; what uninstall leaves on
-     a real host not checked). go-reviewer's findings fixed,
-     contract-guardian passed.
-     - **Dev cluster `serendip-t025`** (Cilium, made by the script):
-       state `~/.serendip-t025-dev` (kubeconfig, `dev-up.env`: `:8089`,
-       `serendipd.db`), gateway on host port 30083. Nothing installed
-       on it yet (no OpenBao, no ThunderID). The user ran
-       `.\scripts\dev-up.ps1 -StateDir ~\.serendip-t025-dev -Cluster serendip-t025`
-       (2026-11-20 22:04): `serendipd` up on `:8089` (PID 37724 then),
-       console 200, log clean. **Sign-in there fails** ("The request is
-       invalid"): the gateway NodePort 30080 was mapped to host port
-       30083, so the issuer pointed at `serendip-t018`'s ThunderID. Fixed
-       in ca783b5 (`GatewayNodePort=30083` in its `dev-up.env`, its
-       `kind.yaml` maps 30083 to 30083), but the cluster must be
-       **recreated** (delete it, its `serendipd.db*` and
-       `openbao-init.json`; rerun the setup script, then dev-up). The user
-       chose to do that later, with `t025` stopped (T012 at the latest).
-       It and its `serendipd` are stopped.
-   - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
-   - T003 (`external`, a8ca27c). T002 left for T015: custom `*/read`
-     roles now include traces, as they include logs.
-- **Spec 025 test bed** (`~/.serendip-t025/`):
-  - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
-    kubeconfig `t001/kubeconfig`);
-  - `serendipd` (**spec-025 T009 build**, `bin/serendipd-t009.exe`) on
-    `127.0.0.1:8095`, store `t025.db`, API key in `keys.env`
-    (`t001/api.sh` wraps curl; `source <(sed 's/ /\n/g' t001/ids.txt |
-    grep =)` loads the IDs). Started 2026-11-23 ~10:50 as a background
-    run with SERENDIP_KUBECONFIG `t001/kubeconfig`, SERENDIP_DB_PATH
-    `t025.db`, SERENDIP_ADDR `127.0.0.1:8095`,
-    SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
-    SERENDIP_API_KEYS `<token from keys.env>:verifier` (the default
-    re-ensure interval now), logging to `serendipd.log`. It now passes the flow
-    source, so Fluent Bit keeps its flow input. Stop it with
-    `taskkill //PID <pid> //F` in Git Bash (the PID is in `netstat -ano`
-    for :8095);
-  - T009's evidence in `~/.serendip-t025/t009/` (`live.txt` route
-    answers, `live-traces.txt`, `live.db` store copy, the first run's
-    log);
-  - T008's evidence in `~/.serendip-t025/t008/` (logs, `audit-rows.txt`,
-    and `t018/` with the serendip-t018 run's log and its store copy);
-  - T006's evidence in `~/.serendip-t025/t006/` (`live.db` store copy,
-    `install.log`); a probe pod `t006-probe` (completed) in `default`;
-  - the observability package (re-applied by T007's live test, so the
-    logs store has `ZO_COMPACT_DATA_RETENTION_INTERVAL=60`), and the
-    tracing package installed by T007's installer (`TestLiveTracingInstall`;
-    the hand-made `serendip-otel-collector` ConfigMap deleted);
-  - T007's evidence in `~/.serendip-t025/t007/` (`q.sh` runs trace SQL
-    over a port-forward on 15080, `t007-o2auth` the store's credentials,
-    `live.db` a store copy, the spoof payload and results, logs);
-  - Project `t025`, Application `shop` with Components `srv` (10%
-    errors, 20 ms delay), `caller` and `spoofer`, all sending traces
-    (IDs in `t001/ids.txt`); the test image `t025-http:1` (`t001/img/`).
-  - The `hubble` scrape job is now the product's (T006's live install
-    applied `prometheus-values.yaml`).
-  - `bench-t470` was **stopped** (`docker stop`), not deleted, to free
-    memory. `serendip-t018` (and its `serendipd`) and `serendip-t025`
-    (and its `serendipd`) are **stopped** too (2026-11-21, for memory):
-    only `t025` runs. `serendip-t018` is still needed (T012: criterion
-    2; T008 started it briefly and stopped it again): `.\scripts\dev-up.ps1` restarts it.
-  - **After a laptop restart** Docker starts every kind node again
-    (restart policy `on-failure`), the stopped ones included, and no
-    `serendipd`. Stop all but `t025` (`docker stop
-    serendip-t018-control-plane serendip-t025-control-plane
-    bench-t470-control-plane`), then start the test bed's `serendipd` as
-    above. Done 2026-11-22 19:05; the registry caches stayed exited.
-- **T001's main findings** (`providers/networking/cilium/VERSIONS.md`,
-  `providers/observability/openchoreo/VERSIONS.md` spec 025 section):
-  - Cilium's Envoy retried every 5xx three times once L7 visibility was
-    on, so a 10% error rate showed as 0%; `http-retry-count: "0"` and
-    `http-normalize-path: "false"` now (RP-081).
-  - Hubble's HTTP labels come from `labelsContext`; OpenChoreo's
-    `metric=http` then works unchanged, without a p95.
-  - The flow export wrote 10 MB a minute until filtered by the
-    `component-uid` label, DNS denied, masked to workloads and
-    identities, and aggregated per minute: about 7.5 MiB a day.
-  - The tracing adapter can't scope by UIDs or names, so traces are read
-    from OpenObserve with SQL and the adapter is left off.
-  - Identity attestation through Serendip's collector config held
-    against a spoofing Component.
-  - K3s's `HelmChart` with `bootstrap: true` brings a CNI-less node
-    Ready with Cilium.
-- **Not done in T001:** Fluent Bit tailing the flow file live (moved
-  into T006's verify).
+### What spec 025 left behind
+
+- **Docs:** ADR 0023 (networking observed; **Cilium stays edge-1's
+  default**, `--cni default` for tight machines),
+  `docs/architecture/networking.md`, `operations.md` "Networking",
+  `bootstrap-agent.md` (`--cni`), `authorization.md` (traces data
+  action), build-vs-adopt, RP-081–RP-093.
+- **T013's numbers** (simulated T470,
+  `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`):
+  Cilium +443 MiB / +92 mcores idle, +461 MiB / +128 mcores at 10 req/s
+  (RP-089); tracing +145 to +180 MiB, ~730 MiB/day of disk (RP-088);
+  `serendipd` 33.2 MiB idle (criterion 12 PASS). The cilium run's
+  `harness.log` and `serendipd.1.log` (and kindnet's) are left
+  untracked, as earlier runs' logs were.
+- **Re-measure on the L470** (the user is buying a ThinkPad L470,
+  i5-7300U, 2c/4t, 8 GB to go to 16 GB, as the first real T470-class
+  node; label results "L470"; whether it counts for the reference gate
+  is the user's call, an ADR): Cilium's cost (if half a GiB is too much
+  at 8 GB, recommend `--cni default` there), `TracingRequirements`, and
+  what `k3s-uninstall.sh` leaves of Cilium (RP-083).
+- **Watch items:** RP-093 (Hubble series grow with pod pairs; count at
+  `small-3`), RP-092 (no per-pod OTLP rate limit), RP-091 (the node
+  guard keys on two namespace names).
+
+### Test beds (all stopped, for memory)
+
+- **`serendip-t025`** (Cilium dev cluster, state `~/.serendip-t025-dev`)
+  has the observability and tracing packages and T012's Components
+  (`otel-srv`, `otel-caller`, `spoofer` in `t012-a`). To use it: `docker
+  start serendip-t025-control-plane`, then `bash
+  ~/.serendip-t025-dev/t012/start.sh` as a background run. Tooling and
+  evidence in `~/.serendip-t025-dev/t012/`.
+- **`t025`** (scratch kind cluster, `~/.serendip-t025/`, kubeconfig
+  `t001/kubeconfig`, `serendipd` on `:8095` with `t025.db` and the API key
+  in `keys.env`): T001–T009 evidence. Can be deleted once nobody needs
+  it.
+- **`serendip-t018`** (kindnet, the `external` case): `docker start
+  serendip-t018-control-plane`, then `.\scripts\dev-up.ps1 -Restart
+  -NoBuild`.
+- `bench-t470` is deleted.
+- **After a laptop restart** Docker starts every kind node again
+  (restart policy `on-failure`) and no `serendipd`: stop what isn't
+  needed (`docker stop <cluster>-control-plane`).
+- **Gotchas kept:** `kind load` fails here (docker save + ctr import into
+  the node); in Git Bash pass `OBS_LIVE_KUBECONFIG` as a Windows path and
+  set `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`; long runs go from the
+  user's own terminal or with the keep-awake, because the memory reaper
+  kills shells (and a killed parent makes `helm` fail `0xc0000142`).
 
 **Spec 024 (alert rules and notification channels; epic #65): DONE
 2026-11-20.** PR #352 merged; T013 ticked (77f068b), #351 and #65 closed

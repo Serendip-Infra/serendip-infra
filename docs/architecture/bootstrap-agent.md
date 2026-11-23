@@ -131,6 +131,28 @@ in-place network swap is available. Verified end-to-end on a real
 uninstall script all behave as K3s's own documentation describes — no
 Serendip-specific surprises in either direction.
 
+**Spec 025: the CNI is chosen here** (ADR 0023, `networking.md`).
+`serendip-agent bootstrap --cni cilium|default`, `cilium` the default:
+- **`cilium`:** K3s gets `--flannel-backend=none
+  --disable-network-policy` (in `INSTALL_K3S_EXEC`), and after the
+  install script downloads, the agent writes a K3s `HelmChart`
+  (`bootstrap: true`, so its Job runs on the host network before any
+  CNI) to `/var/lib/rancher/k3s/server/manifests/serendip/cilium.yaml`:
+  chart `cilium` 1.20.5 from `helm.cilium.io` with
+  `agent/bootstrap/cilium-values.yaml`. K3s's own Helm controller
+  installs it; the agent has no Helm. The values are a copy of the
+  `cilium` provider's, kept identical by `TestCiliumCopyMatchesProvider`.
+- **`default`:** K3s's Flannel and its policy controller, as before.
+- A kernel older than Cilium's documented minimum is a warning, not a
+  refusal. `--dry-run` prints the flags and the manifest.
+- The node is NotReady until Cilium runs, and first boot fetches the
+  chart and images from the internet (about 7 minutes on a home link
+  with no cache), so `--timeout` defaults to 10 minutes with `cilium`
+  (5 with `default`; RP-083).
+- Changing the CNI later is a reinstall (`operations.md`,
+  "Networking"); what `k3s-uninstall.sh` leaves of Cilium on a real host
+  isn't checked yet.
+
 **Known gap, not an oversight**: no `core/audit` record exists for a
 bootstrap/uninstall action — `core/audit` is wired into `api/`
 middleware and `core/reconcile`'s engine (request-scoped, DB-backed),

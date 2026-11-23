@@ -113,6 +113,7 @@ purpose), **Closed** (fixed).
 | RP-090 | Request visibility's audit rows wait in memory until the store takes them, and a policy someone edited is deleted, then re-applied | Audit (durability); correctness (metrics gap) | Accepted | Spec 025 T014 |
 | RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
 | RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
+| RP-093 | Hubble's request metrics carry source and destination pods, so their series grow with pod pairs; not counted at the bench | Footprint (Prometheus memory, disk) | Watch | Spec 025 plan; T015 |
 
 ---
 
@@ -1325,6 +1326,10 @@ purpose), **Closed** (fixed).
   the logs store's search API, over the port-forward, with the admin
   credentials, scoped by Deployment names Serendip reads from the
   cluster (never caller text).
+- **Spec 025 T007:** traces too, scoped by the identity columns the
+  collector attests (RP-086). The tracing module's adapter is off, so it
+  adds no unauthenticated endpoint; its collector's OTLP ports take spans
+  from any pod (RP-092).
 
 ## RP-055 — OpenObserve's log search slows as stored logs grow
 
@@ -2403,3 +2408,25 @@ The text below is the T013 record.
 - **Revisit:** a `probabilistic_sampler` or per-pod rate limit in the
   collector; a separate traces store or quota when Projects belong to
   different people (multi-tenant).
+
+## RP-093 — Hubble's request metrics grow with pod pairs
+
+- **Kind:** footprint (Prometheus memory and disk). **Status:** Watch,
+  2026-11-23. **Found:** spec 025 plan (Risks); recorded at T015.
+- **What:** Hubble's `httpV2` metrics are labelled by
+  `labelsContext=source_namespace,source_pod,destination_namespace,destination_pod`,
+  the labels the reads join to `kube_pod_labels` on (plan decision 4).
+  Each pair of talking pods gets its own series, times method, status
+  code and, for the latency histogram, every bucket. A rollout adds a
+  new set for the new pods while the old ones age out of the head.
+- **Measured:** not the series count. T013's observability group, which
+  holds Prometheus, grew 17–31 MiB with two Components talking at 10
+  requests a second (`profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`);
+  the scrape job already keeps only the request, duration, drop and
+  flow series (plan decision 7).
+- **Why accepted:** at edge-1's scale (a handful of Components, one or
+  two pods each) the pairs are few.
+- **Revisit:** at `small-3`, or when an Application has more than a few
+  dozen talking pods: count `hubble_http_*` head series, and consider
+  workload instead of pod labels (the reads would join by the Deployment
+  name, as flows do) or fewer histogram buckets (RP-085).

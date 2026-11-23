@@ -189,7 +189,7 @@ describe("traces on the observability tab", () => {
     goTo(tab);
     mockFetch(base, {}, reader);
     render(<App />);
-    expect(await screen.findByText(/reading them needs its own permission \(the Trace Reader role\)/)).toBeTruthy();
+    expect(await screen.findByText(/reading them needs its own permission \(Log Reader, Contributor or Owner\)/)).toBeTruthy();
     expect(calls.some((u) => u.includes("/traces"))).toBe(false);
   });
 });

@@ -313,7 +313,7 @@ function TraceList({ id, envName, range, allowed }: { id: string; envName: strin
         )}
       </div>
       {allowed === false ? (
-        <p className="state-body">Traces can hold sensitive data, so reading them needs its own permission (the Trace Reader role), which your roles here don't include.</p>
+        <p className="state-body">Traces can hold sensitive data, so reading them needs its own permission (Log Reader, Contributor or Owner), which your roles here don't include.</p>
       ) : allowed === undefined ? (
         <LoadingState what="your access" />
       ) : why ? (
