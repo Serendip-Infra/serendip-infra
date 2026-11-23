@@ -96,6 +96,20 @@ const (
 	ciliumNodes   = "/apis/cilium.io/v2/ciliumnodes"
 )
 
+// Detect reports whether the cluster's network layer is Cilium: its
+// agent's DaemonSet is in kube-system. cmd/serendipd calls it to choose
+// the networking provider; an error means it couldn't tell.
+func Detect(ctx context.Context, client Client) (bool, error) {
+	_, err := client.GetRaw(ctx, daemonSetPath)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, kubernetes.ErrNotFound):
+		return false, nil
+	}
+	return false, fmt.Errorf("look for the cilium DaemonSet: %w", err)
+}
+
 // Facts reports Cilium's version, whether policies hold, whether flows and
 // request metrics can be read, and the pod ranges. What could be read is
 // returned with the error of what couldn't, and Unavailable names it.

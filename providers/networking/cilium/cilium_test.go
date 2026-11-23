@@ -372,3 +372,23 @@ func TestPinnedMatchValues(t *testing.T) {
 		t.Error("values.yaml differs from testdata/t001-values.yaml")
 	}
 }
+
+func TestDetect(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+	for _, tc := range []struct {
+		name    string
+		bodies  map[string]any
+		want    bool
+		wantErr bool
+	}{
+		{"cilium", map[string]any{daemonSetPath: `{}`}, true, false},
+		{"not cilium", map[string]any{}, false, false},
+		{"can't tell", map[string]any{daemonSetPath: boom}, false, true},
+	} {
+		got, err := Detect(ctx, newFake(tc.bodies))
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("%s: Detect = %v, %v; want %v, error %v", tc.name, got, err, tc.want, tc.wantErr)
+		}
+	}
+}

@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T007 done, T008 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T008 done, T009 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T007 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T008 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,10 +31,25 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#359 closed (board Done); #66 says
-   "T001–T007 done; T008 next". T008–T015 are #360–#367. Before the spec
+   then check the board. #353–#360 closed (board Done); #66 says
+   "T001–T008 done; T009 next". T009–T015 are #361–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T008** (`serendipd` wiring), then T009–T015 in order.
+3. **T009** (API), then T010–T015 in order.
+   - **T008 done** (`Closes #360`; tasks.md "Done as").
+     `cmd/serendipd/networking.go` (detection, a facts cache on the
+     re-ensure interval, the visibility pass with an audit row when it
+     writes, and the flow source, request metrics and pod ranges handed
+     on); the `openchoreo-tracing` catalogue entry (not installable
+     until T013); the tracing and observability installer wrappers (trace
+     endpoint; removing observability takes the collector);
+     `sqlite.RecordExternalChange`; `cilium.Detect`. RP-076 updated.
+     Live on `t025` (cilium) and `serendip-t018` (kindnet). Reviews
+     passed, findings fixed.
+   - **For T009:** `kubeWiring.network.Facts()` is the cached
+     `NetworkFacts` for `GET /v1/networking` (`ok` false before the first
+     read); `kubeWiring.tracing` is the lazy `TracingProvider`. The
+     observability provider's `FlowReader`/`TrafficReader` are still
+     reached through `lazyObservability`, which doesn't forward them yet.
    - **T007 done** (`Closes #359`; tasks.md "Done as"). `tracing.go`
      (`TracingInstaller`, `OTLPEndpoint`, `TracingFingerprint`),
      `tracing_read.go` (`Tracing`, a `reconcile.TracingProvider`),
@@ -47,17 +62,6 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      `ZO_COMPACT_DATA_RETENTION_INTERVAL=60` on the logs store; removal
      waits 90 s). RP-086. contract-guardian passed; its and
      go-reviewer's findings fixed.
-   - **Carried to T008 (from T007):** register `NewTracing` and
-     `NewTracingInstaller` (catalogue entry, requirements nil until
-     T013, `Removal` naming the traces' deletion); pass
-     `openchoreo.OTLPEndpoint` to the application provider's
-     `SetTraceEndpoint` **while the tracing ProviderInstance exists**
-     (read from the store before the first pass), not while it reads
-     Ready, or a settling collector rolls every traced Component twice;
-     the package job must allow the 90 s removal wait; the
-     observability package's removal deletes the collector too (order
-     or refuse it). The observability fingerprint changed (logs store
-     env), so an installed package re-applies once.
    - **To T009 (decided 2026-11-23, plan decision 12):** a trace's
      answer merges the spans of every Deployment in its Environment the
      caller can read traces of, and says `partial: true` for the rest;
@@ -69,11 +73,6 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      RP-085; RP-054 extended. contract-guardian passed; its and
      go-reviewer's findings fixed (allow-listed flow ends, tie order,
      SQL bounds, one-to-one pairing, ...).
-   - **Carried to T008:** wire `WithRequestMetrics` (from the cached
-     `NetworkFacts.RequestMetrics` and its reason) and
-     `Installer.SetFlowSource` (from the cilium provider's `FlowSource`).
-     A test that `obsplane.FlowFormat` equals `cilium.FlowFormat`
-     (contract-guardian).
    - **Carried to T009:** gate `/flows` on `NetworkFacts.Flows` ("not
      collected", not an empty list); `/traffic` maps
      `ErrRequestsUnavailable` to a clear answer, not a 500.
@@ -106,29 +105,27 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
        chose to do that later, with `t025` stopped (T012 at the latest).
        It and its `serendipd` are stopped.
    - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
-   - **Carried to T008 (in its Do/Verify):** run the pass on the
-     re-ensure interval, adapting `HTTPWorkloads` to `cilium.Target`.
-     When a pass writes, record an audit event naming `Report.Applied`
-     and `Report.Deleted`.
-   - T003 (`external`, a8ca27c) exports `New(Reader)` for T008. T002 left for T009: the API must answer clearly (not a 500)
+   - T003 (`external`, a8ca27c). T002 left for T009: the API must answer clearly (not a 500)
    when the observability provider lacks `FlowReader`/`TrafficReader`,
    and clear a flow's unreadable end; for T015: custom `*/read` roles now
    include traces, as they include logs.
 - **Spec 025 test bed** (`~/.serendip-t025/`):
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
-  - `serendipd` (**spec-025 build at 908f447**, so without T007) on `127.0.0.1:8095`,
-    store `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
-    Restarted 2026-11-23 06:55 as a background run of
-    `bin/serendipd.exe` with SERENDIP_KUBECONFIG `t001/kubeconfig`,
-    SERENDIP_DB_PATH `t025.db`, SERENDIP_ADDR `127.0.0.1:8095`,
+  - `serendipd` (**spec-025 T008 build**, `bin/serendipd-t008.exe`) on
+    `127.0.0.1:8095`, store `t025.db`, API key in `keys.env`
+    (`t001/api.sh` wraps curl). Started 2026-11-23 10:03 as a background
+    run with SERENDIP_KUBECONFIG `t001/kubeconfig`, SERENDIP_DB_PATH
+    `t025.db`, SERENDIP_ADDR `127.0.0.1:8095`,
     SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
-    SERENDIP_API_KEYS `<token from keys.env>:verifier`, logging to
-    `serendipd.log`. It was stopped for T006's live install (the user ran
-    the taskkill; the session's was refused). Until T008 wires the flow
-    source, its package check reverts Fluent Bit to the config without
-    the flow input; stop it again for a live flow check
-    (`taskkill //PID <pid> //F` in Git Bash);
+    SERENDIP_API_KEYS `<token from keys.env>:verifier`, and
+    **SERENDIP_REENSURE_INTERVAL `1m`** (for T008's live check; drop it
+    for measurements), logging to `serendipd.log`. It now passes the flow
+    source, so Fluent Bit keeps its flow input. Stop it with
+    `taskkill //PID <pid> //F` in Git Bash (the PID is in `netstat -ano`
+    for :8095);
+  - T008's evidence in `~/.serendip-t025/t008/` (logs, `audit-rows.txt`,
+    and `t018/` with the serendip-t018 run's log and its store copy);
   - T006's evidence in `~/.serendip-t025/t006/` (`live.db` store copy,
     `install.log`); a probe pod `t006-probe` (completed) in `default`;
   - the observability package (re-applied by T007's live test, so the
@@ -146,8 +143,8 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
   - `bench-t470` was **stopped** (`docker stop`), not deleted, to free
     memory. `serendip-t018` (and its `serendipd`) and `serendip-t025`
     (and its `serendipd`) are **stopped** too (2026-11-21, for memory):
-    only `t025` runs. `serendip-t018` is still needed (T008: CNI reported
-    on both; T012: criterion 2): `.\scripts\dev-up.ps1` restarts it.
+    only `t025` runs. `serendip-t018` is still needed (T012: criterion
+    2; T008 started it briefly and stopped it again): `.\scripts\dev-up.ps1` restarts it.
   - **After a laptop restart** Docker starts every kind node again
     (restart policy `on-failure`), the stopped ones included, and no
     `serendipd`. Stop all but `t025` (`docker stop

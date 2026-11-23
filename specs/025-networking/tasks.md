@@ -348,7 +348,58 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   a spoofing span not under the claimed Component, removal leaves logs
   working.
 
-## T008: `serendipd` wiring
+## T008: `serendipd` wiring ✅
+
+**Done as** (2026-11-23):
+- **Networking loop** (`cmd/serendipd/networking.go`): `cilium.Detect`
+  (the agent's DaemonSet; a new provider function) chooses `cilium` or
+  `external`, retried with the setup back-off until it can tell, then
+  registered as capability `networking` with its readiness. One pass on
+  the re-ensure interval (sooner when the application platform comes
+  up): the visibility pass, then the flow source, then `Facts`, cached
+  and served by `networkState.Facts` (T009's `GET /v1/networking`). Each
+  step has its own timeout. Errors are logged only when they change.
+  The CNI is detected once per process, by design: plan decision 1 has
+  it chosen at cluster creation.
+- **Visibility pass:** `HTTPWorkloads` adapted to `cilium.Target`. A pass
+  that applies or deletes writes one audit row (`NetworkVisibility` /
+  `request-visibility`, after `{"applied":…, "deleted":…}`) as
+  `system:reconciler` via the new `sqlite.RecordExternalChange` (core's
+  audit row for a change made outside the store, constitution 8). A row
+  that fails to write is kept and retried the next pass.
+- **Cooperation values:** `Installer.SetFlowSource` from the cilium
+  provider's `FlowSource` (zero for `external`, and after 2 failed reads
+  with none known). The observability package's install and check wait
+  for it, so the log collector isn't applied twice at start.
+  `WithRequestMetrics` from the cached facts (the `requests:` reason).
+  The notifier's ranges get `PodRanges` merged in (RP-076 updated).
+  `providers/kubernetes/ranges.go` was left unchanged: the merge sits in
+  cmd. A test checks that `obsplane.FlowFormat` equals `cilium.FlowFormat`.
+- **Tracing:** catalogue entry `openchoreo-tracing` (capability
+  `tracing`, Requirements nil until T013, so it's refused; its `Removal`
+  names the traces' deletion and the one restart). It has a lazy
+  `TracingProvider` handle (for T009). The trace endpoint is set from
+  the store at start when a `tracing` ProviderInstance exists, and then
+  by the package's Install. It's cleared after a successful Uninstall.
+  Removing the observability package first removes the trace collector
+  and holds tracing's installs until observability installs again (its
+  `Removal` says so). The 30-minute package job covers the 90 s wait.
+- **Live:** on `t025`, `networking (cilium): cilium 1.20.5; network
+  policies enforced; connection records yes; request metrics yes`. On
+  `serendip-t018` (started for the check with a store copy, then
+  stopped), `networking (external): kindnet v20250512-df8de77b; network
+  policies enforced (kindnet's own policy controller); connection
+  records no; request metrics no`. On `t025`, with a 1-minute interval,
+  srv's deleted L7 policy was re-created at start and again by an
+  interval pass. That left exactly two audit rows naming it, and the
+  no-write passes left none. Fluent Bit kept its flow input and
+  observability read Ready with no second apply. Evidence is in
+  `~/.serendip-t025/t008/`.
+- **Reviews:** contract-guardian passed. Its findings (a flow source that
+  is never readable, the tracing ID) and go-reviewer's are fixed:
+  per-step timeouts, audit retry, change-only logs, the flag and
+  endpoint cleared only after success, the loop waited for before the
+  store closes, and the startup read bounded.
 
 - **Do:** detect the CNI and register the provider; serve the cached
   facts; pass `FlowSource` and the OTLP endpoint between providers; the

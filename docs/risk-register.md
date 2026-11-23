@@ -96,7 +96,7 @@ purpose), **Closed** (fixed).
 | RP-073 | A `logMatch` threshold is capped at 999 | Correctness (limit) | Accepted | Spec 024 plan |
 | RP-074 | The heartbeat proves Serendip can alert, not that a message reached a person; it can't send headers, so Gatus needs a relay | Operability | Accepted | Spec 024 plan; T013 |
 | RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
-| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
+| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted (Cilium's pool ranges merged, spec 025 T008) | Spec 024 T006 |
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
 | RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
@@ -1826,7 +1826,12 @@ The text below is the T013 record.
   read set; a partial read adds what it found to the last ranges.
 - **Residual:** a channel allowed private destinations could reach a pod
   address outside the nodes' `podCIDRs` while that's so.
-- **Revisit:** with spec 025 (Cilium): read its IPAM pool ranges too.
+- **Spec 025 T008:** the networking capability's `PodRanges` (Cilium's
+  cluster-pool ranges when IPAM isn't `kubernetes`) are merged into every
+  read. Until the network layer's first read (seconds after start), only
+  the nodes' and Service ranges are known; the check still fails closed.
+  A CNI Serendip can't ask (`external`) still leaves the residual above.
+- **Revisit:** an `external` CNI with its own IPAM, if one is supported.
 
 ## RP-077 — Alert condition trade-offs found in T006
 

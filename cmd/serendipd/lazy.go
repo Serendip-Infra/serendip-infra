@@ -442,3 +442,35 @@ func (l *lazyObservability) Metrics(ctx context.Context, t reconcile.LogTarget, 
 	}
 	return p.Metrics(ctx, t, q)
 }
+
+// lazyTracing is the tracing capability (spec 025), set while the tracing
+// package reports Ready and cleared when it stops.
+type lazyTracing struct {
+	lazy[reconcile.TracingProvider]
+}
+
+var _ reconcile.TracingProvider = (*lazyTracing)(nil)
+
+func (l *lazyTracing) SearchTraces(ctx context.Context, targets []reconcile.LogTarget, q reconcile.TraceQuery) (reconcile.TracePage, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.TracePage{}, err
+	}
+	return p.SearchTraces(ctx, targets, q)
+}
+
+func (l *lazyTracing) Trace(ctx context.Context, t reconcile.LogTarget, traceID string) (reconcile.Trace, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.Trace{}, err
+	}
+	return p.Trace(ctx, t, traceID)
+}
+
+func (l *lazyTracing) EvaluateCondition(ctx context.Context, t reconcile.LogTarget, c resource.AlertCondition, window time.Duration) (reconcile.ConditionValue, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.ConditionValue{}, err
+	}
+	return p.EvaluateCondition(ctx, t, c, window)
+}

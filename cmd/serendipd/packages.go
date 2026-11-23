@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"sync/atomic"
 
 	"github.com/serendip-infra/serendip-infra/core/event"
 	"github.com/serendip-infra/serendip-infra/core/provider"
@@ -18,6 +19,7 @@ import (
 const (
 	capBuild         = "build"
 	capObservability = "observability"
+	capTracing       = "tracing"
 )
 
 // buildsRemoval is what removing the builds package loses (specs/022-builds
@@ -32,7 +34,14 @@ const buildsRemoval = "Build history stays, but run logs and the stored images b
 const observabilityRemoval = "All stored logs and metrics history are deleted. Recent logs and events on the Runtime tab keep working. " +
 	"Finished builds' logs can no longer be read once their pods are gone. " +
 	"Alert rules stop being evaluated and show as inactive, open Alerts are resolved as \"package removed\", " +
-	"and the built-in disk rule goes with the package. Notification channels stay."
+	"and the built-in disk rule goes with the package. Notification channels stay. " +
+	"If the tracing package is installed, its trace collector is removed too and its traces are deleted with the logs; " +
+	"it's set up again once this package is back."
+
+// tracingRemoval is what removing the tracing package loses
+// (specs/025-networking plan decision 10, RP-086).
+const tracingRemoval = "All stored traces are deleted, which takes about a minute and a half. Logs and metrics stay. " +
+	"Each Component sending traces restarts once, without the trace settings."
 
 // observabilityDiskRule is the observability package's built-in rule
 // (specs/024-alerts plan decision 4): stored data at 85% of its disk
@@ -47,12 +56,14 @@ var observabilityDiskRule = reconcile.BuiltInAlertRule{
 }
 
 // packageCatalogue is the optional packages this build offers (specs/020
-// plan decision 5). builds installs the workflow plane (spec 022) and
-// observability the observability plane (spec 023); either is nil when
-// there's no cluster to install it on. The catalogue refuses any package
-// without measured Requirements: builds' were measured in spec 022's
-// T013, and observability's in spec 023's T012.
-func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcile.Catalogue {
+// plan decision 5). builds installs the workflow plane (spec 022),
+// observability the observability plane (spec 023) and tracing the trace
+// collector (spec 025); each is nil when there's no cluster to install it
+// on. The catalogue refuses any package without measured Requirements:
+// builds' were measured in spec 022's T013, and observability's in spec
+// 023's T012. Tracing's are measured in spec 025's T013, so until then it
+// can't be installed.
+func packageCatalogue(builds, observability, tracing reconcile.PackageInstaller) reconcile.Catalogue {
 	return reconcile.Catalogue{
 		"openchoreo-workflow-plane": {
 			Provider: "openchoreo-workflow-plane", Capability: capBuild,
@@ -69,7 +80,89 @@ func packageCatalogue(builds, observability reconcile.PackageInstaller) reconcil
 			Removal:      observabilityRemoval,
 			AlertRules:   []reconcile.BuiltInAlertRule{observabilityDiskRule},
 		},
+		"openchoreo-tracing": {
+			Provider: "openchoreo-tracing", Capability: capTracing,
+			Description: "Traces Components send, kept in the observability package's store; needs that package",
+			Installer:   tracing,
+			// Measured in spec 025's T013.
+			Requirements: nil,
+			Removal:      tracingRemoval,
+		},
 	}
+}
+
+// observabilityPackage is the observability package's installer, with
+// what cmd/serendipd adds around it (spec 025 T008):
+//   - an install or check waits for the network layer's flow source, so
+//     the log collector isn't applied without it and again with it;
+//   - a removal removes the trace collector first, and holds the tracing
+//     package's installs off until this package is installed again: the
+//     collector writes to this package's store.
+type observabilityPackage struct {
+	*obsplane.Installer
+	flowSource func(context.Context) error
+	// removing is shared with tracingPackage.
+	removing *atomic.Bool
+	// removeTracing removes the trace collector; nil without one.
+	removeTracing func(ctx context.Context, instanceID string) error
+}
+
+func (p *observabilityPackage) Install(ctx context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
+	if err := p.flowSource(ctx); err != nil {
+		return reconcile.PackageState{}, err
+	}
+	st, err := p.Installer.Install(ctx, inst)
+	if err == nil {
+		// Installed again, or on its way: tracing may go ahead, since its
+		// own prerequisite waits for the store. One package's install and
+		// removal never run at once (core's package jobs). The flag is in
+		// memory: after a restart mid-removal it's set again only when the
+		// removal is retried.
+		p.removing.Store(false)
+	}
+	return st, err
+}
+
+func (p *observabilityPackage) Uninstall(ctx context.Context, instanceID string) error {
+	p.removing.Store(true)
+	if p.removeTracing != nil {
+		// The tracing package's own instance (if any) stays, so there's
+		// no ID of its to give; its installer doesn't use one.
+		if err := p.removeTracing(ctx, ""); err != nil {
+			return err
+		}
+	}
+	return p.Installer.Uninstall(ctx, instanceID)
+}
+
+// tracingPackage is the tracing package's installer, with the trace
+// endpoint the application provider gives workloads set while its
+// ProviderInstance exists (plan decision 11 as amended in T007): from its
+// first install or check, and cleared when it's removed. Not while it
+// reads Ready, so a settling collector doesn't roll every traced Component
+// twice.
+type tracingPackage struct {
+	*obsplane.TracingInstaller
+	setEndpoint func(string)
+	// obsRemoving is set while the observability package is being
+	// removed.
+	obsRemoving *atomic.Bool
+}
+
+func (p *tracingPackage) Install(ctx context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
+	p.setEndpoint(obsplane.OTLPEndpoint)
+	if p.obsRemoving.Load() {
+		return reconcile.PackageState{Message: "waiting for the observability package: it's being removed, and traces are kept in its store"}, nil
+	}
+	return p.TracingInstaller.Install(ctx, inst)
+}
+
+func (p *tracingPackage) Uninstall(ctx context.Context, instanceID string) error {
+	if err := p.TracingInstaller.Uninstall(ctx, instanceID); err != nil {
+		return err
+	}
+	p.setEndpoint("")
+	return nil
 }
 
 // onReadiness is called with each capability's readiness as packages
@@ -115,6 +208,11 @@ func packageHandle[T any](registry *provider.Registry, capability, name string, 
 			log.Printf("serendipd: kubernetes: %s provider (%s) active", capability, name)
 		}
 	}
+}
+
+// tracingHandle is the tracing package's handle (spec 025).
+func tracingHandle(registry *provider.Registry, tr *lazyTracing, p reconcile.TracingProvider) func(ready bool) {
+	return packageHandle(registry, capTracing, "openchoreo tracing", &tr.lazy, p)
 }
 
 // buildHandle is the build package's handle (spec 022).

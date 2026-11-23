@@ -200,6 +200,8 @@ func run() error {
 		// Alerts (spec 024): the evaluator and delivery loop write the
 		// store, so they stop with ctx before it closes.
 		alertsDone = alerts.run(ctx)
+		// The networking loop writes audit rows, so it's waited for too.
+		alertsDone = bothDone(alertsDone, kube.network.done)
 		// Setup goroutines touch only the cluster API and the registry,
 		// never the store, so shutdown doesn't wait for them.
 		kube.plan.start(ctx, newTracker(registry, setupBackoff, capStorage, capSecrets, capGateway, capAppPlatform, capIdentity))
@@ -322,4 +324,11 @@ func waitAlerts(done <-chan struct{}) {
 	case <-time.After(30 * time.Second):
 		log.Print("serendipd: alert loops still running after 30 s; closing anyway")
 	}
+}
+
+// bothDone closes once a and b have.
+func bothDone(a, b <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
+	go func() { <-a; <-b; close(done) }()
+	return done
 }

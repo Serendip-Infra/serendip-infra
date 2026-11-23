@@ -30,7 +30,7 @@ func TestPackagesReportReadiness(t *testing.T) {
 	}
 	bus := event.NewInProcessBus()
 	registry := provider.NewRegistry()
-	clean := registerPackages(db, bus, reconcile.NewEngine(bus, time.Minute, time.Minute), registry, packageCatalogue(nil, nil), nil)
+	clean := registerPackages(db, bus, reconcile.NewEngine(bus, time.Minute, time.Minute), registry, packageCatalogue(nil, nil, nil), nil)
 	if clean == nil {
 		t.Fatal("no clean-up")
 	}
@@ -45,7 +45,7 @@ func TestPackagesReportReadiness(t *testing.T) {
 // The builds package carries its measured cost (T013), so it can be
 // installed, and the catalogue states the same numbers the package does.
 func TestBuildsPackageInstallableWithMeasuredCost(t *testing.T) {
-	c := packageCatalogue(installerStub{}, nil)
+	c := packageCatalogue(installerStub{}, nil, nil)
 	p := c["openchoreo-workflow-plane"]
 	if p.Installer == nil || p.Removal == "" || p.Capability != capBuild {
 		t.Fatalf("builds entry = %+v", p)
@@ -93,7 +93,7 @@ func TestBuildHandleFollowsReadiness(t *testing.T) {
 // its disk use, so it can be installed, and the catalogue states the same
 // numbers the package does.
 func TestObservabilityPackageInstallableWithMeasuredCost(t *testing.T) {
-	c := packageCatalogue(nil, installerStub{})
+	c := packageCatalogue(nil, installerStub{}, nil)
 	p := c["openchoreo-observability-plane"]
 	if p.Installer == nil || p.Capability != capObservability || p.Removal != observabilityRemoval {
 		t.Fatalf("observability entry = %+v", p)
@@ -123,7 +123,7 @@ func TestObservabilityInstallReachesHandle(t *testing.T) {
 	bus := event.NewInProcessBus()
 	registry := provider.NewRegistry()
 	engine := reconcile.NewEngine(bus, time.Minute, time.Minute)
-	c := packageCatalogue(nil, readyInstaller{})
+	c := packageCatalogue(nil, readyInstaller{}, nil)
 	obs := &lazyObservability{}
 	want := &observabilityStub{}
 	registerPackages(db, bus, engine, registry, c, onReadiness{capObservability: observabilityHandle(registry, obs, want)})
