@@ -71,6 +71,9 @@ func searchStore(ctx context.Context, client *kubernetes.Client, hc *http.Client
 	}
 	defer resp.Body.Close()
 	answer := io.LimitReader(resp.Body, maxSearchAnswer)
+	if resp.StatusCode == http.StatusUnauthorized {
+		forgetStoreAuth(client)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var e struct {
 			Code    int    `json:"code"`

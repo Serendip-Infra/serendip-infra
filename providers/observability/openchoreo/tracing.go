@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -100,8 +101,10 @@ func TracingFingerprint() string {
 }
 
 // TracingInstaller installs and removes the tracing package. It's a
-// reconcile.PackageInstaller; core runs one package job at a time, so
-// Install and Uninstall never run at once.
+// reconcile.PackageInstaller. Core runs one job at a time per package, so
+// its own Install and Uninstall never overlap; the observability
+// package's removal also calls RemoveCollector, and cmd/serendipd
+// serializes that with this package's jobs.
 type TracingInstaller struct {
 	run    helm.Runner
 	client *kubernetes.Client
@@ -316,6 +319,16 @@ func (i *TracingInstaller) streamDeleting(ctx context.Context) (bool, error) {
 // treats "already gone" as done, and a store that's gone (the
 // observability package removed first) took the traces with it.
 func (i *TracingInstaller) Uninstall(ctx context.Context, instanceID string) error {
+	if err := i.RemoveCollector(ctx); err != nil {
+		return err
+	}
+	return i.deleteStream(ctx)
+}
+
+// RemoveCollector removes the module and its config, leaving the stored
+// traces: for the observability package's removal, which takes the whole
+// store, so a store that's down can't hold it up.
+func (i *TracingInstaller) RemoveCollector(ctx context.Context) error {
 	if _, err := i.run(ctx, "uninstall", tracingRelease, "--namespace", PlaneNamespace,
 		"--ignore-not-found", "--wait", "--timeout", helmUninstallTimeout); err != nil {
 		return fmt.Errorf("openchoreo tracing: uninstall the trace collector: %w", err)
@@ -323,7 +336,7 @@ func (i *TracingInstaller) Uninstall(ctx context.Context, instanceID string) err
 	if err := deleteIfExists(ctx, i.client, configMapsPath+"/"+collectorConfigName); err != nil {
 		return fmt.Errorf("openchoreo tracing: %w", err)
 	}
-	return i.deleteStream(ctx)
+	return nil
 }
 
 // streamDeleteWait is how long a stream's deletion may take to run: the
@@ -369,7 +382,11 @@ func (i *TracingInstaller) deleteStream(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("openchoreo tracing: delete the stored traces: %w", err)
 	}
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		forgetStoreAuth(i.client)
+	}
 	switch resp.StatusCode {
 	case http.StatusNotFound:
 		// Nothing stored, or deleted by an earlier run (RP-086: a restart

@@ -115,6 +115,9 @@ type tracing025 struct {
 	calls [][]string // Deployment IDs asked, per Trace call
 	lists [][]string
 	err   error // answered by every read when set
+	// maxSpans, when set, cuts each answer to that many spans in start
+	// order, marking it Truncated.
+	maxSpans int
 }
 
 func (f *tracing025) SearchTraces(_ context.Context, targets []reconcile.LogTarget, _ reconcile.TraceQuery) (reconcile.TracePage, error) {
@@ -148,6 +151,11 @@ func (f *tracing025) Trace(_ context.Context, targets []reconcile.LogTarget, id 
 	}
 	if len(out.Spans) == 0 {
 		return reconcile.Trace{}, reconcile.ErrTraceNotFound
+	}
+	if f.maxSpans > 0 && len(out.Spans) > f.maxSpans {
+		out.Spans = slices.Clone(out.Spans)
+		slices.SortFunc(out.Spans, func(a, b reconcile.Span) int { return a.Start.Compare(b.Start) })
+		out.Spans, out.Truncated = out.Spans[:f.maxSpans], true
 	}
 	return out, nil
 }
@@ -410,6 +418,24 @@ func TestSpec025Criterion9_Traces(t *testing.T) {
 	// are readable (criterion 8: T012).
 	trace("tok-logreader", w.apiDev, own, http.StatusNotFound)
 	trace("tok-owner", w.apiDev, own, http.StatusNotFound)
+
+	// A truncated trace: the cut dropped api's span, so api's own are
+	// asked for alone (T014). One with none of api's is still 404.
+	big, webOnly := strings.Repeat("4", 32), strings.Repeat("5", 32)
+	w.tracing.spans[big] = []reconcile.Span{span("w1", w.web(), 0), span("w2", w.web(), 1), span("a1", w.api(), 2)}
+	w.tracing.spans[webOnly] = []reconcile.Span{span("w1", w.web(), 0), span("w2", w.web(), 1), span("w3", w.web(), 2)}
+	w.tracing.maxSpans = 2
+	calls = len(w.tracing.calls)
+	if got := trace("tok-logreader", w.apiDev, big, http.StatusOK); len(got.Spans) != 2 {
+		t.Errorf("truncated trace with api's span: %+v", got)
+	}
+	if n := len(w.tracing.calls) - calls; n != 2 || !slices.Equal(w.tracing.calls[calls+1], []string{w.apiDev}) {
+		t.Errorf("truncated trace: %d calls, %v", n, w.tracing.calls[calls:])
+	}
+	trace("tok-logreader", w.apiDev, webOnly, http.StatusNotFound)
+	trace("tok-owner", w.apiDev, webOnly, http.StatusNotFound)
+	trace("tok-logreader", w.webDev, webOnly, http.StatusOK)
+	w.tracing.maxSpans = 0
 
 	// Traces of web's Deployment only: api's spans are hidden too.
 	one := map[string]any{"type": "person", "id": "sub-onetrace"}

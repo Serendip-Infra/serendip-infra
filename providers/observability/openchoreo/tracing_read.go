@@ -62,11 +62,14 @@ func NewTracing(client *kubernetes.Client) *Tracing {
 	return &Tracing{client: client, scopes: newScopes(client, time.Now), now: time.Now}
 }
 
-// scopeWhere is the SQL condition selecting s's spans. checkUIDs has
-// passed, so no value holds a quote.
-func scopeWhere(s componentScope) string {
+// scopeWhere is the SQL condition selecting s's spans. It checks the
+// UIDs itself, so no caller can put an unchecked one in the SQL.
+func scopeWhere(s componentScope) (string, error) {
+	if err := checkUIDs(s); err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("(%s = '%s' AND %s = '%s' AND %s = '%s')",
-		colComponentUID, s.ComponentUID, colEnvironmentUID, s.EnvironmentUID, colProjectUID, s.ProjectUID)
+		colComponentUID, s.ComponentUID, colEnvironmentUID, s.EnvironmentUID, colProjectUID, s.ProjectUID), nil
 }
 
 // noTraces: nothing is stored to read, yet or any more (a removal's
@@ -191,7 +194,11 @@ func (tr *Tracing) SearchTraces(ctx context.Context, targets []reconcile.LogTarg
 	}
 	var where []string
 	for _, s := range scopes {
-		where = append(where, scopeWhere(s))
+		w, err := scopeWhere(s)
+		if err != nil {
+			return page, err
+		}
+		where = append(where, w)
 	}
 	ask := limit + cur.Seen + 1
 	if ask > maxTraceAnswer {
@@ -397,7 +404,11 @@ func (tr *Tracing) Trace(ctx context.Context, targets []reconcile.LogTarget, tra
 		}
 		if len(s) == 1 {
 			in = append(in, scoped{s[0], t})
-			wheres = append(wheres, scopeWhere(s[0]))
+			w, err := scopeWhere(s[0])
+			if err != nil {
+				return reconcile.Trace{}, err
+			}
+			wheres = append(wheres, w)
 		}
 	}
 	if len(in) == 0 {
@@ -477,7 +488,11 @@ func (tr *Tracing) EvaluateCondition(ctx context.Context, t reconcile.LogTarget,
 	var rows []struct {
 		N int `json:"n"`
 	}
-	sql := fmt.Sprintf(`SELECT count(DISTINCT trace_id) AS n FROM "%s" WHERE %s AND %s`, tracesStream, scopeWhere(scopes[0]), failedSpan)
+	w, err := scopeWhere(scopes[0])
+	if err != nil {
+		return reconcile.ConditionValue{}, err
+	}
+	sql := fmt.Sprintf(`SELECT count(DISTINCT trace_id) AS n FROM "%s" WHERE %s AND %s`, tracesStream, w, failedSpan)
 	err = tr.search(ctx, sql, now.Add(-window), now, 1, &rows)
 	if noTraces(err) {
 		return reconcile.ConditionValue{}, reconcile.ErrNoData

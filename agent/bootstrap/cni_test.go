@@ -154,3 +154,66 @@ func TestKernelBelow(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteAtomic(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []byte // nil: no file yet
+		content  []byte
+	}{
+		{"new file", nil, []byte("apiVersion: v1\n")},
+		{"overwrites an existing file", []byte("old, longer content than the new"), []byte("new")},
+		{"empty content truncates", []byte("old"), []byte{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "cilium.yaml")
+			if tc.existing != nil {
+				if err := os.WriteFile(path, tc.existing, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writeAtomic(path, tc.content); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(got, tc.content) {
+				t.Errorf("content = %q, %v; want %q", got, err, tc.content)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != "cilium.yaml" {
+				t.Errorf("directory holds %v, want only cilium.yaml (no temp file)", entries)
+			}
+		})
+	}
+
+	t.Run("a missing directory fails and leaves nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := writeAtomic(filepath.Join(dir, "no", "such", "f.yaml"), []byte("x")); err == nil {
+			t.Error("writeAtomic succeeded with a missing directory")
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("left %v", entries)
+		}
+	})
+
+	t.Run("a non-empty directory in the way fails and leaves no temp file", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "f.yaml"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "f.yaml", "keep"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeAtomic(filepath.Join(dir, "f.yaml"), []byte("x")); err == nil {
+			t.Error("writeAtomic replaced a non-empty directory")
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Errorf("directory holds %v, want only f.yaml", entries)
+		}
+	})
+}

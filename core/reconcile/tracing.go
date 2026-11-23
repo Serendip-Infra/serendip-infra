@@ -21,8 +21,8 @@ const (
 	MaxTraceQueryLimit = 200
 	// MaxTraceSpans is the most spans one trace returns.
 	MaxTraceSpans = 1000
-	// MaxTraceIDLen bounds a trace ID from outside (W3C: 32 hex).
-	MaxTraceIDLen = 32
+	// TraceIDLen is a trace ID's length (W3C: 32 hex digits).
+	TraceIDLen = 32
 )
 
 // TraceQuery selects traces with a span from the targets, newest first.
@@ -109,7 +109,7 @@ var ErrTraceNotFound = errors.New("reconcile: no such trace for this Component")
 // ValidTraceID reports whether id looks like a W3C trace ID: 32 lowercase
 // hex digits, not all zero. Anything else never reaches a provider.
 func ValidTraceID(id string) bool {
-	if len(id) != MaxTraceIDLen {
+	if len(id) != TraceIDLen {
 		return false
 	}
 	zero := true

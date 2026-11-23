@@ -1,6 +1,7 @@
 package openchoreo
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -175,19 +176,20 @@ type flowTarget struct{ component, environment string }
 // Go.
 const flowOrder = ` ORDER BY _timestamp DESC, src_namespace ASC NULLS FIRST, src_workload ASC NULLS FIRST,` +
 	` dst_namespace ASC NULLS FIRST, dst_workload ASC NULLS FIRST, direction ASC NULLS FIRST,` +
-	` verdict ASC NULLS FIRST, port ASC NULLS FIRST`
+	` verdict ASC NULLS FIRST, protocol ASC NULLS FIRST, port ASC NULLS FIRST`
 
 func recordLess(a, b flowRecord) bool {
-	if a.Timestamp != b.Timestamp {
-		return a.Timestamp > b.Timestamp
-	}
-	for _, p := range [][2]string{{a.SrcNamespace, b.SrcNamespace}, {a.SrcWorkload, b.SrcWorkload},
-		{a.DstNamespace, b.DstNamespace}, {a.DstWorkload, b.DstWorkload}, {a.Direction, b.Direction}, {a.Verdict, b.Verdict}} {
-		if p[0] != p[1] {
-			return p[0] < p[1]
-		}
-	}
-	return a.Port < b.Port
+	return cmp.Or(
+		cmp.Compare(b.Timestamp, a.Timestamp),
+		cmp.Compare(a.SrcNamespace, b.SrcNamespace),
+		cmp.Compare(a.SrcWorkload, b.SrcWorkload),
+		cmp.Compare(a.DstNamespace, b.DstNamespace),
+		cmp.Compare(a.DstWorkload, b.DstWorkload),
+		cmp.Compare(a.Direction, b.Direction),
+		cmp.Compare(a.Verdict, b.Verdict),
+		cmp.Compare(a.Protocol, b.Protocol),
+		cmp.Compare(a.Port, b.Port),
+	) < 0
 }
 
 // flowSQL selects the records with an end among refs in [from, upper],

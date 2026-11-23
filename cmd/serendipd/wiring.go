@@ -377,8 +377,10 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	// The observability package's removal takes the trace collector with
 	// it, and holds tracing's installs off meanwhile.
 	obsRemoving := new(atomic.Bool)
-	obsPackage := &observabilityPackage{Installer: obsInstaller, flowSource: network.waitFlowSource, removing: obsRemoving, removeTracing: tracingInstaller.Uninstall}
-	tracingPkg := &tracingPackage{TracingInstaller: tracingInstaller, setEndpoint: endpoint.set, obsRemoving: obsRemoving}
+	tracingOps := newOpLock()
+	obsPackage := &observabilityPackage{Installer: obsInstaller, flowSource: network.waitFlowSource, removing: obsRemoving,
+		removeTracing: tracingInstaller.RemoveCollector, tracingOps: tracingOps}
+	tracingPkg := &tracingPackage{TracingInstaller: tracingInstaller, setEndpoint: endpoint.set, obsRemoving: obsRemoving, ops: tracingOps}
 	packages := packageCatalogue(buildInstaller, obsPackage, tracingPkg)
 	obsProvider := obsplane.NewProvider(client).WithDiskUsage(obsInstaller, obsplane.Requirements.Disk.BudgetMiB).WithRequestMetrics(network.RequestMetrics)
 	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages, onReadiness{

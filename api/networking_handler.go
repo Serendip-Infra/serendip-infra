@@ -106,10 +106,13 @@ func (h *ObservabilityHandler) networkGate(w http.ResponseWriter, r *http.Reques
 	return true
 }
 
-var (
+const (
 	reasonNoFlows    = "the cluster's network layer doesn't record connections"
 	reasonNoRequests = "the cluster's network layer doesn't provide request metrics"
-	observeRead      = policy.Action{Name: policy.ActionObservabilityRead}
+)
+
+var (
+	observeRead = policy.Action{Name: policy.ActionObservabilityRead}
 )
 
 // envTargets are the Deployments in env the caller may act on, as

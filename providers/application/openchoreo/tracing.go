@@ -2,6 +2,7 @@ package openchoreo
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/serendip-infra/serendip-infra/core/resource"
 )
@@ -52,15 +53,7 @@ func withTraceEnv(c workloadContainer, endpoint string, comp resource.Component)
 	if !added {
 		return c, false
 	}
-	slices.SortFunc(env, func(a, b envVar) int {
-		switch {
-		case a.Key < b.Key:
-			return -1
-		case a.Key > b.Key:
-			return 1
-		}
-		return 0
-	})
+	slices.SortFunc(env, func(a, b envVar) int { return strings.Compare(a.Key, b.Key) })
 	c.Env = env
 	return c, true
 }

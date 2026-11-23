@@ -204,11 +204,22 @@ func (h *TracesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.readFailed(w, r, err, ctx.Err())
 		return
 	}
-	// A truncated trace may have dropped this Deployment's spans, so only
-	// a whole one is checked.
-	if !tr.Truncated && !slices.ContainsFunc(tr.Spans, func(s reconcile.Span) bool {
+	own := slices.ContainsFunc(tr.Spans, func(s reconcile.Span) bool {
 		return s.Component == t.Component.Metadata.ID && s.Environment == t.Environment.Metadata.ID
-	}) {
+	})
+	if !own && tr.Truncated {
+		// The cut may have dropped this Deployment's spans: ask for its
+		// own alone (rare: a trace past MaxTraceSpans).
+		_, err := h.provider.Trace(ctx, []reconcile.LogTarget{t}, traceID)
+		switch {
+		case err == nil:
+			own = true
+		case !errors.Is(err, reconcile.ErrTraceNotFound):
+			h.readFailed(w, r, err, ctx.Err())
+			return
+		}
+	}
+	if !own {
 		WriteProblem(w, http.StatusNotFound, "not found", "trace "+traceID+" not found for Deployment/"+d.Metadata.ID, reqID)
 		return
 	}

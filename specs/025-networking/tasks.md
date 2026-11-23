@@ -626,7 +626,7 @@ README the summary):
 - **Reads** (`timings.txt`): trace list 119 ms, trace open 163 ms,
   flows 64 ms (medians); RP-086 and RP-087 updated.
 
-## T014 [A]: Reviews
+## T014 [A]: Reviews ✅
 
 - **Do:** go-reviewer, contract-guardian, a security review of the
   scoping and the collector's identity, test-writer for gaps; findings
@@ -634,6 +634,66 @@ README the summary):
 - **Files:** as found.
 - **Verify:** each review's findings fixed or recorded with a reason;
   `go test ./...` and `go vet ./...` pass.
+
+> **Done as:** `go test ./...` and `go vet ./...` pass.
+>
+> **Security review:** the API's scoping and the collector's identity
+> hold. Its one finding is fixed:
+> - Cilium's host-network metrics ports (9962–9965) let any pod read
+>   every Component's request metrics, around criteria 5 and 6.
+> - The `cilium` provider now keeps `serendip-node-metrics-guard`
+>   (`nodeguard.go`), a cluster-wide deny-only policy, on every pass. It
+>   blocks those ports to pods outside `kube-system` and the
+>   observability plane.
+> - Live on `t025`: a Component pod and a `default` pod time out on all
+>   four ports and still reach 10250, and Prometheus's `hubble` job stays
+>   up (RP-091).
+>
+> **contract-guardian:** passed. Its notes are recorded:
+> - visibility audit rows wait in memory, and an edited policy is
+>   replaced in two steps (RP-090);
+> - the networking provider leans on the application platform's labels,
+>   and the guard on the observability plane's namespace name (RP-091;
+>   `TestNodeGuardExemptsPrometheus` checks the name agrees);
+> - a re-check of the T014 fixes passed. Its notes are applied (the
+>   register's order, RP-091's residuals).
+> - `TracingRequirements` is from the simulated T470, so re-measure it
+>   on the L470.
+>
+> **go-reviewer (two passes).** Fixed:
+> - **A race:** the observability package's removal and the tracing
+>   package's jobs could run at once, because core's package jobs are
+>   per package. They now share a lock (`opLock`), and the tracing
+>   install checks `obsRemoving` under it.
+> - The observability removal only removes the collector
+>   (`RemoveCollector`), so a store that's down can't wedge it.
+> - A truncated trace is shown under a Deployment only if that
+>   Deployment's own spans exist (a second read, scoped to it).
+> - The store's credentials are cached for a minute, and dropped on a
+>   401.
+> - `scopeWhere` checks the UIDs itself.
+> - Flow order includes protocol, and `recordLess` uses `cmp`.
+> - CNI manifests are written atomically.
+> - Smaller fixes:
+>   - the kernel minimum is one constant;
+>   - shutdown audit retries are 2 s;
+>   - a blank request-metrics refusal reason gets a default;
+>   - the bench flags a traced phase with no traces;
+>   - nits (`TraceIDLen`, `slices.Compact` on ports, `strings.Compare`,
+>     `const` reasons, one `waitTrue`).
+>
+> **Left as is, by design:**
+> - `time.After` in loops: collected since Go 1.23.
+> - A failed hidden-span count fails the trace read, so a trace is never
+>   shown as whole when it may not be.
+> - Fingerprints are recomputed per pass (microseconds; tests swap the
+>   config).
+> - One store list per trace condition (a local SQLite read).
+> - `ReportStart`'s background context (not this spec's code).
+> - The external-change audit's transaction (one audit writer).
+> - Uncached request and traffic reads, bounded by slots and the 20 s
+>   deadline (RP-087).
+> - The OTLP receivers have no per-pod rate limit (RP-092).
 
 ## T015 [A]: Docs and close-out
 

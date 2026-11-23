@@ -110,6 +110,9 @@ purpose), **Closed** (fixed).
 | RP-087 | Flows and traces read the caller's readable Deployments in the Environment, capped at 20 | Correctness (names past the cap); performance (lookups per read) | Accepted | Spec 025 T009 |
 | RP-088 | Traces share the logs store: about 730 MiB a day at 10 traced requests a second, kept 3 days, in the same 5 GiB as logs | Footprint (disk); availability (logs) | Accepted | Spec 025 T013 |
 | RP-089 | Cilium costs about +450 to +500 MiB and +80 to +130 mcores on the edge-1 node (simulated); edge-1 keeps it as the default | Footprint | Accepted | Spec 025 T013 |
+| RP-090 | Request visibility's audit rows wait in memory until the store takes them, and a policy someone edited is deleted, then re-applied | Audit (durability); correctness (metrics gap) | Accepted | Spec 025 T014 |
+| RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
+| RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
 
 ---
 
@@ -2248,6 +2251,13 @@ The text below is the T013 record.
   Components: resolve peers lazily (only the ends a page has), or page
   the merge. T013 (simulated T470, one peer): a 15-minute flows read
   took 64 ms median and a trace open 163 ms.
+- **Spec 025 T014 (go-reviewer):** none of these reads is cached.
+  Request metrics are five PromQL range queries a call, and traffic's
+  rates are over the whole range asked for (up to the retention). Each
+  read is bounded by the caller's query slots and the observability
+  read deadline, not by a cache. Cache or coalesce them if the console
+  polls them, or if a read past the deadline is seen on the reference
+  hardware.
 
 ## RP-088 — Traces share the logs store, and their disk use is one slope at one rate
 
@@ -2306,3 +2316,90 @@ The text below is the T013 record.
     too much on an 8 GB machine, recommend `--cni default` for it;
   - if the node is tight, measure kube-proxy-free first (plan decision
     6).
+
+## RP-090 — Request visibility's audit rows wait in memory, and an edited policy is replaced in two steps
+
+- **Kind:** audit (durability); correctness (a metrics gap). **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T014 (contract-guardian).
+- **What:**
+  - The visibility pass (`cmd/serendipd/networking.go`) writes or
+    deletes CiliumNetworkPolicies first, then their audit row. A row the
+    store refuses is kept in memory and retried every pass; past 100 the
+    oldest are logged in full and dropped. A crash between a write and
+    its row loses the row. At shutdown each try waits 2 s, not 10.
+  - A Serendip-owned policy that someone edited (a field Serendip
+    doesn't write) is deleted, then applied again, because the client
+    has only server-side apply, which can't drop another manager's
+    fields. If the apply fails, that Component has no L7 policy until
+    the next pass. It's reported in the pass's `Failed`.
+- **Cost:** a lost audit row after a crash (the policies themselves are
+  re-derived on start from the managed label, so nothing is left
+  unowned). One pass without request metrics for one Component. Its
+  isolation doesn't change: allows are a union, and the platform's
+  NetworkPolicy still applies.
+- **Why accepted:** the writes are a system actor's derived state, re-made
+  from the platform's NetworkPolicies every pass. They aren't a user's
+  change that only the audit row would record. Writing the row first
+  would record writes that may then fail.
+- **Revisit:** if audit rows must survive a crash for system actors too
+  (an intent row before the write); a `PUT` in the Kubernetes client
+  (replace in one step).
+
+## RP-091 — Cilium's node metrics ports, closed to pods by one Serendip policy
+
+- **Kind:** security (traffic visibility), medium. **Status:** Mitigated,
+  2026-11-23. **Found:** spec 025 T014 (security review).
+- **What:** Cilium's agent, operator and Envoy run on the host network
+  and serve their metrics on every node's address, with no
+  authentication: 9962, 9963, 9964 and Hubble's 9965. Hubble's request
+  metrics carry the source and destination pods of every Component's
+  calls, with status codes and latency. OpenChoreo's NetworkPolicies are
+  ingress-only, so before this any pod could read the whole cluster's
+  traffic picture that the flows and traffic reads scope by permission
+  (spec criteria 5 and 6).
+- **Mitigation:** the `cilium` provider keeps a
+  CiliumClusterwideNetworkPolicy, `serendip-node-metrics-guard`
+  (`nodeguard.go`), on every visibility pass, even with request
+  visibility off. It denies egress to the `host` and `remote-node`
+  entities on those four ports from every pod outside `kube-system` and
+  `openchoreo-observability-plane` (whose Prometheus scrapes them).
+  Builds' pods are covered too. It only denies: `enableDefaultDeny` is
+  off, so the pods it selects get no allow-list. Checked live on `t025`:
+  - a Component pod and a `default` pod time out on all four ports, and
+    still reach the kubelet's 10250;
+  - Prometheus's `hubble` job stays `up`.
+- **Residual:**
+  - The exempt namespaces are names. The observability plane's comes
+    from the observability package (`PlaneNamespace`), and a rename there
+    must change `metricsReaders`.
+  - Anything else in those two namespaces can read the ports.
+  - The policy is Serendip's while `serendipd` runs. Someone deleting it,
+    or a failed re-apply after an edited guard is deleted, opens the ports
+    until the next pass (every interval).
+  - Nothing removes the guard if the cluster moves off Cilium. It goes
+    with Cilium's CRDs, and until then it's inert.
+  - Other host-network endpoints (the kubelet, node exporters) aren't
+    part of this guard. Those that scope by caller have their own
+    authentication.
+- **Revisit:** Hubble metrics over TLS with client certificates
+  (`hubble.metrics.tls`), giving Prometheus a certificate, which would
+  make the guard unnecessary for 9965; a user-run Prometheus outside the
+  exempt namespaces.
+
+## RP-092 — The trace collector takes spans from any pod, with only a memory limit
+
+- **Kind:** availability (logs, traces); footprint (disk). **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T014 (go-reviewer).
+- **What:** the collector's OTLP receivers listen to the whole cluster.
+  Identity comes from the connection (RP-086), so a pod can't pass its
+  spans off as another Component's. But nothing limits how many it
+  sends. `memory_limiter` (160 MiB) protects the collector, not the
+  store. One chatty or hostile Component can fill the 5 GiB logs store
+  that traces share (RP-088), and its retention job then drops other
+  Components' logs and traces early.
+- **Why accepted:** at edge-1's scale the Components are the operator's
+  own. The observability package reports the store's disk use
+  (`usage.go`), so a filling store shows.
+- **Revisit:** a `probabilistic_sampler` or per-pod rate limit in the
+  collector; a separate traces store or quota when Projects belong to
+  different people (multi-tenant).

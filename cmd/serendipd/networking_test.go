@@ -27,6 +27,14 @@ func TestFlowFormatsMatch(t *testing.T) {
 	}
 }
 
+// The node guard exempts the namespace the observability package's
+// Prometheus runs in, or the guard would cut its scrape (RP-091, T014).
+func TestNodeGuardExemptsPrometheus(t *testing.T) {
+	if !slices.Contains(cilium.MetricsReaders(), obsplane.PlaneNamespace) {
+		t.Errorf("node guard exempts %v, not the observability plane %q", cilium.MetricsReaders(), obsplane.PlaneNamespace)
+	}
+}
+
 type factsStub struct {
 	f   reconcile.NetworkFacts
 	err error
@@ -91,7 +99,7 @@ func TestNetworkRequestMetrics(t *testing.T) {
 	}{
 		{"available", reconcile.NetworkFacts{RequestMetrics: true, Unavailable: []string{"requests: a note"}}, true, ""},
 		{"reason", reconcile.NetworkFacts{Unavailable: []string{"flows: x", "requests: Hubble is turned off"}}, false, "Hubble is turned off"},
-		{"no reason", reconcile.NetworkFacts{}, false, ""},
+		{"no reason", reconcile.NetworkFacts{}, false, "the cluster's network layer doesn't record HTTP requests"},
 	} {
 		d := detectedNetwork{name: "x", facts: &factsStub{f: tc.f}}
 		n.pass(context.Background(), d)
@@ -226,7 +234,7 @@ func TestTracingPackageEndpoint(t *testing.T) {
 	var endpoints []string
 	removing := &atomic.Bool{}
 	removing.Store(true)
-	p := &tracingPackage{setEndpoint: func(e string) { endpoints = append(endpoints, e) }, obsRemoving: removing}
+	p := &tracingPackage{setEndpoint: func(e string) { endpoints = append(endpoints, e) }, obsRemoving: removing, ops: newOpLock()}
 	// While the observability package is being removed, nothing installs,
 	// but the endpoint stays: the instance exists.
 	st, err := p.Install(context.Background(), resource.ProviderInstance{})
@@ -324,5 +332,181 @@ func TestNetworkVisibilityAuditRetried(t *testing.T) {
 	}
 	if want := `{"applied":["dp-a/p"]}`; string((*rows)[0].after) != want {
 		t.Errorf("after = %s, want %s", (*rows)[0].after, want)
+	}
+}
+
+func TestOpLock(t *testing.T) {
+	t.Run("lock then unlock then lock again", func(t *testing.T) {
+		l := newOpLock()
+		for range 2 {
+			if err := l.lock(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			l.unlock()
+		}
+	})
+	t.Run("a held lock gives up when ctx ends", func(t *testing.T) {
+		l := newOpLock()
+		if err := l.lock(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		if err := l.lock(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("lock under a held lock = %v, want DeadlineExceeded", err)
+		}
+		// The give-up took nothing: one unlock frees it.
+		l.unlock()
+		if err := l.lock(context.Background()); err != nil {
+			t.Errorf("lock after unlock = %v", err)
+		}
+	})
+	t.Run("a cancelled ctx on a held lock returns Canceled", func(t *testing.T) {
+		l := newOpLock()
+		_ = l.lock(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := l.lock(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("lock = %v, want Canceled", err)
+		}
+	})
+	t.Run("a waiting lock proceeds when unlocked", func(t *testing.T) {
+		l := newOpLock()
+		_ = l.lock(context.Background())
+		got := make(chan error, 1)
+		go func() { got <- l.lock(context.Background()) }()
+		select {
+		case err := <-got:
+			t.Fatalf("lock returned while held: %v", err)
+		case <-time.After(20 * time.Millisecond):
+		}
+		l.unlock()
+		select {
+		case err := <-got:
+			if err != nil {
+				t.Errorf("lock = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("lock didn't proceed after unlock")
+		}
+	})
+}
+
+// A tracingPackage install checks obsRemoving under the lock: one that
+// waited out a held lock sees a removal that began meanwhile, and doesn't
+// reach the installer (nil here: reaching it would panic).
+func TestTracingPackageInstall_ChecksRemovingUnderLock(t *testing.T) {
+	tests := []struct {
+		name         string
+		holdCtx      time.Duration // ctx of the install; 0 = none
+		setRemoving  bool          // set while the lock is held
+		wantErr      error
+		wantWaitMsg  bool
+		wantEndpoint int
+	}{
+		{name: "removal set while it waited: the waiting message, no install", setRemoving: true, wantWaitMsg: true, wantEndpoint: 1},
+		{name: "ctx ends while it waits: the ctx error", holdCtx: 30 * time.Millisecond, wantErr: context.DeadlineExceeded, wantEndpoint: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var endpoints []string
+			removing := &atomic.Bool{}
+			ops := newOpLock()
+			p := &tracingPackage{setEndpoint: func(e string) { endpoints = append(endpoints, e) }, obsRemoving: removing, ops: ops}
+			if err := ops.lock(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			if tc.holdCtx > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.holdCtx)
+				defer cancel()
+			}
+			type result struct {
+				st  reconcile.PackageState
+				err error
+			}
+			done := make(chan result, 1)
+			go func() {
+				st, err := p.Install(ctx, resource.ProviderInstance{})
+				done <- result{st, err}
+			}()
+			if tc.holdCtx == 0 {
+				select {
+				case r := <-done:
+					t.Fatalf("Install returned while the lock was held: %+v", r)
+				case <-time.After(30 * time.Millisecond):
+				}
+				// The removal starts while the install waits.
+				removing.Store(tc.setRemoving)
+				ops.unlock()
+			}
+			var r result
+			select {
+			case r = <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("Install didn't return")
+			}
+			if !errors.Is(r.err, tc.wantErr) {
+				t.Errorf("err = %v, want %v", r.err, tc.wantErr)
+			}
+			if tc.wantWaitMsg && (r.st.Ready || r.st.Message == "" || r.st.Applied != "") {
+				t.Errorf("state = %+v, want a waiting message, not Ready, nothing applied", r.st)
+			}
+			if len(endpoints) != tc.wantEndpoint {
+				t.Errorf("endpoint set %d times, want %d", len(endpoints), tc.wantEndpoint)
+			}
+			// The lock is free again afterwards (unless the test still holds it).
+			if tc.holdCtx == 0 {
+				if err := ops.lock(context.Background()); err != nil {
+					t.Errorf("lock left held: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// A failed trace-collector removal is returned, and the observability
+// installer is not reached (nil here: reaching it would panic).
+func TestObservabilityUninstall_RemoveTracingFails(t *testing.T) {
+	boom := errors.New("collector removal failed")
+	tests := []struct {
+		name    string
+		remove  func(context.Context) error
+		ctx     func() (context.Context, context.CancelFunc)
+		holdOps bool
+		wantErr error
+	}{
+		{name: "removeTracing error is returned", remove: func(context.Context) error { return boom },
+			ctx: func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) }, wantErr: boom},
+		{name: "lock not obtained before ctx ends: ctx error, removeTracing not called", holdOps: true,
+			remove: func(context.Context) error { t.Error("removeTracing called without the lock"); return nil },
+			ctx: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 20*time.Millisecond)
+			}, wantErr: context.DeadlineExceeded},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			removing := &atomic.Bool{}
+			ops := newOpLock()
+			if tc.holdOps {
+				_ = ops.lock(context.Background())
+			}
+			p := &observabilityPackage{removing: removing, removeTracing: tc.remove, tracingOps: ops}
+			ctx, cancel := tc.ctx()
+			defer cancel()
+			if err := p.Uninstall(ctx, "inst"); !errors.Is(err, tc.wantErr) {
+				t.Errorf("Uninstall = %v, want %v", err, tc.wantErr)
+			}
+			if !removing.Load() {
+				t.Error("removing wasn't set: tracing installs would go ahead")
+			}
+			if !tc.holdOps {
+				// The lock was released after the failed removal.
+				if err := ops.lock(context.Background()); err != nil {
+					t.Errorf("lock left held: %v", err)
+				}
+			}
+		})
 	}
 }

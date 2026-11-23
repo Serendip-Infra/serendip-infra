@@ -118,6 +118,13 @@ func measureTraffic(ctx context.Context, o options, cl *cluster, a api, phase ph
 	}
 	traces, _ := page["traces"].([]any)
 	t.Traces = len(traces)
+	if err == nil && t.Traces == 0 {
+		// The traced phase measured nothing traced, so its numbers can't
+		// be a tracing cost (TracingRequirements comes from them). Said in
+		// the summary, and logged, rather than losing the run.
+		t.TracesError = "no traces were stored for the server's Deployment: the traced phase's numbers aren't a tracing cost"
+		log.Printf("bench-edge1: WARNING: %s", t.TracesError)
+	}
 	return nil
 }
 
@@ -176,7 +183,7 @@ func (a api) deployPair(ctx context.Context, po packageOptions, tw *trafficWorkl
 		name, comp string
 		dep        *string
 	}{{"server", tw.server, &tw.serverDep}, {"caller", tw.caller, &tw.callerDep}} {
-		if err := a.waitTrueFor(ctx, "/v1/components/"+c.comp, "Ready", 5*time.Minute); err != nil {
+		if err := a.waitTrue(ctx, "/v1/components/"+c.comp, "Ready", 5*time.Minute); err != nil {
 			return err
 		}
 		if *c.dep, err = create("/v1/deployments", map[string]any{
@@ -188,28 +195,11 @@ func (a api) deployPair(ctx context.Context, po packageOptions, tw *trafficWorkl
 		tw.deployments = append(tw.deployments, *c.dep)
 	}
 	for _, d := range tw.deployments {
-		if err := a.waitTrueFor(ctx, "/v1/deployments/"+d, "Ready", 10*time.Minute); err != nil {
+		if err := a.waitTrue(ctx, "/v1/deployments/"+d, "Ready", 10*time.Minute); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// waitTrueFor waits for a condition to be True, polling every 2 s.
-func (a api) waitTrueFor(ctx context.Context, path, typ string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		obj, err := a.do(ctx, http.MethodGet, path, nil)
-		if err == nil && conditionTrue(obj, typ) {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%s: %s not True after %s", path, typ, timeout)
-		}
-		if err := sleep(ctx, 2*time.Second); err != nil {
-			return err
-		}
-	}
 }
 
 // setEnv sets one variable on a Component, which makes a new release.

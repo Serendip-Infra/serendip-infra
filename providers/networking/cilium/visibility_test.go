@@ -195,7 +195,7 @@ func TestEnsureVisibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rep.Applied, []string{srvCNP}) || rep.Unchanged != 0 || len(rep.Skipped) != 1 || !strings.Contains(rep.Skipped[0].Reason, "doesn't exist yet") {
+	if !slices.Equal(rep.Applied, []string{guardKey, srvCNP}) || rep.Unchanged != 0 || len(rep.Skipped) != 1 || !strings.Contains(rep.Skipped[0].Reason, "doesn't exist yet") {
 		t.Fatalf("first pass = %+v", rep)
 	}
 	stored := f.cnps[cnpPath(ns, "serendip-l7-openchoreo-cmp-ac7df9f12c")]
@@ -262,7 +262,7 @@ func TestEnsureVisibilityPorts(t *testing.T) {
 		{Namespace: ns, Policy: srvTarget.Policy, HTTPPorts: a},
 		{Namespace: ns, Policy: srvTarget.Policy, HTTPPorts: b},
 	})
-	if err != nil || len(rep.Applied) != 1 {
+	if err != nil || !slices.Equal(rep.Applied, []string{guardKey, srvCNP}) {
 		t.Fatalf("pass = %+v, %v", rep, err)
 	}
 	if !slices.Equal(a, []int{8080, 80, 8080, 0, 70000}) || !slices.Equal(b, []int{80}) {
@@ -373,7 +373,8 @@ func TestEnsureVisibilityErrors(t *testing.T) {
 	f = newFake(bodies)
 	f.applyErr = errors.New("admission denied")
 	rep, err = New(f).EnsureVisibility(ctx, []Target{srvTarget})
-	if err == nil || len(rep.Applied) != 0 || len(rep.Failed) != 1 {
+	// The guard's apply and the policy's both fail.
+	if err == nil || len(rep.Applied) != 0 || len(rep.Failed) != 2 {
 		t.Errorf("failed apply: %+v, %v", rep, err)
 	}
 

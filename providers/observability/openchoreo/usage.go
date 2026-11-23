@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
@@ -119,6 +120,52 @@ const logsStoreOrg = "default"
 // never stored, logged or returned (plan decision 1.2), and sent only
 // over the port-forward to the store's own pod.
 func logsStoreAuth(ctx context.Context, client *kubernetes.Client) (http.Header, error) {
+	now := time.Now()
+	storeAuth.mu.Lock()
+	e, ok := storeAuth.m[client]
+	storeAuth.mu.Unlock()
+	if ok && now.Sub(e.at) < storeAuthTTL {
+		return e.h.Clone(), nil
+	}
+	h, err := readStoreAuth(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	storeAuth.mu.Lock()
+	for k, old := range storeAuth.m {
+		if now.Sub(old.at) >= storeAuthTTL {
+			delete(storeAuth.m, k)
+		}
+	}
+	storeAuth.m[client] = authEntry{h: h, at: now}
+	storeAuth.mu.Unlock()
+	return h.Clone(), nil
+}
+
+// forgetStoreAuth drops client's cached credentials, after the store
+// refused them (a reinstall makes new ones).
+func forgetStoreAuth(client *kubernetes.Client) {
+	storeAuth.mu.Lock()
+	delete(storeAuth.m, client)
+	storeAuth.mu.Unlock()
+}
+
+// storeAuthTTL is how long the logs store's credentials are kept, so the
+// alert evaluator's searches don't read the Secret once each.
+const storeAuthTTL = time.Minute
+
+type authEntry struct {
+	h  http.Header
+	at time.Time
+}
+
+var storeAuth = struct {
+	mu sync.Mutex
+	m  map[*kubernetes.Client]authEntry
+}{m: map[*kubernetes.Client]authEntry{}}
+
+// readStoreAuth reads the credentials from their Secret.
+func readStoreAuth(ctx context.Context, client *kubernetes.Client) (http.Header, error) {
 	obj, err := client.Get(ctx, "/api/v1/namespaces/"+PlaneNamespace+"/secrets/"+adminSecretName)
 	if errors.Is(err, kubernetes.ErrNotFound) {
 		return nil, fmt.Errorf("the logs store's credentials Secret %s is missing: %w", adminSecretName, err)
@@ -169,6 +216,9 @@ func (i *Installer) logsStoreBytes(ctx context.Context) (float64, error) {
 		return 0, fmt.Errorf("read the logs store's streams: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		forgetStoreAuth(i.client)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("read the logs store's streams: status %d", resp.StatusCode)
 	}

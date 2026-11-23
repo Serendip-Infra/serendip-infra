@@ -76,16 +76,24 @@ const (
 //     and the others go on; the failure is in Report.Failed and the error.
 //   - A policy someone else added fields to is deleted and made again,
 //     since an apply removes only the fields Serendip set.
+//   - The node guard (nodeguard.go) is kept on every pass.
 func (p *Provider) EnsureVisibility(ctx context.Context, targets []Target) (rep Report, err error) {
 	defer func() { p.remember(rep, err) }()
-	cfg, err := p.config(ctx)
-	if err != nil {
-		return rep, err
-	}
 	var errs []error
 	fail := func(what string, err error) {
 		rep.Failed = append(rep.Failed, what+": "+err.Error())
 		errs = append(errs, err)
+	}
+	// The node guard is kept whatever else the pass does: the metrics
+	// ports are open whether or not requests are readable.
+	if wrote, err := p.ensureGuard(ctx); err != nil {
+		fail(guardKey, err)
+	} else if wrote {
+		rep.Applied = append(rep.Applied, guardKey)
+	}
+	cfg, err := p.config(ctx)
+	if err != nil {
+		return rep, errors.Join(append(errs, err)...)
 	}
 	desired := map[string]cnp{} // namespace/name
 	keep := map[string]bool{}   // left alone: their target couldn't be read

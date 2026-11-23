@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 )
 
@@ -37,7 +38,7 @@ const (
 func (p *Provider) HTTPWorkloads(ctx context.Context) ([]HTTPWorkload, error) {
 	raw, err := p.client.GetRaw(ctx, namespacedPath("workloads"))
 	if err != nil {
-		return nil, fmt.Errorf("list Workloads: %w", err)
+		return nil, fmt.Errorf("list Workloads (one read of every Workload in the cluster): %w", err)
 	}
 	var workloads struct {
 		Items []struct {
@@ -65,7 +66,7 @@ func (p *Provider) HTTPWorkloads(ctx context.Context) ([]HTTPWorkload, error) {
 
 	raw, err = p.client.GetRaw(ctx, "/apis/networking.k8s.io/v1/networkpolicies?labelSelector="+url.QueryEscape(labelOCManagedBy+"="+renderedRelease))
 	if err != nil {
-		return nil, fmt.Errorf("list the platform's NetworkPolicies: %w", err)
+		return nil, fmt.Errorf("list the platform's NetworkPolicies (one read of all of them): %w", err)
 	}
 	var policies struct {
 		Items []struct {
@@ -95,6 +96,7 @@ func (p *Provider) HTTPWorkloads(ctx context.Context) ([]HTTPWorkload, error) {
 		}
 		ps = append([]int(nil), ps...)
 		sort.Ints(ps)
+		ps = slices.Compact(ps) // two endpoints may share a port
 		out = append(out, HTTPWorkload{Namespace: np.Metadata.Namespace, Policy: np.Metadata.Name, Ports: ps})
 	}
 	sort.Slice(out, func(i, j int) bool {

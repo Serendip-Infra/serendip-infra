@@ -165,7 +165,8 @@ func (n *networkState) RequestMetrics(context.Context) (bool, string) {
 			return false, why
 		}
 	}
-	return false, ""
+	// The facts gave no reason: never refuse with a blank one.
+	return false, "the cluster's network layer doesn't record HTTP requests"
 }
 
 // podRanges is the cached pod ranges.
@@ -404,7 +405,13 @@ func (n *networkState) recordPending(ctx context.Context) {
 		return
 	}
 	for len(n.pending) > 0 {
-		actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		// At shutdown (ctx done) each try is short, so stopping isn't held
+		// up by a store that hangs.
+		wait := 10 * time.Second
+		if ctx.Err() != nil {
+			wait = 2 * time.Second
+		}
+		actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait)
 		actx = audit.WithInterface(audit.WithActor(actx, reconcile.ActorName), reconcile.InterfaceName)
 		err := n.record(actx, visibilityAuditKind, visibilityAuditID, n.pending[0])
 		cancel()

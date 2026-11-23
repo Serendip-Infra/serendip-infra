@@ -123,16 +123,44 @@ func writeManifests(root string, opts InstallOptions) error {
 		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 			return fmt.Errorf("bootstrap: create %s: %w", filepath.Dir(full), err)
 		}
-		if err := os.WriteFile(full, content, 0o600); err != nil {
+		if err := writeAtomic(full, content); err != nil {
 			return fmt.Errorf("bootstrap: write %s: %w", full, err)
 		}
 	}
 	return nil
 }
 
-// ciliumMinKernel is the kernel Cilium's system requirements name for the
-// agent (docs.cilium.io "System Requirements", checked 2026-11-20).
-const ciliumMinKernel = "5.10"
+// writeAtomic writes content to path through a temporary file in the same
+// directory, renamed into place, so K3s's manifest watcher never reads a
+// half-written file.
+func writeAtomic(path string, content []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp) // a no-op once renamed
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// ciliumMinMajor.ciliumMinMinor is the kernel Cilium's system requirements
+// name for the agent (docs.cilium.io "System Requirements", checked
+// 2026-11-20).
+const (
+	ciliumMinMajor = 5
+	ciliumMinMinor = 10
+)
 
 // kernelBelow reports whether a kernel release ("6.6.87.2-microsoft-...",
 // "5.4.0-150-generic") is older than major.minor. An unreadable release
@@ -167,9 +195,9 @@ func CheckKernelForCNI(cni CNI) string {
 		return ""
 	}
 	release := strings.TrimSpace(string(out))
-	if kernelBelow(release, 5, 10) {
-		return fmt.Sprintf("kernel %s is older than %s, Cilium's documented minimum: the node may not become Ready "+
-			"(use --cni default to keep K3s's Flannel)", release, ciliumMinKernel)
+	if kernelBelow(release, ciliumMinMajor, ciliumMinMinor) {
+		return fmt.Sprintf("kernel %s is older than %d.%d, Cilium's documented minimum: the node may not become Ready "+
+			"(use --cni default to keep K3s's Flannel)", release, ciliumMinMajor, ciliumMinMinor)
 	}
 	return ""
 }

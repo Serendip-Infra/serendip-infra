@@ -905,3 +905,63 @@ func TestDedupe_PairsOneToOne(t *testing.T) {
 		t.Errorf("far apart: %+v", got)
 	}
 }
+
+func TestRecordLess(t *testing.T) {
+	base := flowRecord{Timestamp: 100, Verdict: "FORWARDED", Direction: "egress", SrcNamespace: "a", SrcWorkload: "w",
+		DstNamespace: "b", DstWorkload: "x", Protocol: "TCP", Port: 80}
+	with := func(f func(r *flowRecord)) flowRecord { r := base; f(&r); return r }
+	tests := []struct {
+		name         string
+		a, b         flowRecord
+		aLess, bLess bool
+	}{
+		{"equal records are neither less", base, base, false, false},
+		{"protocol orders when all else is equal", with(func(r *flowRecord) { r.Protocol = "TCP" }), with(func(r *flowRecord) { r.Protocol = "UDP" }), true, false},
+		{"protocol comes before port", with(func(r *flowRecord) { r.Protocol = "TCP"; r.Port = 9000 }), with(func(r *flowRecord) { r.Protocol = "UDP"; r.Port = 1 }), true, false},
+		{"port orders when protocol is equal", with(func(r *flowRecord) { r.Port = 53 }), with(func(r *flowRecord) { r.Port = 80 }), true, false},
+		{"newer first", with(func(r *flowRecord) { r.Timestamp = 200 }), base, true, false},
+		{"timestamp comes before names", with(func(r *flowRecord) { r.Timestamp = 200; r.SrcNamespace = "z" }), base, true, false},
+		{"verdict before protocol", with(func(r *flowRecord) { r.Verdict = "DROPPED"; r.Protocol = "UDP" }), with(func(r *flowRecord) { r.Verdict = "FORWARDED"; r.Protocol = "TCP" }), true, false},
+		{"missing (empty) protocol first", with(func(r *flowRecord) { r.Protocol = "" }), base, true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := recordLess(tc.a, tc.b); got != tc.aLess {
+				t.Errorf("recordLess(a, b) = %v, want %v", got, tc.aLess)
+			}
+			if got := recordLess(tc.b, tc.a); got != tc.bLess {
+				t.Errorf("recordLess(b, a) = %v, want %v", got, tc.bLess)
+			}
+		})
+	}
+
+	// A strict weak order: irreflexive, asymmetric, transitive, over records
+	// differing in several fields.
+	var recs []flowRecord
+	for _, ts := range []int64{1, 2} {
+		for _, proto := range []string{"", "TCP", "UDP"} {
+			for _, port := range []float64{0, 53, 80} {
+				for _, v := range []string{"DROPPED", "FORWARDED"} {
+					r := base
+					r.Timestamp, r.Protocol, r.Port, r.Verdict = ts, proto, port, v
+					recs = append(recs, r)
+				}
+			}
+		}
+	}
+	for _, a := range recs {
+		if recordLess(a, a) {
+			t.Fatalf("recordLess(a, a) for %+v", a)
+		}
+		for _, b := range recs {
+			if recordLess(a, b) && recordLess(b, a) {
+				t.Fatalf("both less: %+v and %+v", a, b)
+			}
+			for _, c := range recs {
+				if recordLess(a, b) && recordLess(b, c) && !recordLess(a, c) {
+					t.Fatalf("not transitive: %+v < %+v < %+v", a, b, c)
+				}
+			}
+		}
+	}
+}

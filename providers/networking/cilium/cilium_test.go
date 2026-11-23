@@ -28,6 +28,10 @@ type fakeClient struct {
 	applyErr error
 	// goneOnDelete answers every delete as already gone.
 	goneOnDelete bool
+	// guard is the node guard as the server has it; guardApplies counts
+	// its writes (kept apart from the L7 policies').
+	guard        *kubernetes.Object
+	guardApplies int
 }
 
 func newFake(bodies map[string]any) *fakeClient {
@@ -37,6 +41,15 @@ func newFake(bodies map[string]any) *fakeClient {
 func (f *fakeClient) GetRaw(_ context.Context, path string) (json.RawMessage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if path == guardPath() {
+		if err, ok := f.bodies[path].(error); ok {
+			return nil, err
+		}
+		if f.guard == nil {
+			return nil, kubernetes.ErrNotFound
+		}
+		return json.Marshal(f.guard)
+	}
 	if strings.HasPrefix(path, "/apis/cilium.io/v2/ciliumnetworkpolicies?") {
 		if err, ok := f.bodies["cnps"].(error); ok {
 			return nil, err
@@ -66,6 +79,12 @@ func (f *fakeClient) Apply(_ context.Context, path string, obj kubernetes.Object
 	if manager != kubernetes.FieldManager {
 		return kubernetes.Object{}, errors.New("wrong field manager " + manager)
 	}
+	if path == guardPath() && obj.Metadata.Name == guardName && obj.Metadata.Namespace == "" {
+		f.guardApplies++
+		obj.Metadata.UID = "server-uid"
+		f.guard = &obj
+		return obj, nil
+	}
 	if path != cnpPath(obj.Metadata.Namespace, obj.Metadata.Name) {
 		return kubernetes.Object{}, errors.New("apply path " + path + " doesn't match the object")
 	}
@@ -80,6 +99,10 @@ func (f *fakeClient) Apply(_ context.Context, path string, obj kubernetes.Object
 func (f *fakeClient) Delete(_ context.Context, path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if path == guardPath() {
+		f.guard = nil
+		return nil
+	}
 	f.deletes = append(f.deletes, path)
 	if f.goneOnDelete {
 		delete(f.cnps, path)

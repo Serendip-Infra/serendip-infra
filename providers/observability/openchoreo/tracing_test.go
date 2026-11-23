@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -796,5 +797,163 @@ func TestSpanKind_StringOrNumber(t *testing.T) {
 		if got := (spanRow{"span_kind": json.RawMessage(raw)}).kind(); got != want {
 			t.Errorf("kind(%s) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// Spec 025 T014 review fixes.
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// secretCountingClient is a kube client whose Secret GETs are counted.
+func secretCountingClient(t *testing.T, gets *int, mu *sync.Mutex) *kubernetes.Client {
+	t.Helper()
+	return newTestKubeClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != adminPath {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		*gets++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"kind":"Secret","data":{"ZO_ROOT_USER_EMAIL":"YQ==","ZO_ROOT_USER_PASSWORD":"Yg=="}}`))
+	})
+}
+
+func TestLogsStoreAuth_Cache(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		// steps run between two reads of one client; wantGets is the Secret
+		// GETs after both.
+		steps    func(c *kubernetes.Client)
+		wantGets int
+	}{
+		{"two reads within the TTL read the Secret once", func(c *kubernetes.Client) {}, 1},
+		{"forgetting drops the cache, so the next read reads again", func(c *kubernetes.Client) { forgetStoreAuth(c) }, 2},
+		{"forgetting twice is harmless", func(c *kubernetes.Client) { forgetStoreAuth(c); forgetStoreAuth(c) }, 2},
+		{"an entry older than the TTL is read again", func(c *kubernetes.Client) {
+			storeAuth.mu.Lock()
+			e := storeAuth.m[c]
+			e.at = e.at.Add(-2 * storeAuthTTL)
+			storeAuth.m[c] = e
+			storeAuth.mu.Unlock()
+		}, 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gets int
+			var mu sync.Mutex
+			c := secretCountingClient(t, &gets, &mu)
+			t.Cleanup(func() { forgetStoreAuth(c) })
+			h, err := logsStoreAuth(ctx, c)
+			if err != nil || h.Get("Authorization") != "Basic YTpi" {
+				t.Fatalf("first read = %v, %v", h, err)
+			}
+			tc.steps(c)
+			h2, err := logsStoreAuth(ctx, c)
+			if err != nil || h2.Get("Authorization") != "Basic YTpi" {
+				t.Fatalf("second read = %v, %v", h2, err)
+			}
+			// A returned header is a copy: changing it leaves the cache alone.
+			h2.Set("Authorization", "changed")
+			if h3, _ := logsStoreAuth(ctx, c); h3.Get("Authorization") != "Basic YTpi" {
+				t.Errorf("the cache was changed through a returned header: %v", h3)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if gets != tc.wantGets {
+				t.Errorf("Secret GETs = %d, want %d", gets, tc.wantGets)
+			}
+		})
+	}
+}
+
+func TestLogsStoreAuth_PerClient(t *testing.T) {
+	var gets int
+	var mu sync.Mutex
+	a, b := secretCountingClient(t, &gets, &mu), secretCountingClient(t, &gets, &mu)
+	t.Cleanup(func() { forgetStoreAuth(a); forgetStoreAuth(b) })
+	for _, c := range []*kubernetes.Client{a, b, a, b} {
+		if _, err := logsStoreAuth(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	forgetStoreAuth(a)
+	if _, err := logsStoreAuth(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gets != 2 {
+		t.Errorf("Secret GETs = %d, want 2 (one per client; forgetting a leaves b)", gets)
+	}
+}
+
+func TestSearchStore_ForgetsAuthOn401(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		wantGets int
+	}{
+		{"401 drops the credentials, so the next search reads the Secret again", http.StatusUnauthorized, 2},
+		{"200 keeps them", http.StatusOK, 1},
+		{"500 keeps them", http.StatusInternalServerError, 1},
+		{"403 keeps them", http.StatusForbidden, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gets int
+			var mu sync.Mutex
+			c := secretCountingClient(t, &gets, &mu)
+			t.Cleanup(func() { forgetStoreAuth(c) })
+			hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(`{"hits":[]}`)),
+					Header: http.Header{}, Request: r}, nil
+			})}
+			var hits []flowRecord
+			for range 2 {
+				err := searchStore(context.Background(), c, hc, "logs", "records", "SELECT 1", time.Unix(0, 0), time.Unix(1, 0), 1, &hits)
+				if (err != nil) != (tc.status != http.StatusOK) {
+					t.Fatalf("status %d: err = %v", tc.status, err)
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if gets != tc.wantGets {
+				t.Errorf("Secret GETs = %d, want %d", gets, tc.wantGets)
+			}
+		})
+	}
+}
+
+func TestScopeWhere(t *testing.T) {
+	tests := []struct {
+		name    string
+		scope   componentScope
+		want    string
+		wantErr bool
+	}{
+		{"valid UIDs give the three-column condition", componentScope{ComponentUID: "c-1", EnvironmentUID: "e-1", ProjectUID: "p-1"},
+			"(" + colComponentUID + " = 'c-1' AND " + colEnvironmentUID + " = 'e-1' AND " + colProjectUID + " = 'p-1')", false},
+		{"a quote in the component UID is refused", componentScope{ComponentUID: "c' OR '1'='1", EnvironmentUID: "e-1", ProjectUID: "p-1"}, "", true},
+		{"a quote in the environment UID is refused", componentScope{ComponentUID: "c-1", EnvironmentUID: "e'", ProjectUID: "p-1"}, "", true},
+		{"a quote in the project UID is refused", componentScope{ComponentUID: "c-1", EnvironmentUID: "e-1", ProjectUID: "p-1'--"}, "", true},
+		{"an empty UID is refused", componentScope{ComponentUID: "c-1", EnvironmentUID: "e-1"}, "", true},
+		{"a space in a UID is refused", componentScope{ComponentUID: "c 1", EnvironmentUID: "e-1", ProjectUID: "p-1"}, "", true},
+		{"a UID over 64 characters is refused", componentScope{ComponentUID: strings.Repeat("a", 65), EnvironmentUID: "e-1", ProjectUID: "p-1"}, "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := scopeWhere(tc.scope)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("scopeWhere = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

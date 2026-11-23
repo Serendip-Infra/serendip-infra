@@ -101,9 +101,29 @@ type observabilityPackage struct {
 	flowSource func(context.Context) error
 	// removing is shared with tracingPackage.
 	removing *atomic.Bool
-	// removeTracing removes the trace collector; nil without one.
-	removeTracing func(ctx context.Context, instanceID string) error
+	// removeTracing removes the trace collector, leaving the traces (the
+	// store goes with this package); nil without one.
+	removeTracing func(ctx context.Context) error
+	// tracingOps serializes removeTracing with the tracing package's own
+	// jobs: core's package jobs are per package, so they'd overlap.
+	tracingOps *opLock
 }
+
+// opLock is a mutex whose Lock gives up when ctx ends.
+type opLock struct{ ch chan struct{} }
+
+func newOpLock() *opLock { return &opLock{ch: make(chan struct{}, 1)} }
+
+func (l *opLock) lock(ctx context.Context) error {
+	select {
+	case l.ch <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *opLock) unlock() { <-l.ch }
 
 func (p *observabilityPackage) Install(ctx context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
 	if err := p.flowSource(ctx); err != nil {
@@ -124,9 +144,14 @@ func (p *observabilityPackage) Install(ctx context.Context, inst resource.Provid
 func (p *observabilityPackage) Uninstall(ctx context.Context, instanceID string) error {
 	p.removing.Store(true)
 	if p.removeTracing != nil {
-		// The tracing package's own instance (if any) stays, so there's
-		// no ID of its to give; its installer doesn't use one.
-		if err := p.removeTracing(ctx, ""); err != nil {
+		// The tracing package's own instance (if any) stays; its install
+		// waits while removing is set.
+		if err := p.tracingOps.lock(ctx); err != nil {
+			return err
+		}
+		err := p.removeTracing(ctx)
+		p.tracingOps.unlock()
+		if err != nil {
 			return err
 		}
 	}
@@ -145,10 +170,17 @@ type tracingPackage struct {
 	// obsRemoving is set while the observability package is being
 	// removed.
 	obsRemoving *atomic.Bool
+	// ops is observabilityPackage.tracingOps.
+	ops *opLock
 }
 
 func (p *tracingPackage) Install(ctx context.Context, inst resource.ProviderInstance) (reconcile.PackageState, error) {
 	p.setEndpoint(obsplane.OTLPEndpoint)
+	if err := p.ops.lock(ctx); err != nil {
+		return reconcile.PackageState{}, err
+	}
+	defer p.ops.unlock()
+	// Checked under the lock, so a removal that started first is seen.
 	if p.obsRemoving.Load() {
 		return reconcile.PackageState{Message: "waiting for the observability package: it's being removed, and traces are kept in its store"}, nil
 	}
@@ -156,7 +188,12 @@ func (p *tracingPackage) Install(ctx context.Context, inst resource.ProviderInst
 }
 
 func (p *tracingPackage) Uninstall(ctx context.Context, instanceID string) error {
-	if err := p.TracingInstaller.Uninstall(ctx, instanceID); err != nil {
+	if err := p.ops.lock(ctx); err != nil {
+		return err
+	}
+	err := p.TracingInstaller.Uninstall(ctx, instanceID)
+	p.ops.unlock()
+	if err != nil {
 		return err
 	}
 	p.setEndpoint("")
