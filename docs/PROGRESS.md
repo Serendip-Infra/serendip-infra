@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T011 done, T012 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T011 done; T012 partly done (15406ad), its tracing criteria wait for T013; spec 024 closed)
 
 ## Current phase
 
@@ -34,7 +34,36 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    then check the board. #353–#363 closed (board Done); #66 says
    "T001–T011 done; T012 next". T012–T015 are #364–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T012** (live check), then T013–T015 in order.
+3. **T012 partly done** (15406ad, pushed, `Part of #364`; #364 stays
+   open with a progress comment). `specs/025-networking/verification.md`:
+   criteria 1–6, 10 and 14 PASS. Five findings fixed:
+   - F1: the alert evaluator had no request or trace source, so those
+     rules were always refused;
+   - F2: conditions dropped replaced pods (RP-085);
+   - F3–F5: flow count and "outside" wording, and the "0 ms" axis tick.
+   Contract-guardian and go-reviewer passed; their cheap findings are
+   fixed. **Criteria 7, 8, 9 and 11 and the tracing part of 14 are
+   pending:** the tracing package can't be installed through `serendipd`
+   until T013 sets its requirements. The ordering question (run T013
+   first, then finish T012) was put to the user.
+   - **T012 test bed:** `serendip-t025` was recreated 2026-11-23 and
+     sign-in works.
+     - State: `~/.serendip-t025-dev`, store `serendipd.db`, keys in
+       `api-keys.env`: `verifier`; `reader-a`, Reader at Project
+       `t012-a`; `reader-c`, caller-only.
+     - Start it with `bash ~/.serendip-t025-dev/t012/start.sh` as a
+       background run.
+     - Tooling and evidence: `~/.serendip-t025-dev/t012/` (`api.sh`,
+       `api.py`, `mcp.py` (CLI signed in as admin in `cli-person`),
+       `console/*.mjs`, `ids.json`, `loadgen/`, the `otelapp/` image
+       `t012-otel:1` already loaded, `evidence/`).
+     - Workloads in Projects `t012-a` (`srv`, `caller`, probes, `a-to-b`)
+       and `t012-b`. The observability package is installed.
+     - It and its `serendipd` are **stopped** now. So are
+       `serendip-t018` and the `t025` test bed (`~/.serendip-t025`; its
+       `serendipd` was killed).
+     - Criterion 2's evidence: `~/.serendip-t018/t025-t012/`.
+   - Then T013–T015 in order.
    - **T011 done** (`Closes #363`; tasks.md "Done as"). Console:
      `ui/src/screens/Networking.tsx` (HTTP requests block, Connections,
      Traces with a span waterfall), `lib/networking.ts` (words, waterfall
