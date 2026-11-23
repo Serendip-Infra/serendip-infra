@@ -39,8 +39,13 @@ type alerting struct {
 // the delivery loop over core/notify. secrets is nil without a cluster;
 // a send then fails, retryably, until one is configured. ranges reads the
 // cluster's own address ranges, which no notification may reach.
+//
+// requests says whether the network layer records HTTP requests (spec 025),
+// and tracing reads traces while the tracing package is Ready; request
+// and trace conditions are refused while either is nil.
 func wireAlerting(db *sql.DB, bus event.Bus, obs reconcile.ObservabilityProvider, secrets *reconcile.SecretReconciler, consoleURL string,
 	ranges func(context.Context) ([]netip.Prefix, error),
+	requests func(context.Context) (bool, string), tracing *lazyTracing,
 ) *alerting {
 	stores := reconcile.AlertStores{
 		Rules:        sqlite.NewStore[resource.AlertRuleSpec, resource.AlertRuleStatus](db, resource.KindAlertRule).SetBus(bus),
@@ -56,25 +61,35 @@ func wireAlerting(db *sql.DB, bus event.Bus, obs reconcile.ObservabilityProvider
 	}
 	instances := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance)
 	client := notify.NewClient(notify.Options{})
-	e, d := reconcile.NewAlertEvaluator(reconcile.AlertEvaluatorOptions{
-		Stores:   stores,
-		Provider: obs,
-		Installed: func(ctx context.Context) (bool, error) {
+	installed := func(capability string) func(context.Context) (bool, error) {
+		return func(ctx context.Context) (bool, error) {
 			list, err := instances.List(ctx, store.ListOptions{})
 			if err != nil {
 				return false, err
 			}
 			for _, pi := range list {
-				if pi.Spec.CapabilityID == capObservability {
+				if pi.Spec.CapabilityID == capability {
 					return true, nil
 				}
 			}
 			return false, nil
-		},
+		}
+	}
+	opts := reconcile.AlertEvaluatorOptions{
+		Stores:         stores,
+		Provider:       obs,
+		RequestMetrics: requests,
+		Installed:      installed(capObservability),
 		Purge: func(ctx context.Context, cutoff time.Time, limit int) (int, error) {
 			return sqlite.PurgeResolvedAlerts(ctx, db, bus, cutoff, limit)
 		},
-	}, reconcile.DeliveryOptions{
+	}
+	// Left a plain nil without a tracing handle: the evaluator refuses
+	// trace conditions then (a typed nil would read as installed).
+	if tracing != nil {
+		opts.Tracing = &alertTracing{lazyTracing: tracing, installed: installed(capTracing)}
+	}
+	e, d := reconcile.NewAlertEvaluator(opts, reconcile.DeliveryOptions{
 		Notifier:   client,
 		Secrets:    secretValue(secrets),
 		ConsoleURL: consoleURL,
@@ -92,6 +107,26 @@ func wireAlerting(db *sql.DB, bus event.Bus, obs reconcile.ObservabilityProvider
 	beats := sqlite.NewStore[resource.HeartbeatSpec, resource.HeartbeatStatus](db, resource.KindHeartbeat).SetBus(bus).SetUniqueKey(resource.HeartbeatKey)
 	hb := reconcile.NewHeartbeatLoop(beats, client, health, secretValue(secrets))
 	return &alerting{evaluator: e, delivery: d, heartbeat: hb, client: client, secrets: secretValue(secrets), ranges: ranges}
+}
+
+// alertTracing is the evaluator's trace source: the tracing package's
+// handle, except that with no package installed a trace condition is
+// refused with that reason (spec 025 criterion 11, "not available")
+// rather than waiting as if the package were installing.
+type alertTracing struct {
+	*lazyTracing
+	installed func(context.Context) (bool, error)
+}
+
+func (t *alertTracing) EvaluateCondition(ctx context.Context, target reconcile.LogTarget, c resource.AlertCondition, window time.Duration) (reconcile.ConditionValue, error) {
+	ok, err := t.installed(ctx)
+	if err != nil {
+		return reconcile.ConditionValue{}, err
+	}
+	if !ok {
+		return reconcile.ConditionValue{}, &reconcile.ConditionRefusedError{Why: reconcile.WhyTracingNotInstalled}
+	}
+	return t.lazyTracing.EvaluateCondition(ctx, target, c, window)
 }
 
 // run starts the evaluator, the delivery loop and the heartbeat. They

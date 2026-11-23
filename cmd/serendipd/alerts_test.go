@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/notify"
+	"github.com/serendip-infra/serendip-infra/core/reconcile"
+	"github.com/serendip-infra/serendip-infra/core/resource"
 )
 
 func TestOneSecretString(t *testing.T) {
@@ -78,5 +80,43 @@ func TestRefreshClusterRanges(t *testing.T) {
 	}
 	if err := check.CheckAddr(netip.MustParseAddr("192.168.1.30"), true); err != nil {
 		t.Errorf("a LAN address with the allowance: %v", err)
+	}
+}
+
+// fakeTracing answers trace conditions with a fixed value.
+type fakeTracing struct{ reconcile.TracingProvider }
+
+func (fakeTracing) EvaluateCondition(context.Context, reconcile.LogTarget, resource.AlertCondition, time.Duration) (reconcile.ConditionValue, error) {
+	return reconcile.ConditionValue{Value: 7}, nil
+}
+
+// A trace condition is refused with no tracing package, waits while it's
+// installing, and is read once it's Ready (spec 025 T012: the evaluator
+// had been built without a trace source, so every trace rule was refused).
+func TestAlertTracing(t *testing.T) {
+	var installed bool
+	var instErr error
+	lazy := &lazyTracing{}
+	at := &alertTracing{lazyTracing: lazy, installed: func(context.Context) (bool, error) { return installed, instErr }}
+	cond := resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: 1, WindowMinutes: 5}}
+	eval := func() (reconcile.ConditionValue, error) {
+		return at.EvaluateCondition(t.Context(), reconcile.LogTarget{}, cond, 5*time.Minute)
+	}
+
+	var refused *reconcile.ConditionRefusedError
+	if _, err := eval(); !errors.As(err, &refused) || refused.Why != reconcile.WhyTracingNotInstalled {
+		t.Fatalf("not installed: err %v, want the not-installed refusal", err)
+	}
+	instErr = errors.New("store down")
+	if _, err := eval(); !errors.Is(err, instErr) {
+		t.Fatalf("store error: err %v, want it passed on", err)
+	}
+	instErr, installed = nil, true
+	if _, err := eval(); !errors.Is(err, reconcile.ErrProviderNotReady) {
+		t.Fatalf("installing: err %v, want ErrProviderNotReady", err)
+	}
+	lazy.set(fakeTracing{})
+	if v, err := eval(); err != nil || v.Value != 7 {
+		t.Fatalf("ready: %v, %v; want 7", v, err)
 	}
 }

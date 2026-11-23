@@ -237,7 +237,7 @@ func TestMetrics_EmptyStore(t *testing.T) {
 	if m.CPURequest != nil || m.CPULimit != nil || m.MemoryRequest != nil || m.MemoryLimit != nil {
 		t.Errorf("requests and limits from nothing: %+v", m)
 	}
-	for _, want := range []string{"cpu: no samples in this range", "memory: no samples in this range", "cpu request: not set", "memory limit: not set", httpUnavailable} {
+	for _, want := range []string{"cpu: no samples in this range", "memory: no samples in this range", "cpu request: not set", "memory limit: not set", "requests: the cluster's network layer doesn't provide request metrics"} {
 		if !slices.Contains(m.Unavailable, want) {
 			t.Errorf("unavailable %q lacks %q", m.Unavailable, want)
 		}

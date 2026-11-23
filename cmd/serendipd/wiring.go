@@ -67,8 +67,13 @@ type kubeWiring struct {
 	// made Owner at "/" on first start (spec 017).
 	adminSubject string
 	// clusterRanges reads the cluster's own address ranges, which
-	// notifications never reach (spec 024).
+	// notifications never reach (spec 024), with the network layer's pod
+	// ranges (spec 025).
 	clusterRanges func(context.Context) ([]netip.Prefix, error)
+	// network is the networking capability's cached facts (spec 025).
+	network *networkState
+	// tracing reads traces while the tracing package is Ready (spec 025).
+	tracing *lazyTracing
 }
 
 // consoleURIs are the console's login callback and post-logout page,
@@ -137,6 +142,28 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	if err != nil {
 		return nil, fmt.Errorf("observability: %w", err)
 	}
+	tracingInstaller, err := obsplane.NewTracingInstaller(client, kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("tracing: %w", err)
+	}
+	// Workloads are given the trace endpoint while the tracing package's
+	// ProviderInstance exists, known before the application provider's
+	// first pass (plan decision 11 as amended in T007).
+	endpoint := &traceEndpoint{}
+	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	exists, err := capabilityInstalled(sctx, db, capTracing)
+	cancel()
+	if err != nil {
+		return nil, fmt.Errorf("tracing: %w", err)
+	}
+	if exists {
+		endpoint.set(obsplane.OTLPEndpoint)
+	}
+	network := newNetworkState(registry, func(ctx context.Context) (detectedNetwork, error) { return detectNetwork(ctx, client) }, reensureEvery)
+	network.setFlowSource = obsInstaller.SetFlowSource
+	network.record = func(ctx context.Context, kind, id string, after json.RawMessage) error {
+		return sqlite.RecordExternalChange(ctx, db, kind, id, after)
+	}
 	identityDeployer.SetConsoleRedirects(thunderid.ConsoleRedirects{Callback: console.callback, PostLogout: console.postLogout})
 	// The issuer depends on the gateway's endpoint, known only once the
 	// gateway is up, but a malformed override is a config error: fail now.
@@ -155,6 +182,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	login := &lazyLogin{}
 	builds := &lazyBuilds{}
 	observability := &lazyObservability{}
+	tracing := &lazyTracing{}
 	// verifier is the identity setup's token verifier, shared with the
 	// console's relying party (one key cache).
 	var verifier atomic.Pointer[oidc.Verifier]
@@ -235,12 +263,14 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 				return fmt.Errorf("readiness: %w", err)
 			}
 			p := openchoreo.NewProvider(client, ep)
+			endpoint.attach(p)
 			registry.Register(capAppPlatform, p)
 			platform.set(p)
 			deployments.set(p)
 			runtime.set(p)
 			schemas.set(p)
 			platformView.set(p)
+			network.platformReady(p)
 			log.Print("serendipd: kubernetes: application platform provider (openchoreo) active")
 			return nil
 		},
@@ -325,6 +355,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 		platformFoundations: func(ctx context.Context, ep reconcile.GatewayEndpoint) error {
 			return ensurePlatformFoundations(ctx, client, ep)
 		},
+		networking:    network.run,
 		reensureEvery: reensureEvery,
 	}
 	issuer := func() string {
@@ -343,12 +374,37 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	// is gone, or deleting a built Component would wait for ever.
 	buildProvider := buildplane.NewBuilds(client)
 	cleaners[resource.KindBuild] = reconcile.BuildCleanup(buildProvider)
-	packages := packageCatalogue(buildInstaller, obsInstaller)
+	// The observability package's removal takes the trace collector with
+	// it, and holds tracing's installs off meanwhile.
+	obsRemoving := new(atomic.Bool)
+	tracingOps := newOpLock()
+	obsPackage := &observabilityPackage{Installer: obsInstaller, flowSource: network.waitFlowSource, removing: obsRemoving,
+		removeTracing: tracingInstaller.RemoveCollector, tracingOps: tracingOps}
+	tracingPkg := &tracingPackage{TracingInstaller: tracingInstaller, setEndpoint: endpoint.set, obsRemoving: obsRemoving, ops: tracingOps}
+	packages := packageCatalogue(buildInstaller, obsPackage, tracingPkg)
+	obsProvider := obsplane.NewProvider(client).WithDiskUsage(obsInstaller, obsplane.Requirements.Disk.BudgetMiB).WithRequestMetrics(network.RequestMetrics)
 	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages, onReadiness{
 		capBuild:         buildHandle(registry, builds, buildProvider),
-		capObservability: observabilityHandle(registry, observability, obsplane.NewProvider(client).WithDiskUsage(obsInstaller, obsplane.Requirements.Disk.BudgetMiB)),
+		capObservability: observabilityHandle(registry, observability, obsProvider),
+		capTracing:       tracingHandle(registry, tracing, obsplane.NewTracing(client)),
 	})
-	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer, clusterRanges: client.ClusterRanges}, nil
+	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer,
+		clusterRanges: network.clusterRanges(client.ClusterRanges), network: network, tracing: tracing}, nil
+}
+
+// capabilityInstalled reports whether a ProviderInstance for capability
+// exists in the store.
+func capabilityInstalled(ctx context.Context, db *sql.DB, capability string) (bool, error) {
+	insts, err := sqlite.NewStore[resource.ProviderInstanceSpec, resource.ProviderInstanceStatus](db, resource.KindProviderInstance).List(ctx, store.ListOptions{})
+	if err != nil {
+		return false, fmt.Errorf("list ProviderInstances: %w", err)
+	}
+	for _, i := range insts {
+		if i.Spec.CapabilityID == capability {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ensureGatewayReady ensures the shared gateway and treats "not programmed

@@ -50,6 +50,14 @@ func TestLiveInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Spec 025: OBS_LIVE_FLOW_SOURCE "<dir>/<file>" installs with the
+	// network layer's connection records collected.
+	if fs := os.Getenv("OBS_LIVE_FLOW_SOURCE"); fs != "" {
+		k := strings.LastIndex(fs, "/")
+		if err := inst.SetFlowSource(reconcile.FlowSource{HostPath: fs[:k], File: fs[k+1:], Format: FlowFormat}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 	var applied string
@@ -421,4 +429,199 @@ func podRequests(t *testing.T, pod kubernetes.Object) (cpu, mem float64) {
 		mem = v * 1024
 	}
 	return cpu, mem
+}
+
+// TestLiveNetworking (spec 025 T006) reads, for the store copy's
+// Components, their request series, the traffic between them, the two
+// request conditions and their connection records. OBS_LIVE_RECORD names
+// a directory the answers are written to, for the unit tests.
+func TestLiveNetworking(t *testing.T) {
+	client, _ := liveClient(t)
+	ctx := context.Background()
+	targets := liveTargets(t, ctx)
+	p := NewProvider(client).WithRequestMetrics(func(context.Context) (bool, string) { return true, "" })
+	now := time.Now()
+	record := func(name string, v any) {
+		dir := os.Getenv("OBS_LIVE_RECORD")
+		if dir == "" {
+			return
+		}
+		b, _ := json.MarshalIndent(v, "", " ")
+		if err := os.WriteFile(dir+"/"+name, b, 0o644); err != nil {
+			t.Error(err)
+		}
+	}
+	for _, tg := range targets {
+		name := tg.Component.Metadata.Name
+		m, err := p.Metrics(ctx, tg, reconcile.MetricsQuery{From: now.Add(-15 * time.Minute), To: now})
+		if err != nil {
+			t.Errorf("%s metrics: %v", name, err)
+			continue
+		}
+		if m.Requests != nil {
+			last := func(ps []reconcile.MetricPoint) string {
+				if len(ps) == 0 {
+					return "-"
+				}
+				return strconv.FormatFloat(ps[len(ps)-1].Value, 'f', 3, 64)
+			}
+			r := m.Requests
+			t.Logf("%s requests: %d points; last rate %s/s, 5xx %s/s, p50 %s ms, p95 %s ms, p99 %s ms",
+				name, len(r.Rate), last(r.Rate), last(r.ErrorRate), last(r.LatencyP50), last(r.LatencyP95), last(r.LatencyP99))
+			record("t006-requests-"+name+".json", r)
+		}
+		t.Logf("%s unavailable: %q", name, m.Unavailable)
+		for _, c := range []resource.AlertCondition{
+			{Type: resource.ConditionTypeRequestErrorRate, RequestErrorRate: &resource.RequestErrorRateCondition{AbovePercent: 5, MinRequests: 10, WindowMinutes: 10}},
+			{Type: resource.ConditionTypeRequestLatency, RequestLatency: &resource.RequestLatencyCondition{Percentile: 95, AboveMs: 100, WindowMinutes: 10}},
+		} {
+			v, err := p.EvaluateCondition(ctx, tg, c, 10*time.Minute)
+			t.Logf("%s %s: value %.3f current %.3f err %v", name, c.Type, v.Value, v.Current, err)
+		}
+		page, err := p.Flows(ctx, []reconcile.LogTarget{tg}, reconcile.FlowQuery{From: now.Add(-30 * time.Minute), Limit: 20})
+		if err != nil {
+			t.Errorf("%s flows: %v", name, err)
+			continue
+		}
+		for _, f := range page.Flows {
+			t.Logf("%s flow %s %s %s %+v -> %+v %s/%d x%d", name, f.Time.Format(time.TimeOnly), f.Verdict, f.Reason, f.Source, f.Destination, f.Protocol, f.Port, f.Count)
+		}
+		t.Logf("%s flows: %d, next %q", name, len(page.Flows), page.Next)
+		dropped, err := p.Flows(ctx, []reconcile.LogTarget{tg}, reconcile.FlowQuery{From: now.Add(-3 * time.Hour), DroppedOnly: true, Limit: 5})
+		if err != nil {
+			t.Errorf("%s dropped flows: %v", name, err)
+			continue
+		}
+		for _, f := range dropped.Flows {
+			t.Logf("%s dropped %s %s %+v -> %+v %s/%d x%d", name, f.Time.Format(time.TimeOnly), f.Reason, f.Source, f.Destination, f.Protocol, f.Port, f.Count)
+		}
+	}
+	byEnv := map[string][]reconcile.LogTarget{}
+	for _, tg := range targets {
+		byEnv[tg.Environment.Metadata.ID] = append(byEnv[tg.Environment.Metadata.ID], tg)
+	}
+	for env, ts := range byEnv {
+		edges, err := p.Traffic(ctx, ts, now.Add(-5*time.Minute), now)
+		if err != nil {
+			t.Errorf("traffic in %s: %v", env, err)
+			continue
+		}
+		for _, e := range edges {
+			t.Logf("traffic %s -> %s: %.3f/s, 5xx %.3f/s", e.From, e.To, e.Rate, e.ErrorRate)
+		}
+		record("t006-traffic.json", edges)
+	}
+}
+
+// TestLiveTracingInstall installs the tracing package through the real
+// installer (spec 025 T007), repeating Install until it's Ready.
+func TestLiveTracingInstall(t *testing.T) {
+	client, kc := liveClient(t)
+	inst, err := NewTracingInstaller(client, kc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	var applied string
+	for {
+		state, err := inst.Install(ctx, resource.ProviderInstance{Status: resource.ProviderInstanceStatus{Applied: applied}})
+		if err != nil {
+			t.Logf("%s install: %v", time.Now().Format(time.TimeOnly), err)
+		} else {
+			t.Logf("%s ready=%v applied=%v: %s", time.Now().Format(time.TimeOnly), state.Ready, state.Applied != "", state.Message)
+			if state.Applied != "" {
+				applied = state.Applied
+			}
+			if state.Ready {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("not ready in time")
+		case <-time.After(20 * time.Second):
+		}
+	}
+}
+
+// TestLiveTracingUninstall removes the tracing package.
+func TestLiveTracingUninstall(t *testing.T) {
+	client, kc := liveClient(t)
+	inst, err := NewTracingInstaller(client, kc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.Uninstall(context.Background(), "live"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLiveTraces lists each target's traces over the last 15 minutes and
+// opens the newest (spec 025 T007). OBS_LIVE_TRACE, when set, is a trace
+// ID opened as every target, which must be found only as its own.
+func TestLiveTraces(t *testing.T) {
+	client, _ := liveClient(t)
+	ctx := context.Background()
+	targets := liveTargets(t, ctx)
+	tr := NewTracing(client)
+	now := time.Now()
+	for _, tg := range targets {
+		name := tg.Component.Metadata.Name
+		page, err := tr.SearchTraces(ctx, []reconcile.LogTarget{tg}, reconcile.TraceQuery{From: now.Add(-15 * time.Minute), Limit: 5})
+		if err != nil {
+			t.Errorf("%s traces: %v", name, err)
+			continue
+		}
+		for _, x := range page.Traces {
+			t.Logf("%s trace %s %s %s spans %d errors %v root %q", name, x.TraceID, x.Start.Format(time.TimeOnly), x.Duration, x.Spans, x.HasErrors, x.Root)
+		}
+		t.Logf("%s: %d traces, next %v", name, len(page.Traces), page.Next != "")
+		failed, err := tr.SearchTraces(ctx, []reconcile.LogTarget{tg}, reconcile.TraceQuery{From: now.Add(-15 * time.Minute), ErrorsOnly: true, MinDuration: 10 * time.Millisecond, Limit: 3})
+		if err != nil {
+			t.Errorf("%s failed traces: %v", name, err)
+		}
+		for _, x := range failed.Traces {
+			if !x.HasErrors || x.Duration < 10*time.Millisecond {
+				t.Errorf("%s: filtered trace %+v", name, x)
+			}
+		}
+		if len(page.Traces) > 0 {
+			got, err := tr.Trace(ctx, []reconcile.LogTarget{tg}, page.Traces[0].TraceID)
+			if err != nil {
+				t.Errorf("%s open %s: %v", name, page.Traces[0].TraceID, err)
+				continue
+			}
+			for _, sp := range got.Spans {
+				t.Logf("%s span %s parent %s %q %s %s failed %v %s/%s attrs %v", name, sp.SpanID, sp.ParentID, sp.Name, sp.Kind, sp.Duration, sp.Failed, sp.Component, sp.Environment, sp.Attributes)
+			}
+			t.Logf("%s: %d spans, %d hidden", name, len(got.Spans), got.Hidden)
+		}
+		c := resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: 0, WindowMinutes: 10}}
+		v, err := tr.EvaluateCondition(ctx, tg, c, 10*time.Minute)
+		t.Logf("%s traceErrors over 10m: %.0f, %v", name, v.Value, err)
+		if id := os.Getenv("OBS_LIVE_TRACE"); id != "" {
+			got, err := tr.Trace(ctx, []reconcile.LogTarget{tg}, id)
+			t.Logf("%s opens %s: %d spans, %d hidden, %v", name, id, len(got.Spans), got.Hidden, err)
+		}
+		// Opened as every target at once (T009): the same trace, its spans
+		// each attributed to the target that sent them, the rest hidden.
+		if len(page.Traces) > 0 {
+			id := page.Traces[0].TraceID
+			one, err1 := tr.Trace(ctx, []reconcile.LogTarget{tg}, id)
+			all, err := tr.Trace(ctx, targets, id)
+			if err != nil || err1 != nil {
+				t.Errorf("%s open %s as all targets: %v %v", name, id, err, err1)
+				continue
+			}
+			if len(all.Spans)+all.Hidden != len(one.Spans)+one.Hidden || len(all.Spans) < len(one.Spans) {
+				t.Errorf("%s: as all, %d spans %d hidden; as itself, %d spans %d hidden", name, len(all.Spans), all.Hidden, len(one.Spans), one.Hidden)
+			}
+			by := map[string]int{}
+			for _, sp := range all.Spans {
+				by[sp.Component]++
+			}
+			t.Logf("%s opens %s as all targets: spans by Component %v, %d hidden", name, id, by, all.Hidden)
+		}
+	}
 }

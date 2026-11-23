@@ -35,6 +35,15 @@ func TestValidateCondition(t *testing.T) {
 		return resource.AlertCondition{Type: resource.ConditionTypeLogMatch, LogMatch: &resource.LogMatchCondition{Text: text, Above: above, WindowMinutes: win}}
 	}
 	disk := resource.AlertCondition{Type: resource.ConditionTypePackageDisk, PackageDisk: &resource.PackageDiskCondition{PercentOfBudget: 85}}
+	errRate := func(pct float64, min, win int) resource.AlertCondition {
+		return resource.AlertCondition{Type: resource.ConditionTypeRequestErrorRate, RequestErrorRate: &resource.RequestErrorRateCondition{AbovePercent: pct, MinRequests: min, WindowMinutes: win}}
+	}
+	latency := func(p int, ms float64, win int) resource.AlertCondition {
+		return resource.AlertCondition{Type: resource.ConditionTypeRequestLatency, RequestLatency: &resource.RequestLatencyCondition{Percentile: p, AboveMs: ms, WindowMinutes: win}}
+	}
+	traceErrs := func(above, win int) resource.AlertCondition {
+		return resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: above, WindowMinutes: win}}
+	}
 	tests := []struct {
 		name    string
 		c       resource.AlertCondition
@@ -65,6 +74,25 @@ func TestValidateCondition(t *testing.T) {
 		{"disk built in", disk, true, ""},
 		{"disk by a person", disk, false, "built-in rule only"},
 		{"disk over 100", resource.AlertCondition{Type: resource.ConditionTypePackageDisk, PackageDisk: &resource.PackageDiskCondition{PercentOfBudget: 120}}, true, "at most 100"},
+		{"error rate", errRate(5, 20, 5), false, ""},
+		{"any failed request", errRate(0, 0, 1), false, ""},
+		{"error rate 100", errRate(100, 0, 5), false, "under 100"},
+		{"error rate negative", errRate(-1, 0, 5), false, "0 or more"},
+		{"error rate min requests negative", errRate(5, -1, 5), false, "minRequests: 0 to 999"},
+		{"error rate min requests above cap", errRate(5, 1000, 5), false, "minRequests: 0 to 999"},
+		{"error rate window", errRate(5, 0, 61), false, "1 to 60"},
+		{"p95 latency", latency(95, 250, 5), false, ""},
+		{"p99 latency at cap", latency(99, resource.MaxLatencyAboveMs, 60), false, ""},
+		{"p90 latency", latency(90, 250, 5), false, "95 or 99"},
+		{"latency zero", latency(95, 0, 5), false, "more than 0"},
+		{"latency over cap", latency(95, resource.MaxLatencyAboveMs+1, 5), false, "at most 600000"},
+		{"latency window", latency(95, 1, 0), false, "1 to 60"},
+		{"trace errors", traceErrs(0, 10), false, ""},
+		{"trace errors above cap", traceErrs(1000, 10), false, "0 to 999"},
+		{"trace errors window", traceErrs(1, 61), false, "1 to 60"},
+		{"error rate type without block", resource.AlertCondition{Type: resource.ConditionTypeRequestErrorRate, TraceErrors: &resource.TraceErrorsCondition{WindowMinutes: 1}}, false, "requestErrorRate is required"},
+		{"two new blocks", resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{WindowMinutes: 1}, RequestLatency: &resource.RequestLatencyCondition{Percentile: 95, AboveMs: 1, WindowMinutes: 1}}, false, "exactly one"},
+		{"unknown type", resource.AlertCondition{Type: "slo", TraceErrors: &resource.TraceErrorsCondition{WindowMinutes: 1}}, false, "requestLatency or traceErrors"},
 		{"none set", resource.AlertCondition{Type: resource.ConditionTypeMetric}, false, "exactly one"},
 		{"two set", resource.AlertCondition{Type: resource.ConditionTypeRestarts, Restarts: &resource.RestartsCondition{WindowMinutes: 1}, LogMatch: &resource.LogMatchCondition{Text: "x", WindowMinutes: 1}}, false, "exactly one"},
 		{"type mismatch", resource.AlertCondition{Type: resource.ConditionTypeMetric, Restarts: &resource.RestartsCondition{WindowMinutes: 1}}, false, "metric is required"},

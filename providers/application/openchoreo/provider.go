@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"sync"
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
@@ -26,6 +27,11 @@ import (
 type Provider struct {
 	client  *kubernetes.Client
 	gateway reconcile.GatewayEndpoint
+
+	// traceEndpoint is where workloads send traces, "" while tracing
+	// isn't Ready (SetTraceEndpoint).
+	mu            sync.Mutex
+	traceEndpoint string
 }
 
 // NewProvider returns a Provider whose external routes attach to gateway.

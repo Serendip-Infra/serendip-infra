@@ -100,6 +100,11 @@ func parseFlags(args []string) (options, error) {
 	fs.DurationVar(&o.pkg.diskInterval, "package-disk-interval", time.Minute, "observability package: time between disk-phase samples")
 	fs.IntVar(&o.pkg.rules, "package-rules", 0, "observability package: alert rules to create after the load phase, each at 1 minute (at most 199: the built-in disk rule is the 200th; 0 skips the rules phases)")
 	fs.IntVar(&o.pkg.rulesSamples, "package-rules-samples", 180, "observability package: samples while the rules are evaluated, every package-idle-interval")
+	fs.BoolVar(&o.pkg.traffic, "package-traffic", false, "observability package: after the load phase, deploy a caller and a server Component (--package-traffic-image) and sample their HTTP traffic")
+	fs.BoolVar(&o.pkg.tracing, "package-tracing", false, "observability package, with --package-traffic: then install the tracing package, give both Components a new release so they send traces, and sample the same traffic traced")
+	fs.StringVar(&o.pkg.trafficImage, "package-traffic-image", "t012-otel:2", "traffic phases: an OpenTelemetry-instrumented image serving on PORT and calling TARGET (a URL, or host:port) every CALL_EVERY_MS (spec 025 T012's otelapp); it must be on the node")
+	fs.IntVar(&o.pkg.trafficCallMs, "package-traffic-call-ms", 100, "traffic phases: the caller's period in ms (100 is 10 requests a second)")
+	fs.IntVar(&o.pkg.trafficSamples, "package-traffic-samples", 60, "traffic phases: samples per phase, every package-idle-interval")
 	fs.BoolVar(&diskProbe, "disk-probe", true, "measure host-path volumes (local-path) with a short-lived du pod at the start and end of each phase; the kubelet reports no usage for them")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -493,6 +498,10 @@ func checkLoadFlags(po packageOptions) error {
 		return fmt.Errorf("--package-rules %d: 0 to skip, at most %d (the built-in rule is the 200th)", po.rules, maxBenchRules)
 	case po.rules > 0 && po.rulesSamples < 2:
 		return fmt.Errorf("--package-rules-samples %d: at least 2", po.rulesSamples)
+	case po.tracing && !po.traffic:
+		return fmt.Errorf("--package-tracing needs --package-traffic: the traced phase is compared with the untraced one")
+	case po.traffic && (po.trafficSamples < 2 || po.trafficCallMs < 1 || po.trafficImage == ""):
+		return fmt.Errorf("--package-traffic: --package-traffic-samples at least 2, --package-traffic-call-ms at least 1, and an image")
 	}
 	if _, err := os.Stat(po.loadScript); err != nil {
 		return fmt.Errorf("--package-load-script: %w", err)

@@ -1,0 +1,43 @@
+# Cilium Helm values Serendip pins (specs/025-networking plan decision 4;
+# checked live in T001, testdata/t001-values.yaml). The provider reports
+# drift from these as reasons on the networking status; it never applies
+# them. agent/bootstrap keeps an identical copy (a test checks).
+ipam:
+  mode: kubernetes
+operator:
+  replicas: 1
+kubeProxyReplacement: false
+image:
+  pullPolicy: IfNotPresent
+hubble:
+  enabled: true
+  relay: {enabled: false}
+  ui: {enabled: false}
+  metrics:
+    enabled:
+    - "httpV2:labelsContext=source_namespace,source_pod,destination_namespace,destination_pod"
+    - drop
+    - flow
+  export:
+    static:
+      enabled: true
+      filePath: /var/run/cilium/hubble/events.log
+      fileMaxSizeMb: 10
+      fileMaxBackups: 5
+      fieldMask: [time, verdict, drop_reason_desc, traffic_direction, source.namespace, source.workloads, source.identity, destination.namespace, destination.workloads, destination.identity, l4]
+      fieldAggregate: [verdict, drop_reason_desc, traffic_direction, source.namespace, source.workloads, source.identity, destination.namespace, destination.workloads, destination.identity, l4.TCP.destination_port, l4.UDP.destination_port]
+      aggregationInterval: "60s"
+      denyList:
+      - '{"destination_port":["53"]}'
+      - '{"source_port":["53"]}'
+      - '{"protocol":["ICMPv6"]}'
+      allowList:
+      - '{"verdict":["DROPPED"],"source_label":["k8s:openchoreo.dev/component-uid"]}'
+      - '{"verdict":["DROPPED"],"destination_label":["k8s:openchoreo.dev/component-uid"]}'
+      - '{"verdict":["FORWARDED"],"tcp_flags":[{"SYN":true}],"reply":[false],"source_label":["k8s:openchoreo.dev/component-uid"]}'
+      - '{"verdict":["FORWARDED"],"tcp_flags":[{"SYN":true}],"reply":[false],"destination_label":["k8s:openchoreo.dev/component-uid"]}'
+      - '{"verdict":["FORWARDED"],"protocol":["UDP"],"reply":[false],"source_label":["k8s:openchoreo.dev/component-uid"]}'
+      - '{"verdict":["FORWARDED"],"protocol":["UDP"],"reply":[false],"destination_label":["k8s:openchoreo.dev/component-uid"]}'
+extraConfig:
+  http-retry-count: "0"
+  http-normalize-path: "false"

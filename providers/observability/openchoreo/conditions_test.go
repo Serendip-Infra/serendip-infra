@@ -186,7 +186,7 @@ func TestEvaluateCondition_RestartsQueryHoldsOnlyIDs(t *testing.T) {
 	}
 	q := f.promQueries[0]
 	want := `sum((max_over_time(kube_pod_container_status_restarts_total[10m]) - min_over_time(kube_pod_container_status_restarts_total[10m]))` +
-		` * on (namespace, pod) group_left() max by (namespace, pod) (kube_pod_labels{label_openchoreo_dev_component_uid="uid-a",label_openchoreo_dev_environment_uid="uid-dev",label_openchoreo_dev_project_uid="uid-app-x"}))`
+		` * on (namespace, pod) group_left() max by (namespace, pod) (max_over_time(kube_pod_labels{label_openchoreo_dev_component_uid="uid-a",label_openchoreo_dev_environment_uid="uid-dev",label_openchoreo_dev_project_uid="uid-app-x"}[10m])))`
 	if q.Get("query") != want {
 		t.Errorf("query =\n%s\nwant\n%s", q.Get("query"), want)
 	}

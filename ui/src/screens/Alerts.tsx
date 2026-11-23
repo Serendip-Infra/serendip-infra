@@ -315,13 +315,22 @@ function channelNames(ids: string[] | undefined, channels: ChannelListItem[] | u
 
 // ---- The rule form ----
 
+/** What a condition needs beyond the observability package; without it the rule is inactive with the reason. */
+const conditionNeeds: Partial<Record<AlertCondition["type"], string>> = {
+  requestErrorRate: "Needs request metrics from the cluster's network layer (Cilium). Without them the rule stays inactive and says why.",
+  requestLatency: "Needs request metrics from the cluster's network layer (Cilium). Without them the rule stays inactive and says why.",
+  traceErrors: "Needs the tracing package, and components sending traces. Without it the rule stays inactive and says why.",
+};
+
 interface RuleState {
   name: string;
   summary: string;
   severity: Severity;
   environmentId: string;
-  type: "metric" | "restarts" | "logMatch" | "packageDisk";
+  type: AlertCondition["type"];
   metric: "cpu" | "memory";
+  percentile: "95" | "99";
+  minRequests: string;
   as: "value" | "percentOfRequest" | "percentOfLimit";
   above: string;
   minutes: string;
@@ -333,8 +342,9 @@ interface RuleState {
 
 function initialState(rule: AlertRule | undefined, envs: Environment[]): RuleState {
   const c = rule?.spec.condition;
-  const above = c?.metric?.above ?? c?.restarts?.above ?? c?.logMatch?.above ?? c?.packageDisk?.percentOfBudget;
-  const mins = c?.metric?.forMinutes ?? c?.restarts?.windowMinutes ?? c?.logMatch?.windowMinutes;
+  const above =
+    c?.metric?.above ?? c?.restarts?.above ?? c?.logMatch?.above ?? c?.packageDisk?.percentOfBudget ?? c?.requestErrorRate?.abovePercent ?? c?.requestLatency?.aboveMs ?? c?.traceErrors?.above;
+  const mins = c?.metric?.forMinutes ?? c?.restarts?.windowMinutes ?? c?.logMatch?.windowMinutes ?? c?.requestErrorRate?.windowMinutes ?? c?.requestLatency?.windowMinutes ?? c?.traceErrors?.windowMinutes;
   return {
     name: rule?.metadata.name ?? "",
     summary: rule?.spec.summary ?? "",
@@ -342,6 +352,8 @@ function initialState(rule: AlertRule | undefined, envs: Environment[]): RuleSta
     environmentId: rule?.spec.environmentId ?? envs[0]?.metadata.id ?? "",
     type: c?.type ?? "metric",
     metric: c?.metric?.metric ?? "cpu",
+    percentile: c?.requestLatency?.percentile === 99 ? "99" : "95",
+    minRequests: c?.requestErrorRate?.minRequests !== undefined ? String(c.requestErrorRate.minRequests) : "",
     as: c?.metric?.as ?? "percentOfLimit",
     above: above !== undefined ? String(above) : "80",
     minutes: mins !== undefined ? String(mins) : "5",
@@ -364,6 +376,12 @@ function toCondition(s: RuleState): AlertCondition {
       return { type: "logMatch", logMatch: { text: s.text.trim(), above, windowMinutes: mins } };
     case "packageDisk":
       return { type: "packageDisk", packageDisk: { percentOfBudget: above } };
+    case "requestErrorRate":
+      return { type: "requestErrorRate", requestErrorRate: { abovePercent: above, ...(s.minRequests.trim() !== "" ? { minRequests: Number(s.minRequests) } : {}), windowMinutes: mins } };
+    case "requestLatency":
+      return { type: "requestLatency", requestLatency: { percentile: s.percentile === "99" ? 99 : 95, aboveMs: above, windowMinutes: mins } };
+    case "traceErrors":
+      return { type: "traceErrors", traceErrors: { above, windowMinutes: mins } };
   }
 }
 
@@ -377,7 +395,9 @@ export function validateRule(s: RuleState, creating: boolean): Record<string, st
   else if (s.summary.length > 200) e.summary = "At most 200 characters.";
   const above = Number(s.above);
   if (s.above.trim() === "" || !Number.isFinite(above) || above < 0) e.above = "Enter a number, 0 or more.";
-  else if ((s.type === "restarts" || s.type === "logMatch") && (!Number.isInteger(above) || above > 999)) e.above = "A whole number up to 999.";
+  else if ((s.type === "restarts" || s.type === "logMatch" || s.type === "traceErrors") && (!Number.isInteger(above) || above > 999)) e.above = "A whole number up to 999.";
+  else if (s.type === "requestErrorRate" && above >= 100) e.above = "A percentage of requests, under 100.";
+  else if (s.type === "requestLatency" && (above <= 0 || above > 600_000)) e.above = "Milliseconds, above 0 and at most 600000 (ten minutes).";
   else if (s.type === "packageDisk" && (above <= 0 || above > 100)) e.above = "A percentage, above 0 and at most 100.";
   if (s.type !== "packageDisk") {
     const m = Number(s.minutes);
@@ -385,6 +405,10 @@ export function validateRule(s: RuleState, creating: boolean): Record<string, st
     if (s.environmentId === "") e.environmentId = "Choose an Environment.";
   }
   if (s.type === "logMatch" && s.text.trim() === "") e.text = "Enter the text to count.";
+  if (s.type === "requestErrorRate" && s.minRequests.trim() !== "") {
+    const n = Number(s.minRequests);
+    if (!Number.isInteger(n) || n < 0 || n > 999) e.minRequests = "A whole number up to 999, or empty.";
+  }
   const iv = Number(s.intervalMinutes);
   if (!Number.isInteger(iv) || iv < 1 || iv > 60) e.intervalMinutes = "Whole minutes, 1 to 60.";
   return e;
@@ -444,8 +468,15 @@ export function RuleForm({ owner, envs, channels, rule, idPrefix, onDone, onCanc
   }
 
   const id = (k: string) => `${idPrefix}-${k}`;
-  const aboveLabel =
-    s.type === "metric" ? (s.as === "value" ? (s.metric === "cpu" ? "Above, millicores" : "Above, MiB") : "Above, %") : s.type === "packageDisk" ? "Above, % of the disk budget" : s.type === "restarts" ? "More than, restarts" : "More than, lines";
+  const aboveLabel: Record<RuleState["type"], string> = {
+    metric: s.as === "value" ? (s.metric === "cpu" ? "Above, millicores" : "Above, MiB") : "Above, %",
+    packageDisk: "Above, % of the disk budget",
+    restarts: "More than, restarts",
+    logMatch: "More than, lines",
+    requestErrorRate: "Above, % of requests failing",
+    requestLatency: "Above, milliseconds",
+    traceErrors: "More than, traces with an error",
+  };
   return (
     <form className="panel form" onSubmit={submit} noValidate aria-label={creating ? "New alert rule" : `Edit ${rule.metadata.name}`}>
       {Object.keys(errors).length > 0 && <Notice tone="danger">Some fields need attention. Nothing was sent.</Notice>}
@@ -474,6 +505,22 @@ export function RuleForm({ owner, envs, channels, rule, idPrefix, onDone, onCanc
             { value: "metric", label: "CPU or memory" },
             { value: "restarts", label: "Restarts" },
             { value: "logMatch", label: "Log lines containing text" },
+            { value: "requestErrorRate", label: "Request error rate" },
+            { value: "requestLatency", label: "Request latency" },
+            { value: "traceErrors", label: "Traces with errors" },
+          ]}
+        />
+      )}
+      {conditionNeeds[s.type] && <p className="field-hint">{conditionNeeds[s.type]}</p>}
+      {s.type === "requestLatency" && (
+        <SelectField
+          id={id("percentile")}
+          label="Percentile"
+          value={s.percentile}
+          onChange={(e) => update({ percentile: e.target.value as RuleState["percentile"] })}
+          options={[
+            { value: "95", label: "p95" },
+            { value: "99", label: "p99" },
           ]}
         />
       )}
@@ -495,9 +542,12 @@ export function RuleForm({ owner, envs, channels, rule, idPrefix, onDone, onCanc
       )}
       {s.type === "logMatch" && <TextField id={id("text")} label="Containing" hint="Plain text, matched as a phrase. Alerts record the count, never the lines." value={s.text} maxLength={200} onChange={(e) => update({ text: e.target.value })} {...err("text")} />}
       <div className="form-row">
-        <TextField id={id("above")} label={aboveLabel} inputMode="decimal" value={s.above} onChange={(e) => update({ above: e.target.value })} {...err("above")} />
+        <TextField id={id("above")} label={aboveLabel[s.type]} inputMode="decimal" value={s.above} onChange={(e) => update({ above: e.target.value })} {...err("above")} />
         {s.type !== "packageDisk" && (
           <TextField id={id("minutes")} label={s.type === "metric" ? "For, minutes" : "Within, minutes"} inputMode="numeric" value={s.minutes} onChange={(e) => update({ minutes: e.target.value })} {...err("minutes")} />
+        )}
+        {s.type === "requestErrorRate" && (
+          <TextField id={id("min-requests")} label="At least, requests" hint="Optional: below this many requests in the window, the rule doesn't fire." inputMode="numeric" value={s.minRequests} onChange={(e) => update({ minRequests: e.target.value })} {...err("minRequests")} />
         )}
         <TextField id={id("interval")} label="Checked every, minutes" inputMode="numeric" value={s.intervalMinutes} onChange={(e) => update({ intervalMinutes: e.target.value })} {...err("intervalMinutes")} />
       </div>

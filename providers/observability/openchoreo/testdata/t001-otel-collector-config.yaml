@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: serendip-otel-collector
+  namespace: openchoreo-observability-plane
+data:
+  relay: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: "0.0.0.0:4317"}
+          http: {endpoint: "0.0.0.0:4318"}
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 160
+        spike_limit_mib: 40
+      transform/strip-identity:
+        error_mode: ignore
+        trace_statements:
+          - context: resource
+            statements:
+              - delete_matching_keys(attributes, "^(k8s[.].*|openchoreo[.]dev/.*|container[.].*)$")
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        pod_association:
+          - sources:
+              - from: connection
+        extract:
+          labels:
+            - tag_name: $$1
+              key_regex: (.*)
+              from: pod
+          metadata: [k8s.pod.name, k8s.pod.uid, k8s.deployment.name, k8s.namespace.name, k8s.node.name]
+      batch: {}
+    exporters:
+      otlphttp:
+        traces_endpoint: http://openobserve:5080/api/default/traces
+        auth: {authenticator: basicauth/openobserve}
+    extensions:
+      basicauth/openobserve:
+        client_auth:
+          username: ${OPENOBSERVE_USERNAME}
+          password: ${OPENOBSERVE_PASSWORD}
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    service:
+      extensions: [basicauth/openobserve, health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/strip-identity, k8sattributes, batch]
+          exporters: [otlphttp]

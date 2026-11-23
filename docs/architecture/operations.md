@@ -73,7 +73,14 @@ default channels when empty), an `interval` (1–60 minutes, default 1) and
 | `metric`: `cpu` or `memory`, as `value` (millicores or MiB), `percentOfRequest` or `percentOfLimit`; `above`; `for` | the metrics adapter | every point in `for` is above |
 | `restarts`: `above` within `window` | kube-state-metrics' restart counter through Prometheus (max − min per container, summed) | the count is above |
 | `logMatch`: `text`, `above` (at most 999, RP-073) within `window` | the logs adapter's `total` | more lines match |
+| `requestErrorRate`: `abovePercent`, `minRequests` within `windowMinutes` (spec 025) | Hubble's request metrics through Prometheus, 5xx over all, server side | the rate is above, with at least `minRequests` |
+| `requestLatency`: `percentile` 95 or 99, `aboveMs` within `windowMinutes` (spec 025) | Hubble's latency histogram (interpolated in its buckets, RP-085) | the percentile is above |
+| `traceErrors`: `above` within `windowMinutes` (spec 025) | the stored traces, `count(DISTINCT trace_id)` with an error | more traces failed |
 | `packageDisk`: `percentOfBudget` | the package's `usage` | built-in only |
+
+The three request and trace conditions need their source: on a CNI
+without request metrics, or without the tracing package, the rule reads
+`ConditionRefused` with the reason (`networking.md`).
 
 - **Every query is Serendip's,** a fixed template filled from validated
   IDs, scoped by all three OpenChoreo UIDs. There's no query language.
@@ -226,6 +233,43 @@ must not run on the same machine (the guide).
 - **Console:** Alerts on a Component's Observability tab and on an
   Application, the bell in the top bar and `/alerts`, and Settings ›
   Notifications (channels, SMTP servers, the heartbeat).
+
+## Networking (spec 025)
+
+Design: `networking.md`, ADR 0023. What an operator does with it:
+
+- **Which CNI runs:** `serendip networking show` (or Platform › Network
+  layer) gives the plugin, version, policy enforcement and every reason
+  something is unavailable, refreshed every 5 minutes.
+- **Changing a cluster's CNI is a reinstall.** K3s's CNI is fixed at
+  install, and `serendipd` never changes it. To move from Flannel to
+  Cilium (or back): back up what the store and the platform hold,
+  uninstall K3s (`k3s-uninstall.sh`; what Cilium leaves on a real host
+  isn't checked yet, RP-083), bootstrap again with `serendip-agent
+  bootstrap --cni cilium|default`, and let `serendipd` re-ensure the
+  platform. The new networking provider is detected on its next pass.
+- **Drift:** if Cilium's pinned values change (Hubble's metrics or
+  export, or Envoy's retry and path settings), the facts say so. On the
+  Envoy settings, request visibility is removed until they're back
+  (RP-081). Re-check on every Cilium upgrade
+  (`providers/networking/cilium/VERSIONS.md`).
+- **Flows** (`serendip flows <deployment>`, the Component's Networking
+  tab › Connections): drops first, with the policy reason. A dropped
+  connection between two Components usually means the platform's
+  NetworkPolicy refuses it (a missing dependency). Records are per
+  minute, not per packet, kept 3 days.
+- **Requests and traffic:** the Observability tab's HTTP requests block and
+  the topology diagram's traffic overlay. A Component without request
+  metrics says why (TCP-only, a policy shape skipped, an `external`
+  CNI).
+- **Traces:** install the `tracing` package (Platform › Packages), then
+  redeploy a Component to give it the OTLP endpoint (`serendip traces
+  list|show`, the Observability tab › Traces). Removing the package deletes
+  the stored traces, through an Approval, and rolls each traced
+  Component once.
+- **Disk:** flows and traces share the logs store's 5 GiB and its 3-day
+  retention, and count towards the built-in `observability-disk` rule
+  (RP-088, RP-092).
 
 ## SLOs and error budgets
 

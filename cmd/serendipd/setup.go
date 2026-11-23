@@ -136,6 +136,10 @@ type setupPlan struct {
 	platformFoundations func(context.Context, reconcile.GatewayEndpoint) error
 	identityFoundations func(context.Context, reconcile.GatewayEndpoint) error
 	reensureEvery       time.Duration
+
+	// networking runs the networking capability's loop until ctx ends
+	// (spec 025); nil skips it.
+	networking func(context.Context)
 }
 
 // start launches the plan's goroutines and returns at once. They all stop
@@ -143,6 +147,9 @@ type setupPlan struct {
 func (p setupPlan) start(ctx context.Context, t *tracker) {
 	go t.run(ctx, capStorage, p.storage)
 	go t.run(ctx, capSecrets, p.secrets)
+	if p.networking != nil {
+		go p.networking(ctx)
+	}
 	go func() {
 		t.waiting(capAppPlatform, "waiting for the gateway capability")
 		if p.identity != nil {

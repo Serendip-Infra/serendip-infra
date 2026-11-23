@@ -1,0 +1,78 @@
+# Serendip's trace collector config (specs/025-networking plan decision
+# 10), the "relay" key of the ConfigMap the tracing module's collector
+# reads (opentelemetry-collector.configMap.existingName). Identity is the
+# collector's, never the span's (spec criterion 8):
+#  - transform/identity keeps only the resource attributes on its
+#    allow-list. The store flattens a key by lowercasing it and turning
+#    every other character into "_", so any spelling of k8s.*,
+#    openchoreo.dev/* or container.* (K8S.pod.name,
+#    openchoreo_dev_environment_uid, ...) would land on the attested
+#    columns; an allow-list leaves nothing to spell (T007, live).
+#  - It also deletes span attributes named service.* in any spelling: the
+#    store writes a span attribute as a column of its flattened name, and
+#    prefixes resource attributes with service_, so a span attribute
+#    service.openchoreo.dev/component-uid lands on the attested column
+#    whenever the pod's own label didn't (an unlabelled pod, or one too
+#    new for k8sattributes to know; T007, live). Only a span attribute
+#    colliding with a column already set is stored as attr_*.
+#  - k8sattributes then adds the pod's labels and names, found by the
+#    connection's address only.
+# OTTL regexes use [.]: "\." fails to parse (T001). Component names are
+# 0.163's (k8s_attributes, otlp_http): the old ones log a deprecation.
+receivers:
+  otlp:
+    protocols:
+      grpc: {endpoint: "0.0.0.0:4317"}
+      http: {endpoint: "0.0.0.0:4318"}
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 160
+    spike_limit_mib: 40
+  transform/identity:
+    error_mode: ignore
+    trace_statements:
+      - context: resource
+        statements:
+          - keep_matching_keys(attributes, "^(service|telemetry|process|deployment)[.][a-z0-9_.]{1,128}$")
+      - context: span
+        statements:
+          - delete_matching_keys(attributes, "(?i)^[^a-z0-9]*service[^a-z0-9]")
+  k8s_attributes:
+    auth_type: serviceAccount
+    passthrough: false
+    pod_association:
+      - sources:
+          - from: connection
+    extract:
+      labels:
+        - tag_name: $$1
+          key_regex: (.*)
+          from: pod
+      metadata: [k8s.pod.name, k8s.pod.uid, k8s.deployment.name, k8s.namespace.name, k8s.node.name]
+  # A span k8sattributes couldn't attribute (an unlabelled pod, one too
+  # new for its cache, the host network) would never be shown: dropped.
+  filter/unattributed:
+    error_mode: ignore
+    traces:
+      span:
+        - resource.attributes["openchoreo.dev/component-uid"] == nil
+  batch: {}
+exporters:
+  otlp_http:
+    traces_endpoint: http://openobserve:5080/api/default/traces
+    auth: {authenticator: basicauth/openobserve}
+extensions:
+  basicauth/openobserve:
+    client_auth:
+      username: ${OPENOBSERVE_USERNAME}
+      password: ${OPENOBSERVE_PASSWORD}
+  health_check:
+    endpoint: ${env:MY_POD_IP}:13133
+service:
+  extensions: [basicauth/openobserve, health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/identity, k8s_attributes, filter/unattributed, batch]
+      exporters: [otlp_http]

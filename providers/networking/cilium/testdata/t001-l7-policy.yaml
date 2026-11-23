@@ -1,0 +1,25 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: serendip-l7-openchoreo-cmp-ac7df9f12c
+  namespace: dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755
+spec:
+  enableDefaultDeny: {ingress: false, egress: false}
+  endpointSelector:
+    matchLabels:
+      openchoreo.dev/component-uid: 2f248807-64e8-456f-9a73-8daf80436acd
+      openchoreo.dev/environment-uid: 96c5a7b1-d0ad-4b25-a5aa-82721deebb44
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: dp-openchoreo-co-app-7781ea963-env-8582189a-5f623755
+    toPorts:
+    - ports: [{port: "80", protocol: TCP}]
+      rules: {http: [{}]}
+  - fromEndpoints:
+    - matchExpressions:
+      - {key: k8s:io.kubernetes.pod.namespace, operator: Exists}
+      - {key: openchoreo.dev/system-component, operator: Exists}
+    toPorts:
+    - ports: [{port: "80", protocol: TCP}]
+      rules: {http: [{}]}

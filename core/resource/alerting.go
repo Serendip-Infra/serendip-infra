@@ -88,7 +88,16 @@ const (
 	ConditionTypeRestarts    = "restarts"
 	ConditionTypeLogMatch    = "logMatch"
 	ConditionTypePackageDisk = "packageDisk"
+	// Request and trace conditions (specs/025-networking plan decision
+	// 13): they need the network layer's request metrics, or the tracing
+	// package, and are refused with the reason without them.
+	ConditionTypeRequestErrorRate = "requestErrorRate"
+	ConditionTypeRequestLatency   = "requestLatency"
+	ConditionTypeTraceErrors      = "traceErrors"
 )
+
+// MaxLatencyAboveMs bounds a latency threshold: ten minutes.
+const MaxLatencyAboveMs = 600_000
 
 // Metric condition settings.
 const (
@@ -108,6 +117,10 @@ type AlertCondition struct {
 	Restarts    *RestartsCondition    `json:"restarts,omitempty"`
 	LogMatch    *LogMatchCondition    `json:"logMatch,omitempty"`
 	PackageDisk *PackageDiskCondition `json:"packageDisk,omitempty"`
+
+	RequestErrorRate *RequestErrorRateCondition `json:"requestErrorRate,omitempty"`
+	RequestLatency   *RequestLatencyCondition   `json:"requestLatency,omitempty"`
+	TraceErrors      *TraceErrorsCondition      `json:"traceErrors,omitempty"`
 }
 
 // MetricCondition fires when every point over the last ForMinutes is
@@ -142,6 +155,32 @@ type LogMatchCondition struct {
 // decision 4).
 type PackageDiskCondition struct {
 	PercentOfBudget float64 `json:"percentOfBudget"`
+}
+
+// RequestErrorRateCondition fires when more than AbovePercent of the HTTP
+// requests the Component served within the last WindowMinutes failed
+// (5xx). Below MinRequests requests in the window it doesn't fire, so one
+// failure out of one request isn't an outage.
+type RequestErrorRateCondition struct {
+	AbovePercent  float64 `json:"abovePercent"`
+	MinRequests   int     `json:"minRequests,omitempty"`
+	WindowMinutes int     `json:"windowMinutes"`
+}
+
+// RequestLatencyCondition fires when the Percentile (95 or 99) of the
+// Component's HTTP request latency over the last WindowMinutes is above
+// AboveMs milliseconds.
+type RequestLatencyCondition struct {
+	Percentile    int     `json:"percentile"`
+	AboveMs       float64 `json:"aboveMs"`
+	WindowMinutes int     `json:"windowMinutes"`
+}
+
+// TraceErrorsCondition fires when more than Above traces with a failed
+// span from the Component were stored within the last WindowMinutes.
+type TraceErrorsCondition struct {
+	Above         int `json:"above"`
+	WindowMinutes int `json:"windowMinutes"`
 }
 
 // AlertRuleSpec is a rule, owned by a Component or an Application (or,
@@ -567,13 +606,14 @@ func ValidateHost(field, h string) error {
 // says whether the rule is serendipd's own.
 func ValidateCondition(c AlertCondition, builtIn bool) error {
 	set := 0
-	for _, p := range []bool{c.Metric != nil, c.Restarts != nil, c.LogMatch != nil, c.PackageDisk != nil} {
+	for _, p := range []bool{c.Metric != nil, c.Restarts != nil, c.LogMatch != nil, c.PackageDisk != nil,
+		c.RequestErrorRate != nil, c.RequestLatency != nil, c.TraceErrors != nil} {
 		if p {
 			set++
 		}
 	}
 	if set != 1 {
-		return invalid("condition: set exactly one of metric, restarts, logMatch or packageDisk, matching condition.type")
+		return invalid("condition: set exactly one of metric, restarts, logMatch, requestErrorRate, requestLatency, traceErrors or packageDisk, matching condition.type")
 	}
 	switch c.Type {
 	case ConditionTypeMetric:
@@ -634,8 +674,41 @@ func ValidateCondition(c AlertCondition, builtIn bool) error {
 			return invalid("condition.packageDisk.percentOfBudget: more than 0 and at most 100")
 		}
 		return nil
+	case ConditionTypeRequestErrorRate:
+		r := c.RequestErrorRate
+		if r == nil {
+			return invalid("condition.requestErrorRate is required for type requestErrorRate")
+		}
+		if r.AbovePercent < 0 || r.AbovePercent >= 100 {
+			return invalid("condition.requestErrorRate.abovePercent: a percentage of requests, 0 or more and under 100")
+		}
+		if r.MinRequests < 0 || r.MinRequests > MaxCountAbove {
+			return invalid("condition.requestErrorRate.minRequests: 0 to %d", MaxCountAbove)
+		}
+		return minutesIn("condition.requestErrorRate.windowMinutes", r.WindowMinutes, MinIntervalMinutes, MaxIntervalMinutes, false)
+	case ConditionTypeRequestLatency:
+		r := c.RequestLatency
+		if r == nil {
+			return invalid("condition.requestLatency is required for type requestLatency")
+		}
+		if r.Percentile != 95 && r.Percentile != 99 {
+			return invalid("condition.requestLatency.percentile: 95 or 99")
+		}
+		if r.AboveMs <= 0 || r.AboveMs > MaxLatencyAboveMs {
+			return invalid("condition.requestLatency.aboveMs: milliseconds, more than 0 and at most %d", MaxLatencyAboveMs)
+		}
+		return minutesIn("condition.requestLatency.windowMinutes", r.WindowMinutes, MinIntervalMinutes, MaxIntervalMinutes, false)
+	case ConditionTypeTraceErrors:
+		t := c.TraceErrors
+		if t == nil {
+			return invalid("condition.traceErrors is required for type traceErrors")
+		}
+		if t.Above < 0 || t.Above > MaxCountAbove {
+			return invalid("condition.traceErrors.above: 0 to %d", MaxCountAbove)
+		}
+		return minutesIn("condition.traceErrors.windowMinutes", t.WindowMinutes, MinIntervalMinutes, MaxIntervalMinutes, false)
 	}
-	return invalid("condition.type: metric, restarts or logMatch")
+	return invalid("condition.type: metric, restarts, logMatch, requestErrorRate, requestLatency or traceErrors")
 }
 
 // ValidateAlertRule checks a rule's owner and spec. A rule is owned by

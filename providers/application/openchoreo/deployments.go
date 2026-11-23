@@ -132,6 +132,23 @@ func (p *Provider) createRelease(ctx context.Context, project string, comp resou
 	if err != nil {
 		return reconcile.Release{}, fmt.Errorf("encode the release of %s: %w", name, err)
 	}
+	if traced, ok := withTraceEnv(spec.Workload.Container, p.TraceEndpoint(), comp); ok {
+		// A release that already exists without the variables is kept:
+		// they join the Component's next new release, so tracing's install
+		// doesn't roll every running Component (specs/025-networking plan
+		// decision 11).
+		existing, err := p.client.Get(ctx, namespacedPath("componentreleases")+"/"+releaseObjectName(comp.Metadata.ID, content))
+		if err == nil {
+			return releaseOf(existing), nil
+		}
+		if !errors.Is(err, kubernetes.ErrNotFound) {
+			return reconcile.Release{}, fmt.Errorf("get the release of %s: %w", name, err)
+		}
+		spec.Workload.Container = traced
+		if content, err = json.Marshal(spec); err != nil {
+			return reconcile.Release{}, fmt.Errorf("encode the release of %s: %w", name, err)
+		}
+	}
 	relName := releaseObjectName(comp.Metadata.ID, content)
 	obj, err := apply(ctx, p.client, namespacedPath("componentreleases"), kubernetes.Object{
 		APIVersion: apiVersion, Kind: "ComponentRelease",

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
 )
 
@@ -136,11 +137,11 @@ func TestFluentBitConfig_OnlyTheMetadataLookupChanges(t *testing.T) {
 		t.Errorf("the config differs from the chart's beyond fluentBitEdits")
 	}
 	var data map[string]string
-	json.Unmarshal(fluentBitConfig().Data, &data)
+	json.Unmarshal(fluentBitConfig(reconcile.FlowSource{}).Data, &data)
 	if data["fluent-bit.conf"] != conf || data["parsers.conf"] != chartParsersConf || len(data) != 2 {
 		t.Errorf("ConfigMap data keys = %v", slices.Collect(maps.Keys(data)))
 	}
-	if h := fluentBitConfigHash(); len(h) != 16 {
+	if h := fluentBitConfigHash(reconcile.FlowSource{}); len(h) != 16 {
 		t.Errorf("hash = %q", h)
 	}
 }

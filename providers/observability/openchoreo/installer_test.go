@@ -404,7 +404,7 @@ func TestInstall_HelmArguments(t *testing.T) {
 			// when it changes.
 			"--set fluent-bit.hostNetwork=false", "--set fluent-bit.dnsPolicy=ClusterFirst",
 			"--set fluent-bit.existingConfigMap=serendip-fluent-bit",
-			"--set-string fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash()}},
+			"--set-string fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(reconcile.FlowSource{})}},
 		{prometheusRelease, []string{"--version 29.47.2", "oci://ghcr.io/prometheus-community/charts/prometheus"}},
 		{metricsRelease, []string{"--version 0.9.3", "--set kube-prometheus-stack.enabled=false"}},
 	}
@@ -495,7 +495,7 @@ func TestInstall_Repairs(t *testing.T) {
 	}{
 		{"deleted Fluent Bit config", func(e *testEnv) { e.api.del(fluentBitPath) }, nil,
 			func(t *testing.T, e *testEnv) {
-				if fb, ok := e.api.get(fluentBitPath); !ok || !dataEqual(fb.Data, fluentBitConfig().Data) {
+				if fb, ok := e.api.get(fluentBitPath); !ok || !dataEqual(fb.Data, fluentBitConfig(reconcile.FlowSource{}).Data) {
 					t.Error("Fluent Bit config not restored")
 				}
 				wantRestarted(t, e)
@@ -506,7 +506,7 @@ func TestInstall_Repairs(t *testing.T) {
 			e.api.put(fluentBitPath, fb)
 		}, nil,
 			func(t *testing.T, e *testEnv) {
-				if fb, _ := e.api.get(fluentBitPath); !dataEqual(fb.Data, fluentBitConfig().Data) {
+				if fb, _ := e.api.get(fluentBitPath); !dataEqual(fb.Data, fluentBitConfig(reconcile.FlowSource{}).Data) {
 					t.Error("Fluent Bit config not restored")
 				}
 				wantRestarted(t, e)
@@ -769,7 +769,7 @@ func TestPrometheusValuesMatchTheBench(t *testing.T) {
 }
 
 func TestFingerprint_StableAndCoversValues(t *testing.T) {
-	if !strings.HasPrefix(Fingerprint(), "sha256:") || Fingerprint() != fingerprint() {
+	if !strings.HasPrefix(Fingerprint(), "sha256:") || Fingerprint() != fingerprint(reconcile.FlowSource{}) {
 		t.Errorf("Fingerprint() = %q", Fingerprint())
 	}
 	if !strings.Contains(string(prometheusValues), "servicePort: 9091") {

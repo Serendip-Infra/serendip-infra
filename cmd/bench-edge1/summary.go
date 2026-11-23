@@ -97,6 +97,8 @@ const (
 	GroupWorkloads      = "Workloads"
 	GroupBuilds         = "Builds (workflow plane)"
 	GroupObservability  = "Observability"
+	GroupNetworking     = "Networking (Cilium)"
+	GroupTracing        = "Tracing (collector)"
 	groupOtherPrefix    = "Other: "
 	cellNamespacePrefix = "dp-"
 )
@@ -129,6 +131,25 @@ func groupFor(namespace string) string {
 		return GroupWorkloads
 	}
 	return groupOtherPrefix + namespace
+}
+
+// Pods counted apart from their namespace's group (specs/025-networking
+// T013): Cilium and Hubble run in kube-system, and the trace collector in
+// the observability plane's namespace, but each is a cost of its own.
+var podGroups = []struct{ namespace, prefix, group string }{
+	{"kube-system", "cilium-", GroupNetworking},
+	{"kube-system", "hubble-", GroupNetworking},
+	{obsplane.PlaneNamespace, "opentelemetry-collector-", GroupTracing},
+}
+
+// groupForPod attributes a pod: by podGroups first, then its namespace.
+func groupForPod(namespace, name string) string {
+	for _, g := range podGroups {
+		if namespace == g.namespace && strings.HasPrefix(name, g.prefix) {
+			return g.group
+		}
+	}
+	return groupFor(namespace)
 }
 
 // podUsage returns a pod's CPU nanocores and working-set bytes, preferring
@@ -195,7 +216,7 @@ func sampleFrom(s Summary) Sample {
 	out := Sample{Groups: map[string]GroupUsage{}}
 	for _, p := range s.Pods {
 		cpu, mem := podUsage(p)
-		g := groupFor(p.PodRef.Namespace)
+		g := groupForPod(p.PodRef.Namespace, p.PodRef.Name)
 		u := out.Groups[g]
 		u.NanoCores += cpu
 		u.WorkingSetBytes += mem

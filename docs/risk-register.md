@@ -96,11 +96,24 @@ purpose), **Closed** (fixed).
 | RP-073 | A `logMatch` threshold is capped at 999 | Correctness (limit) | Accepted | Spec 024 plan |
 | RP-074 | The heartbeat proves Serendip can alert, not that a message reached a person; it can't send headers, so Gatus needs a relay | Operability | Accepted | Spec 024 plan; T013 |
 | RP-075 | Alerting authorization: checks made before the write, and wide custom roles | Security | Accepted | Spec 024 T003 |
-| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted | Spec 024 T006 |
+| RP-076 | The sender's "cluster's own ranges" are learned from nodes and ServiceCIDRs, refreshed every 5 minutes | Security (SSRF) | Accepted (Cilium's pool ranges merged, spec 025 T008) | Spec 024 T006 |
 | RP-077 | Alert condition trade-offs: early restarts missed, the built-in rule's Alerts removed with the package, one unmeasured series | Correctness; footprint | Accepted | Spec 024 T006 |
 | RP-078 | Alerting API trade-offs: heartbeat status lag, save-time address check, in-memory Alert filtering | Audit volume; correctness; footprint | Accepted | Spec 024 T007 |
 | RP-079 | The API drops unknown fields in a resource document without saying so | Correctness | Mitigated (metadata refused, T012) | Spec 024 T010 |
 | RP-080 | 200 alert rules load the observability backends (+149 to +234 mcores on the node), and their status writes add about 37,000 audit rows a day | Footprint; audit volume | Accepted (load); Mitigated (writes: hourly refresh, T012) | Spec 024 T011 |
+| RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off; on drift the L7 policies are removed, T004) | Spec 025 T001 |
+| RP-082 | Request visibility copies each Component's NetworkPolicy; a shape it can't copy faithfully leaves that Component without request metrics | Correctness (coverage); security (isolation) | Accepted | Spec 025 T004 |
+| RP-083 | A Cilium bootstrap fetches the chart and images from the internet at first boot, and the node is NotReady until they arrive | Availability (install); footprint (first boot) | Accepted | Spec 025 T005 |
+| RP-084 | Connection records: de-duplicated within a page only, proxied ports recorded at the source only, and Fluent Bit's config depends on the logs chart's layout | Correctness (counts); upgrade | Accepted | Spec 025 T006 |
+| RP-085 | Request metrics from Hubble's histogram: coarse percentiles, extrapolated counts, a DNS lookup that fails on clusters without Cilium | Correctness (precision); log noise | Accepted | Spec 025 T006 |
+| RP-086 | Trace identity leans on the store's key flattening; removing traces waits for the store and rolls Components | Security (span identity); availability; performance | Accepted | Spec 025 T007 |
+| RP-087 | Flows and traces read the caller's readable Deployments in the Environment, capped at 20 | Correctness (names past the cap); performance (lookups per read) | Accepted | Spec 025 T009 |
+| RP-088 | Traces share the logs store: about 730 MiB a day at 10 traced requests a second, kept 3 days, in the same 5 GiB as logs | Footprint (disk); availability (logs) | Accepted | Spec 025 T013 |
+| RP-089 | Cilium costs about +450 to +500 MiB and +80 to +130 mcores on the edge-1 node (simulated); edge-1 keeps it as the default | Footprint | Accepted | Spec 025 T013 |
+| RP-090 | Request visibility's audit rows wait in memory until the store takes them, and a policy someone edited is deleted, then re-applied | Audit (durability); correctness (metrics gap) | Accepted | Spec 025 T014 |
+| RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
+| RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
+| RP-093 | Hubble's request metrics carry source and destination pods, so their series grow with pod pairs; not counted at the bench | Footprint (Prometheus memory, disk) | Watch | Spec 025 plan; T015 |
 
 ---
 
@@ -1309,6 +1322,14 @@ purpose), **Closed** (fixed).
 - **Revisit:** on every OpenChoreo or module upgrade (`VERSIONS.md`), and
   if the Observer's authorization becomes usable with Serendip's
   identity.
+- **Spec 025 T006:** connection records are read the same way: SQL on
+  the logs store's search API, over the port-forward, with the admin
+  credentials, scoped by Deployment names Serendip reads from the
+  cluster (never caller text).
+- **Spec 025 T007:** traces too, scoped by the identity columns the
+  collector attests (RP-086). The tracing module's adapter is off, so it
+  adds no unauthenticated endpoint; its collector's OTLP ports take spans
+  from any pod (RP-092).
 
 ## RP-055 — OpenObserve's log search slows as stored logs grow
 
@@ -1817,7 +1838,12 @@ The text below is the T013 record.
   read set; a partial read adds what it found to the last ranges.
 - **Residual:** a channel allowed private destinations could reach a pod
   address outside the nodes' `podCIDRs` while that's so.
-- **Revisit:** with spec 025 (Cilium): read its IPAM pool ranges too.
+- **Spec 025 T008:** the networking capability's `PodRanges` (Cilium's
+  cluster-pool ranges when IPAM isn't `kubernetes`) are merged into every
+  read. Until the network layer's first read (seconds after start), only
+  the nodes' and Service ranges are known; the check still fails closed.
+  A CNI Serendip can't ask (`external`) still leaves the residual above.
+- **Revisit:** an `external` CNI with its own IPAM, if one is supported.
 
 ## RP-077 — Alert condition trade-offs found in T006
 
@@ -1982,3 +2008,425 @@ The text below is the T013 record.
   - T013's run on the reference laptop;
   - a raised rule cap;
   - the audit retention spec.
+
+## RP-081 — The L7 proxy that gives request metrics retries 5xx and rewrites paths by default
+
+- **Kind:** correctness (application behaviour). **Status:** Mitigated,
+  2026-11-20. **Found:** spec 025 T001 (scratch cluster `t025`, Cilium
+  1.20.5).
+- **What:** Hubble's HTTP metrics need Cilium's Envoy in the path of each
+  Component's HTTP port (an L7 policy). Envoy's defaults then change what
+  the application sees:
+  - **`http-retry-count` 3:** every 5xx is retried up to three times. A
+    test server answering 10% 500s looked 100% healthy: the metrics showed
+    only 200s, the server got more requests than were sent, and a
+    non-idempotent request (a POST that charges a card) could run up to
+    four times;
+  - **`http-normalize-path` true:** request paths are normalized before
+    they reach the application.
+- **Mitigation:** Serendip's Cilium values set `http-retry-count: "0"`
+  and `http-normalize-path: "false"` (`extraConfig`); with retries off
+  the 500s came through (5 of 39). The provider reports drift if either
+  is changed back (plan decision 4). Since T004 drift does more than
+  report: the visibility pass (`EnsureVisibility`) removes every L7
+  policy it owns while either setting differs, so a Cilium upgrade that
+  brings the defaults back can't put a retrying proxy in front of a
+  Component; request metrics are then unavailable, with the reason.
+- **Residual:** Envoy's other defaults still apply to proxied traffic
+  only: `http-request-timeout` 3600 s, `http-stream-idle-timeout` 300 s,
+  and its connection limits (1024 per cluster). A long-lived stream or
+  a very busy Component can behave differently behind the proxy.
+- **Revisit:** on every Cilium upgrade (`providers/networking/cilium/VERSIONS.md`),
+  and with T013's latency measurement.
+
+## RP-082 — Request visibility copies each Component's NetworkPolicy, and skips what it can't copy
+
+- **Kind:** correctness (coverage); security (isolation). **Status:**
+  Accepted, 2026-11-20. **Found:** spec 025 T004.
+- **What:** Hubble sees HTTP requests only through a CiliumNetworkPolicy
+  with an HTTP rule on the port, and allows are a union, so that policy
+  must not admit anyone the platform's NetworkPolicy doesn't. The
+  `cilium` provider copies the NetworkPolicy's ingress peers and keeps
+  only its HTTP ports (`visibility.go`, `mirror`). It refuses, with a
+  reason, any shape it can't copy faithfully: an address-range peer, a
+  peer chosen by namespace labels, a rule admitting every source, a
+  named port or a port range, an unknown operator or field (decoded
+  strictly). Keys carry Cilium's `k8s:` source prefix, so a selector
+  can't match labels from another source. OpenChoreo 1.3.1's policies
+  (same namespace; the platform's system components in any namespace)
+  copy; live on `t025` a refused peer stayed refused.
+- **Cost:** a Component whose policy is skipped has no request metrics
+  (its flows are still recorded); Facts counts the skips. An HTTP port
+  that the platform marks TCP (a Component port that isn't exposed) gets
+  no L7 policy at all, because putting the proxy on non-HTTP traffic
+  would break it: east-west calls to an internal-only port show
+  connection counts only. The other way round, a port the platform marks
+  HTTP that carries something else (raw TCP, a protocol upgrade other
+  than Envoy handles) breaks behind the proxy; Serendip marks only exposed
+  ports HTTP, which the gateway already routes as HTTP.
+- **Revisit:** an OpenChoreo upgrade that changes the policy's shape (the
+  unit test holds 1.3.1's); a user-authored Network resource (a later
+  spec); per-port protocol in the Component model.
+
+## RP-083 — A Cilium bootstrap needs the internet at first boot
+
+- **Kind:** availability (install); footprint (first boot). **Status:**
+  Accepted, 2026-11-20. **Found:** spec 025 T005.
+- **What:** `serendip-agent bootstrap --cni cilium` writes a K3s
+  `HelmChart` naming `https://helm.cilium.io` and chart 1.20.5. K3s's Helm
+  controller fetches the chart, and the kubelet pulls Cilium's images from
+  quay.io. The node stays NotReady, with nothing else scheduled, until
+  Cilium runs. In a `rancher/k3s` container on a home link, with no image
+  cache, that took about 7 minutes (CoreDNS got a pod address about a
+  minute later). The bootstrap's `--timeout` default went from 5 to 10
+  minutes for it.
+- **Cost:** no offline (air-gapped) install with Cilium; a slow or
+  filtered link fails the bootstrap's wait, though K3s keeps retrying and
+  the node goes Ready once the pulls finish. `--cni default` (Flannel,
+  bundled in K3s) still installs offline as far as K3s itself does.
+- **Why accepted:** K3s itself already comes from `get.k3s.io` and its
+  images from Docker Hub; making Cilium alone offline gains nothing until
+  the whole install is.
+- **Revisit:** an air-gapped install: the chart goes into K3s's static
+  charts directory (`/var/lib/rancher/k3s/server/static/charts/`,
+  referenced by the HelmChart) and the images into K3s's airgap images
+  directory, both shipped by the agent.
+- **Not checked:** what `k3s-uninstall.sh` leaves of Cilium on a real host
+  (its interfaces, BPF mounts, `/etc/cni/net.d`): only containers were
+  used. Check on the reference hardware before calling uninstall clean.
+
+## RP-084 — Connection records are de-duplicated per page, and the collector's config leans on the logs chart
+
+- **Kind:** correctness (counts); upgrade. **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T006 (live on `t025`).
+- **What:**
+  - **Both ends write a record** of a connection between two cluster
+    endpoints (EGRESS at the source, INGRESS at the destination). Reads
+    keep the destination's and drop the source's when both are in the
+    same page within a minute (`flows.go` `dedupe`). A pair split across
+    two pages shows twice.
+  - **Through the L7 proxy** (a Component's HTTP port, spec 025's request
+    visibility) only the source's EGRESS record exists: Envoy terminates
+    the connection, so no INGRESS SYN is seen. The proxy's own upstream
+    leg is recorded with the client's identity and no namespace; the Lua
+    filter drops it, as the client's record already counts it.
+  - **Fluent Bit's config** is the logs chart's render plus Serendip's
+    pipeline. Two things depend on the chart's layout at 0.8.0: the chart
+    starts Fluent Bit with `--workdir=/fluent-bit/etc`, so its
+    `Parsers_File parsers.conf` is the image's file and the flow parser
+    goes in its own file, added by absolute path; and Helm replaces the
+    `extraVolumes`/`extraVolumeMounts` lists, so the chart's `db` entry is
+    restated beside the flow directory (without it the upgrade was
+    refused).
+- **Volume:** drops and new connections with an end at a Component,
+  aggregated per minute; T001 measured about 7.5 MiB a day for three
+  Components talking. The stream has the logs' retention (3 days,
+  `ZO_COMPACT_DATA_RETENTION_DAYS`) and counts towards the package's
+  disk use (spec 024's `packageDisk`). T013 measures it on the bench.
+- **Cost:** a page can show a connection twice; a proxied port's counts
+  are the client's view only; a chart upgrade that moves either piece
+  breaks the flow input (the parsers line is checked at Install, the
+  `db` entry isn't).
+- **Not signalled by a read:** an empty page doesn't say whether
+  records are collected at all (no flow source yet, Fluent Bit down);
+  T009's API checks the networking facts' `flows` for that.
+- **Why accepted:** a cross-page de-dup needs state the cursor doesn't
+  carry, for a rare duplicate; the client's record of a proxied
+  connection is the honest one available.
+- **Revisit:** on a logs chart upgrade (re-render, compare its default
+  `extraVolumes`); if duplicates show in the console, de-dup by the
+  minute in SQL.
+
+## RP-085 — Request metrics are as coarse as Hubble's histogram
+
+- **Kind:** correctness (precision); log noise. **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T006.
+- **What:**
+  - **Percentiles** are interpolated within Hubble's latency buckets
+    (5, 10, 25, 50, 100 ms, ...). A server answering in 20 ms plus a
+    little shows p50 17.6 ms and p95 24.5 ms: inside the right bucket,
+    not exact.
+  - **Counts** for `requestErrorRate`'s `minRequests` come from
+    `increase()`, which extrapolates to the window's edges, so they're
+    not whole numbers.
+  - **The `hubble` scrape job** looks up `hubble-metrics.kube-system` by
+    DNS every minute. On a cluster without Cilium the name doesn't
+    resolve, the job has no targets, and Prometheus logs the failed
+    lookup each time.
+  - **Requests are counted once,** by the server's side
+    (`reporter="server"`): a call to something outside the mesh of L7
+    policies (a platform service, the internet) isn't in the traffic
+    overlay.
+  - **Replaced pods** (spec 025 T012): the request and restart
+    conditions now count every pod seen in the window
+    (`max_over_time(kube_pod_labels[window])`). Before, only pods alive at
+    the evaluation counted, so a rule resolved as soon as a rollout
+    replaced the bad pod. A pod that's gone still drops out up to one
+    1-minute scrape early, because `increase()` needs two samples.
+- **Cost:** latency alerts near a bucket edge fire a little early or
+  late; a little log noise on `external` clusters.
+- **Why accepted:** Hubble's buckets are its defaults; finer ones cost
+  series on every pod pair (the cardinality risk in the plan).
+- **Revisit:** at the bench (T013), with the series count; if a latency
+  rule is too coarse in practice, set Hubble's `httpV2` buckets.
+
+## RP-086 — Trace identity leans on the store's key flattening; removing traces waits for the store and rolls Components
+
+- **Kind:** security (identity of stored spans); availability (rollouts,
+  removal time); performance. **Status:** Accepted, 2026-11-23.
+  **Found:** spec 025 T007.
+- **What:**
+  - **Identity holds because of how OpenObserve names columns.** It
+    lowercases a key and turns other characters into `_`, prefixes
+    resource attributes with `service_`, and writes a span attribute as a
+    column of its own name unless that column is already set (then
+    `attr_*`). Seen live: with T001's collector config,
+    `OpenChoreo.dev/component-uid` (resource) and
+    `service.openchoreo.dev/component-uid` (span) from an unlabelled pod
+    both landed on `service_openchoreo_dev_component_uid`. T007's config
+    keeps an allow-list of resource keys, deletes `service.*` span
+    attributes in any spelling, and drops spans `k8s_attributes` couldn't
+    attribute (an unlabelled pod, one too new for its cache, the host
+    network) (`testdata/t007-spoof-check.json`). A store upgrade that
+    changes the flattening could reopen it.
+  - **A stream's deletion is queued, not done:** the store's retention
+    job runs it, hourly by default; until then spans written to a
+    re-created stream are deleted with the old ones, and searches fail.
+    Serendip runs that job every minute (`ZO_COMPACT_DATA_RETENTION_INTERVAL=60`,
+    which also applies the logs' retention sooner), and the tracing
+    removal waits 90 s after the request. A `serendipd` restart inside
+    that wait doesn't wait again (the second request answers 404), so an
+    install straight after could lose up to a minute of spans.
+  - **Removing tracing rolls traced Components:** the variables join a
+    Component's next new release (plan decision 11), but after removal an
+    unpinned Deployment's release is recomputed without them on its next
+    pass, so each traced Component restarts once. Installing rolls
+    nothing.
+  - **The observability package's removal takes the collector too:** it
+    deletes the namespace both share (T008's catalogue orders them).
+  - **Opening a trace scans the retention** (3 days) for its ID: there's
+    no time hint in `Trace`.
+  - **Listing pages by each trace's first stored span:** a span that
+    arrives late with an earlier start moves its trace between pages, so
+    it can show twice or be skipped; a trace started before the query's
+    start is summarised from its spans since then.
+- **Cost:** a regression test is the only guard on the flattening; a
+  minute-ly retention job on the store (its cost measured in T013); 90 s
+  per tracing removal; a restart per traced Component on removal; an
+  open trace's query time grows with the stream (measured in T013).
+- **Why accepted:** the flattening is the store's ingestion behaviour,
+  and the allow-list leaves almost nothing to spell; the store has no
+  status for a stream's deletion to wait on instead; keeping the
+  variables on removal would point workloads at a gone endpoint.
+- **Revisit:** on every OpenObserve or collector upgrade, resend
+  `testdata/t007-spoof-span-otlp.json` from an unlabelled pod and check
+  nothing is stored with an identity, and re-time a stream's deletion.
+  T013 (simulated T470, ~1.5 h of traces stored): opening a trace took
+  163 ms median, a 1-hour list 119 ms. The retention job's cost isn't
+  separable from the observability group's (tracing cost: RP-088). Time
+  an open again with 3 days stored, on real hardware.
+
+## RP-087 — Flows and traces read the caller's readable Deployments in the Environment, capped at 20
+
+- **Kind:** correctness (naming past the cap); performance. **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T009.
+- **What:**
+  - **Flows** name the other end only for a target, a peer or a platform
+    service. Peers are the Environment's other Deployments the caller
+    may read with observability read, at most 20 (`MaxLogTargets`). Past
+    that, a readable end is shown as outside: never a wrong name, but
+    less than the caller could see. An end in another Environment is
+    always outside, readable or not: for an Owner too. The console says
+    "Not shown", and the API and console texts name the three causes
+    (T012, which first worded it as "Not visible to you").
+  - **Each flows read resolves every peer** (a scope lookup and the
+    Component's workloads), even when the page comes back empty, and
+    the API checks each Deployment's permission first.
+  - **Opening a trace** reads the spans of up to 20 readable Deployments
+    in one query pair, each over the whole retention (RP-086). Past 20,
+    the rest count as hidden, so the trace says `partial`.
+  - **Traffic** refuses an Application with more than 20 Deployments in
+    the Environment (422) instead of answering part of it.
+- **Cost:** up to 20 extra platform lookups per flows read; a trace's
+  two queries grow with the number of scopes in the OR.
+- **Why accepted:** 20 Deployments in one Environment is well past
+  edge-1's scale, and the cap matches stored logs' (spec 023). Naming
+  less is the safe side.
+- **Revisit:** at `small-3`, or if an Environment holds more than 20
+  Components: resolve peers lazily (only the ends a page has), or page
+  the merge. T013 (simulated T470, one peer): a 15-minute flows read
+  took 64 ms median and a trace open 163 ms.
+- **Spec 025 T014 (go-reviewer):** none of these reads is cached.
+  Request metrics are five PromQL range queries a call, and traffic's
+  rates are over the whole range asked for (up to the retention). Each
+  read is bounded by the caller's query slots and the observability
+  read deadline, not by a cache. Cache or coalesce them if the console
+  polls them, or if a read past the deadline is seen on the reference
+  hardware.
+
+## RP-088 — Traces share the logs store, and their disk use is one slope at one rate
+
+- **Kind:** footprint (disk); availability (logs). **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T013.
+- **What:**
+  - Traces are kept in the observability package's logs store (plan
+    decision 11), for its 3 days, in its 5 GiB volume.
+  - At 10 traced requests a second (three spans each), they grew it
+    about 730 MiB a day: ~2.2 GiB of the 5 GiB at 3 days, beside about
+    1.5 GiB of logs under the bench's log load.
+  - The figure is the Cilium run's 1-hour slope with traces (1226 MiB a
+    day) less spec 023's 2-hour log-only slope (496 MiB a day): two runs,
+    one request rate, and not a steady state (RP-063's caveat).
+  - It overstates traces alone: the Cilium run's logs store also took
+    Hubble's connection records, and its Prometheus Hubble's request
+    series, which spec 023's run had none of (contract-guardian, T013).
+  - The tracing package's disk budget names the logs volume, which the
+    observability package's budget already counts. Nothing sums budgets
+    across packages today. A disk-fit check that does must count that
+    volume once.
+  - Traces grow with request rate. Twice the traffic would bring logs
+    and traces close to the volume's size.
+- **Cost:** a busy traced Component can fill the logs store, and logs
+  then share the shortfall. The package's built-in disk rule (spec 024)
+  warns first.
+- **Why accepted:** one store keeps edge-1 to one backend (spec 023's
+  choice), and edge-1's traffic is light. The requirements state the
+  rate they were measured at.
+- **Revisit:** on real hardware (the L470) with a day's run; if traces
+  crowd logs out, add head sampling in the collector or a separate
+  traces retention.
+
+## RP-089 — Cilium's node cost on edge-1
+
+- **Kind:** footprint. **Status:** Accepted, 2026-11-23. **Found:** spec
+  025 T013.
+- **What:**
+  - On the simulated T470, a node running Cilium (agent, operator,
+    Envoy, Hubble export; kube-proxy kept) used +443 MiB and +92 mcores
+    more than one running kindnet at platform idle.
+  - Under 10 requests a second of HTTP traffic, the difference was
+    +461 MiB and +128 mcores, and +496 MiB and +118 mcores with tracing.
+  - Cilium's own pods are 236–302 MiB of that. The rest is node overhead
+    (BPF maps, the runtime) and kube-apiserver (Cilium's CRDs).
+  - The heaviest sample of the whole stack was 3244 MiB, 23% of a
+    16 GB machine less 2 GB for the OS.
+- **Cost:** about half a GiB and up to 6.5% of a 2-core CPU, always on.
+- **Why accepted:** it's what request metrics, flows with drop reasons
+  and CNI-enforced policies cost, and the stack still fits a 16 GB T470
+  comfortably. So Cilium stays edge-1's default (`serendip-agent
+  bootstrap --cni cilium`), and `--cni default` stays for tighter
+  machines (ADR 0023).
+- **Revisit:**
+  - on real hardware (the L470: 2 cores, 8 to 16 GB): if half a GiB is
+    too much on an 8 GB machine, recommend `--cni default` for it;
+  - if the node is tight, measure kube-proxy-free first (plan decision
+    6).
+
+## RP-090 — Request visibility's audit rows wait in memory, and an edited policy is replaced in two steps
+
+- **Kind:** audit (durability); correctness (a metrics gap). **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T014 (contract-guardian).
+- **What:**
+  - The visibility pass (`cmd/serendipd/networking.go`) writes or
+    deletes CiliumNetworkPolicies first, then their audit row. A row the
+    store refuses is kept in memory and retried every pass; past 100 the
+    oldest are logged in full and dropped. A crash between a write and
+    its row loses the row. At shutdown each try waits 2 s, not 10.
+  - A Serendip-owned policy that someone edited (a field Serendip
+    doesn't write) is deleted, then applied again, because the client
+    has only server-side apply, which can't drop another manager's
+    fields. If the apply fails, that Component has no L7 policy until
+    the next pass. It's reported in the pass's `Failed`.
+- **Cost:** a lost audit row after a crash (the policies themselves are
+  re-derived on start from the managed label, so nothing is left
+  unowned). One pass without request metrics for one Component. Its
+  isolation doesn't change: allows are a union, and the platform's
+  NetworkPolicy still applies.
+- **Why accepted:** the writes are a system actor's derived state, re-made
+  from the platform's NetworkPolicies every pass. They aren't a user's
+  change that only the audit row would record. Writing the row first
+  would record writes that may then fail.
+- **Revisit:** if audit rows must survive a crash for system actors too
+  (an intent row before the write); a `PUT` in the Kubernetes client
+  (replace in one step).
+
+## RP-091 — Cilium's node metrics ports, closed to pods by one Serendip policy
+
+- **Kind:** security (traffic visibility), medium. **Status:** Mitigated,
+  2026-11-23. **Found:** spec 025 T014 (security review).
+- **What:** Cilium's agent, operator and Envoy run on the host network
+  and serve their metrics on every node's address, with no
+  authentication: 9962, 9963, 9964 and Hubble's 9965. Hubble's request
+  metrics carry the source and destination pods of every Component's
+  calls, with status codes and latency. OpenChoreo's NetworkPolicies are
+  ingress-only, so before this any pod could read the whole cluster's
+  traffic picture that the flows and traffic reads scope by permission
+  (spec criteria 5 and 6).
+- **Mitigation:** the `cilium` provider keeps a
+  CiliumClusterwideNetworkPolicy, `serendip-node-metrics-guard`
+  (`nodeguard.go`), on every visibility pass, even with request
+  visibility off. It denies egress to the `host` and `remote-node`
+  entities on those four ports from every pod outside `kube-system` and
+  `openchoreo-observability-plane` (whose Prometheus scrapes them).
+  Builds' pods are covered too. It only denies: `enableDefaultDeny` is
+  off, so the pods it selects get no allow-list. Checked live on `t025`:
+  - a Component pod and a `default` pod time out on all four ports, and
+    still reach the kubelet's 10250;
+  - Prometheus's `hubble` job stays `up`.
+- **Residual:**
+  - The exempt namespaces are names. The observability plane's comes
+    from the observability package (`PlaneNamespace`), and a rename there
+    must change `metricsReaders`.
+  - Anything else in those two namespaces can read the ports.
+  - The policy is Serendip's while `serendipd` runs. Someone deleting it,
+    or a failed re-apply after an edited guard is deleted, opens the ports
+    until the next pass (every interval).
+  - Nothing removes the guard if the cluster moves off Cilium. It goes
+    with Cilium's CRDs, and until then it's inert.
+  - Other host-network endpoints (the kubelet, node exporters) aren't
+    part of this guard. Those that scope by caller have their own
+    authentication.
+- **Revisit:** Hubble metrics over TLS with client certificates
+  (`hubble.metrics.tls`), giving Prometheus a certificate, which would
+  make the guard unnecessary for 9965; a user-run Prometheus outside the
+  exempt namespaces.
+
+## RP-092 — The trace collector takes spans from any pod, with only a memory limit
+
+- **Kind:** availability (logs, traces); footprint (disk). **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T014 (go-reviewer).
+- **What:** the collector's OTLP receivers listen to the whole cluster.
+  Identity comes from the connection (RP-086), so a pod can't pass its
+  spans off as another Component's. But nothing limits how many it
+  sends. `memory_limiter` (160 MiB) protects the collector, not the
+  store. One chatty or hostile Component can fill the 5 GiB logs store
+  that traces share (RP-088), and its retention job then drops other
+  Components' logs and traces early.
+- **Why accepted:** at edge-1's scale the Components are the operator's
+  own. The observability package reports the store's disk use
+  (`usage.go`), so a filling store shows.
+- **Revisit:** a `probabilistic_sampler` or per-pod rate limit in the
+  collector; a separate traces store or quota when Projects belong to
+  different people (multi-tenant).
+
+## RP-093 — Hubble's request metrics grow with pod pairs
+
+- **Kind:** footprint (Prometheus memory and disk). **Status:** Watch,
+  2026-11-23. **Found:** spec 025 plan (Risks); recorded at T015.
+- **What:** Hubble's `httpV2` metrics are labelled by
+  `labelsContext=source_namespace,source_pod,destination_namespace,destination_pod`,
+  the labels the reads join to `kube_pod_labels` on (plan decision 4).
+  Each pair of talking pods gets its own series, times method, status
+  code and, for the latency histogram, every bucket. A rollout adds a
+  new set for the new pods while the old ones age out of the head.
+- **Measured:** not the series count. T013's observability group, which
+  holds Prometheus, grew 17–31 MiB with two Components talking at 10
+  requests a second (`profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`);
+  the scrape job already keeps only the request, duration, drop and
+  flow series (plan decision 7).
+- **Why accepted:** at edge-1's scale (a handful of Components, one or
+  two pods each) the pairs are few.
+- **Revisit:** at `small-3`, or when an Application has more than a few
+  dozen talking pods: count `hubble_http_*` head series, and consider
+  workload instead of pod labels (the reads would join by the Deployment
+  name, as flows do) or fewer histogram buckets (RP-085).

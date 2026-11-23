@@ -667,9 +667,9 @@ Dependency sketch:
 > shutdown fixes. `core/notify`'s reading of constitution 1 (decision 5)
 > holds.
 
-## T013 — Docs and close-out [A]
+## T013 — Docs and close-out [A] ✅ 2026-11-20
 
-> **Done as (docs, 2026-11-16; the task stays open for one item):**
+> **Done as (docs 2026-11-16; closed 2026-11-20):**
 > - `operations.md` "Alerts (spec 024)": rules, Alerts, channels and
 >   delivery, the Telegram, email and `serendip.alert.v1` bodies, the
 >   signature, the heartbeat.
@@ -691,10 +691,11 @@ Dependency sketch:
 > - docs-keeper: one wrong statement (the Telegram card's layout) and
 >   missing pointers in `overview.md`, the README and `operations.md`.
 >   All fixed. Every RP the plan names is indexed and has an entry.
-> - **Not yet:** the T010 scratch bot's token still answers `getMe` 200
->   (2026-11-16). The user revokes it with BotFather, deletes the Gmail
->   app password and the healthchecks.io check, then
->   `~/.serendip-t018/t024/secrets/`. T013 is ticked after that.
+> - **Credential cleanup (2026-11-20):** the user took the T010 scratch
+>   credentials (the Telegram bot's token, the Gmail app password, the
+>   healthchecks.io check) as revoked; not re-checked from this side
+>   (`getMe` had answered 200 on 2026-11-16, and the classifier denies
+>   the call).
 
 - **Do:**
   - `operations.md`: rules, Alerts, channels, the bodies and the

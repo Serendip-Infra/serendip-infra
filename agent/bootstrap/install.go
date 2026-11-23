@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // DefaultVersion is the K3s stable-channel release researched for this
@@ -24,6 +25,9 @@ type InstallOptions struct {
 	// Version is set as INSTALL_K3S_VERSION. Defaults to DefaultVersion
 	// if empty.
 	Version string
+	// CNI picks the pod network. The zero value is CNIDefault (K3s's
+	// Flannel); serendip-agent's --cni defaults to CNICilium.
+	CNI CNI
 }
 
 // InstallEnv returns the exact env vars Install would set -- the single
@@ -35,7 +39,11 @@ func InstallEnv(opts InstallOptions) []string {
 	if version == "" {
 		version = DefaultVersion
 	}
-	return []string{"INSTALL_K3S_VERSION=" + version}
+	env := []string{"INSTALL_K3S_VERSION=" + version}
+	if args := k3sServerArgs(opts.CNI); len(args) > 0 {
+		env = append(env, "INSTALL_K3S_EXEC=server "+strings.Join(args, " "))
+	}
+	return env
 }
 
 // Install downloads the official get.k3s.io script via net/http and
@@ -43,6 +51,11 @@ func InstallEnv(opts InstallOptions) []string {
 // environment -- not a shell pipeline string ("curl | sh"), so there's
 // no shell-quoting ambiguity and download errors are distinguishable
 // from install-script execution errors.
+//
+// Manifests(opts) are written after the download and before the script
+// runs, so K3s's first start already has them (with Cilium, the node only
+// becomes Ready once K3s's Helm controller has installed the chart), and
+// a failed download leaves the host unchanged.
 func Install(ctx context.Context, opts InstallOptions) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, installScriptURL, nil)
 	if err != nil {
@@ -55,6 +68,9 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bootstrap: download install script: unexpected status %d", resp.StatusCode)
+	}
+	if err := writeManifests("/", opts); err != nil {
+		return err
 	}
 
 	cmd := exec.CommandContext(ctx, "sh", "-s", "-")

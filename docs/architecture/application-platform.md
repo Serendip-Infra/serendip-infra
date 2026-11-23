@@ -610,8 +610,11 @@ In `openchoreo-observability-plane`, through a background package job:
   Application search with `omitted`, metrics charts, an expired build's
   stored logs, a Reader's 403 on logs, the adapters timing out from a
   workload pod, Claude Code through `serendip mcp`, and a clean removal.
-- **Not done** (spec OUT): traces, alerts (now spec 024, below), HTTP
-  metrics, a remote observability plane, and Serendip-side
+- **Not done** (spec OUT): traces and HTTP metrics (now spec 025,
+  `networking.md`: while the `tracing` package exists, a Component's next
+  new release gets `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME`
+  unless it sets them itself, `providers/application/openchoreo/tracing.go`),
+  alerts (now spec 024, below), a remote observability plane, and Serendip-side
   authentication to the adapters.
 
 ## Alerts (spec 024)

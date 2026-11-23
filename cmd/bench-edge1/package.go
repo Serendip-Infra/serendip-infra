@@ -60,6 +60,14 @@ type packageOptions struct {
 	// load phase, and samples while they're evaluated.
 	rules        int
 	rulesSamples int
+	// The traffic phases (specs/025-networking T013): HTTP traffic
+	// between two Components after the load phase, then, with tracing,
+	// the tracing package installed and the same traffic traced.
+	traffic        bool
+	tracing        bool
+	trafficImage   string
+	trafficCallMs  int
+	trafficSamples int
 }
 
 // PackageRun is what the package run measured.
@@ -92,6 +100,9 @@ type PackageRun struct {
 	// Rules is the alert rules' phases, between the load and disk
 	// phases; the disk phase then runs with the rules on.
 	Rules *RulesRun `json:"rules,omitempty"`
+	// Traffic is the HTTP traffic and tracing phases, after the load
+	// phase and before the rules'.
+	Traffic *TrafficRun `json:"traffic,omitempty"`
 	// Incomplete is why the load or disk phase stopped short, if it did.
 	Incomplete string `json:"incomplete,omitempty"`
 	// Cost is the package's stated cost, derived from the above.
@@ -335,15 +346,29 @@ func measureLoad(ctx context.Context, o options, cl *cluster, nodeName string, d
 	stopHint := fmt.Sprintf("KUBECONFIG=%s bash %s stop", o.kubeconfigAbs, po.loadScript)
 	writes := func(ctx context.Context) (storeCounts, error) { return readStoreCounts(ctx, o.dbPath) }
 	var between betweenFunc
-	if po.rules > 0 {
+	var tw trafficWorkload
+	if po.traffic || po.rules > 0 {
 		between = func(ctx context.Context, phase phaseFunc) error {
-			return measureRules(ctx, o, cl, a, d, phase, p, created)
+			if po.traffic {
+				if err := measureTraffic(ctx, o, cl, a, phase, p, &tw); err != nil {
+					return err
+				}
+			}
+			if po.rules > 0 {
+				return measureRules(ctx, o, cl, a, d, phase, p, created)
+			}
+			return nil
 		}
 	}
 	err := runLoad(ctx, po, load, sample, stopHint, p, between, writes)
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer cancel()
 	finishRules(fctx, a, d, p.Rules)
+	if tw.project != "" {
+		if derr := a.deleteWorkload(fctx, tw.workload); derr != nil {
+			log.Printf("traffic: deleting the pair: %v", derr)
+		}
+	}
 	return err
 }
 
@@ -401,7 +426,10 @@ func runLoad(ctx context.Context, po packageOptions, load loadFunc, sample sampl
 	}
 	if po.diskSamples > 0 {
 		name := "disk, still under load"
-		if between != nil {
+		if po.traffic {
+			name += ", traffic on"
+		}
+		if po.rules > 0 {
 			name += ", rules on"
 		}
 		if p.Disk, err = phase(ctx, name, po.diskSamples, po.diskInterval); err != nil {
@@ -712,6 +740,7 @@ func writePackageSummary(b *strings.Builder, r Result) {
 		writeGroupTable(b, fmt.Sprintf("%s (%d samples over %.0f min)", l.title, len(l.run.Samples), l.run.Seconds/60), l.run.Cluster, seconds(l.run.IntervalSeconds))
 		fmt.Fprintf(b, "\nserendipd: %.1f MiB RSS, %.2f mcores mean.\n", l.run.Serendipd.RSSMiB.Mean, l.run.Serendipd.CPUMillicores.Mean)
 	}
+	writeTrafficSummary(b, p.Traffic)
 	writeRulesSummary(b, p.Rules)
 	if p.LoadQueries != "" {
 		fmt.Fprintf(b, "\nThe load driver's queries:\n\n```\n%s\n```\n", p.LoadQueries)

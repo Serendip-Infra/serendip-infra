@@ -87,7 +87,8 @@ type MetricPoint struct {
 }
 
 // Metrics is a Deployment's CPU (millicores) and memory (MiB), with its
-// requests and limits where known. Unavailable names what couldn't be
+// requests and limits where known, and its HTTP requests where the
+// network layer records them. Unavailable names what couldn't be
 // read, each with its reason, such as "requests: not set".
 type Metrics struct {
 	CPU           []MetricPoint `json:"cpu"`
@@ -96,7 +97,10 @@ type Metrics struct {
 	CPULimit      *float64      `json:"cpuLimit,omitempty"`
 	MemoryRequest *float64      `json:"memoryRequest,omitempty"`
 	MemoryLimit   *float64      `json:"memoryLimit,omitempty"`
-	Unavailable   []string      `json:"unavailable,omitempty"`
+	// Requests are the HTTP request series (specs/025-networking plan
+	// decision 7), nil where they can't be read; Unavailable says why.
+	Requests    *RequestSeries `json:"requests,omitempty"`
+	Unavailable []string       `json:"unavailable,omitempty"`
 }
 
 // ObservabilityProvider reads stored logs and metrics. Callers scope
@@ -122,6 +126,11 @@ type ConditionValue struct {
 	Value   float64
 	Current float64
 }
+
+// ErrNotCollected is a read of something the platform doesn't collect,
+// such as request metrics on a network layer that doesn't record them.
+// Retrying won't help; wrapping errors may add why, in Serendip's words.
+var ErrNotCollected = errors.New("reconcile: not collected")
 
 // ErrNoData is a condition whose window has too few points to decide.
 var ErrNoData = errors.New("reconcile: no data for the condition's window")

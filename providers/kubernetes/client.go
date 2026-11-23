@@ -43,6 +43,17 @@ type ObjectMeta struct {
 	// DeletionTimestamp is set while an object with finalizers is being
 	// deleted (read-only).
 	DeletionTimestamp string `json:"deletionTimestamp,omitempty"`
+	// OwnerReferences make the garbage collector delete the object with
+	// its owner (spec 025's L7 visibility policies).
+	OwnerReferences []OwnerReference `json:"ownerReferences,omitempty"`
+}
+
+// OwnerReference names an object's owner by kind, name and UID.
+type OwnerReference struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	UID        string `json:"uid"`
 }
 
 // Object is the minimal envelope every Kubernetes API object shares.

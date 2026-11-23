@@ -45,6 +45,8 @@ type obs023 struct {
 	builds   map[string][]reconcile.StoredLogLine // by Build ID
 	searched [][]string                           // Deployment IDs, per search
 	metricsQ []reconcile.MetricsQuery
+	// requests is what Metrics answers as the request series (spec 025).
+	requests *reconcile.RequestSeries
 }
 
 func newObs023() *obs023 {
@@ -129,7 +131,7 @@ func (f *obs023) Metrics(_ context.Context, t reconcile.LogTarget, q reconcile.M
 	defer f.mu.Unlock()
 	f.metricsQ = append(f.metricsQ, q)
 	req, lim := 100.0, 500.0
-	m := reconcile.Metrics{CPURequest: &req, CPULimit: &lim, MemoryRequest: &req,
+	m := reconcile.Metrics{CPURequest: &req, CPULimit: &lim, MemoryRequest: &req, Requests: f.requests,
 		Unavailable: []string{"memoryLimit: not set", "requests: needs request metrics, not installed"}}
 	for at := q.From.Truncate(time.Minute); at.Before(q.To); at = at.Add(time.Minute) {
 		cpu := 20.0
@@ -185,6 +187,12 @@ func newWorld023(t *testing.T) *world023 {
 // observability capability, when wrap isn't nil (T009's fault injection).
 func newWorld023Wrapped(t *testing.T, wrap func(*obs023) reconcile.ObservabilityProvider) *world023 {
 	t.Helper()
+	return newWorld023With(t, wrap)
+}
+
+// newWorld023With is newWorld023Wrapped with more server options (spec 025).
+func newWorld023With(t *testing.T, wrap func(*obs023) reconcile.ObservabilityProvider, opts ...api.ServerOption) *world023 {
+	t.Helper()
 	f := newObs023()
 	var served reconcile.ObservabilityProvider = f
 	if wrap != nil {
@@ -196,7 +204,7 @@ func newWorld023Wrapped(t *testing.T, wrap func(*obs023) reconcile.Observability
 		Requirements: &provider.Requirements{IdleMemoryMiB: 400, IdleCPUMillicores: 50, PeakMemoryMiB: 600, PeakCPUMillicores: 300,
 			MeasuredOn: "edge-1 simulated T470", Results: "profiles/edge-1/bench/results/obs",
 			Disk: &provider.DiskRequirements{GrowthMiBPerDay: 120, RetentionDays: 3, BudgetMiB: 5120}}}
-	w := &world023{world022: newWorld022With(t, pkg, api.WithObservability(served)), obs: f, obsInst: inst}
+	w := &world023{world022: newWorld022With(t, pkg, append([]api.ServerOption{api.WithObservability(served)}, opts...)...), obs: f, obsInst: inst}
 	ctx := context.Background()
 
 	var comp resource.Component

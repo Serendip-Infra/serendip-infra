@@ -15,11 +15,14 @@ import { usePoll } from "../hooks/usePoll";
 import { availability } from "../lib/health";
 import { readLogs } from "../lib/permissions";
 import { orderEnvironments, ownerOf } from "../lib/pipeline";
+import { readTraces } from "../lib/networking";
 import { ComponentAlerts } from "./Alerts";
 import { useDeployData } from "./Deploy";
+import { FlowsSection, RequestsBlock, TracesSection } from "./Networking";
 
 // Spec 023's console: stored logs, searched by text and time, and a
 // Deployment's CPU and memory, once the observability package is ready.
+// Spec 025 adds its HTTP requests, connections and traces (Networking.tsx).
 
 const enc = encodeURIComponent;
 
@@ -27,7 +30,7 @@ const enc = encodeURIComponent;
 export const readObservability = "serendip/observability/read";
 
 /** The server gives a query 20 s, so the console waits a little longer. */
-const QUERY_TIMEOUT_MS = 25_000;
+export const QUERY_TIMEOUT_MS = 25_000;
 
 const MIN = 60_000;
 /** Time presets, newest data first. The longest stays inside the 3-day retention. */
@@ -38,15 +41,15 @@ export const ranges = [
   { value: "24h", label: "Last 24 hours", ms: 1440 * MIN },
   { value: "2d", label: "Last 2 days", ms: 2880 * MIN },
 ];
-const rangeMs = (v: string) => (ranges.find((r) => r.value === v) ?? ranges[1]!).ms;
+export const rangeMs = (v: string) => (ranges.find((r) => r.value === v) ?? ranges[1]!).ms;
 
 /** A range ending now, frozen when a read starts, so its pages agree. */
-function rangeEnding(range: string): { from: string; to: string } {
+export function rangeEnding(range: string): { from: string; to: string } {
   const to = new Date();
   return { from: new Date(to.getTime() - rangeMs(range)).toISOString(), to: to.toISOString() };
 }
 
-function RangeField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+export function RangeField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
   return <SelectField id={id} label="Time range" value={value} onChange={(e) => onChange(e.target.value)} options={ranges.map(({ value, label }) => ({ value, label }))} />;
 }
 
@@ -84,23 +87,7 @@ export function ObservabilityTab({ app, comp }: { app: Application; comp: Compon
     <>
       <ComponentObservability app={app} comp={comp} />
       <ComponentAlertsFor app={app} comp={comp} />
-      <NotYet />
     </>
-  );
-}
-
-/** Said plainly, never mocked (constitution 6). */
-function NotYet() {
-  return (
-    <section className="section unavailable" aria-labelledby="obs-later">
-      <div className="pipeline-head">
-        <h2 id="obs-later" className="section-title">
-          Traces
-        </h2>
-        <StatusText kind="unknown">Not available yet</StatusText>
-      </div>
-      <p>Traces aren't in this version of Serendip yet.</p>
-    </section>
   );
 }
 
@@ -154,6 +141,8 @@ function DeploymentObservability({ d, envName, range }: { d: Deployment; envName
   return (
     <>
       <MetricsSection id={id} envName={envName} range={range} allowed={access.can(readObservability)} />
+      <FlowsSection id={id} envId={ownerOf(d.metadata, "Environment") ?? ""} envName={envName} range={range} allowed={access.can(readObservability)} />
+      <TracesSection id={id} envName={envName} range={range} allowed={access.can(readTraces)} />
       <LogSearch
         idPrefix="obs"
         title={`Stored logs in ${envName}`}
@@ -168,7 +157,7 @@ function DeploymentObservability({ d, envName, range }: { d: Deployment; envName
 }
 
 /** A read that keeps what it showed while the next one loads (dataviz: refetch keeps the frame). */
-function useQuery<T>(path: string | undefined, key: string) {
+export function useQuery<T>(path: string | undefined, key: string) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<ApiError | NetworkError>();
   const [loading, setLoading] = useState(false);
@@ -204,7 +193,7 @@ function MetricsSection({ id, envName, range, allowed }: { id: string; envName: 
     <section className="section" aria-labelledby="obs-metrics" aria-busy={q.loading}>
       <div className="pipeline-head">
         <h2 id="obs-metrics" className="section-title">
-          CPU and memory in {envName}
+          CPU, memory and requests in {envName}
         </h2>
         {allowed && (
           <button type="button" className="button" onClick={() => (setW({ range, ...rangeEnding(range) }), q.refresh())} disabled={q.loading}>
@@ -227,9 +216,10 @@ function MetricsSection({ id, envName, range, allowed }: { id: string; envName: 
             <MetricChart id="obs-cpu" title="CPU, millicores" points={m.cpu ?? []} from={m.from} to={m.to} request={m.cpuRequest} limit={m.cpuLimit} format={millicores} />
             <MetricChart id="obs-mem" title="Memory, MiB" points={m.memory ?? []} from={m.from} to={m.to} request={m.memoryRequest} limit={m.memoryLimit} format={mebibytes} />
           </div>
-          {(m.unavailable?.length ?? 0) > 0 && (
+          <RequestsBlock m={m} stale={q.loading} />
+          {(m.unavailable ?? []).some((u) => !u.startsWith("requests: ")) && (
             <ul className="plain-list" aria-label="Not available">
-              {m.unavailable!.map((item) => {
+              {m.unavailable!.filter((u) => !u.startsWith("requests: ")).map((item) => {
                 const { what, why } = splitUnavailable(item);
                 return (
                   <li key={item}>

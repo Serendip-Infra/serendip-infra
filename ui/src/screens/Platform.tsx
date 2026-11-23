@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { apiFetch, apiList } from "../api/client";
-import type { Environment, JSONSchema, Package, PlatformComponent, PlatformView, Project, ProviderInstance, Readiness, Requirements } from "../api/types";
+import type { Environment, JSONSchema, NetworkFacts, Package, PlatformComponent, PlatformView, Project, ProviderInstance, Readiness, Requirements } from "../api/types";
 import { ActionConfirm } from "../components/ActionConfirm";
 import { ApiEquivalent } from "../components/ApiEquivalent";
 import { KeyValueList } from "../components/Data";
@@ -19,7 +19,10 @@ import { orderEnvironments, promotionTargets } from "../lib/pipeline";
 import { navigate } from "../lib/router";
 import { schemaFields } from "../lib/schemaForm";
 import { formatAge } from "../lib/time";
+import { notAvailableReason, unavailableFor } from "../lib/networking";
 import { UpdatedLine } from "./common";
+import { NotAvailable } from "./Networking";
+import { splitUnavailable } from "./Observability";
 
 const enc = encodeURIComponent;
 
@@ -56,6 +59,84 @@ function PlatformItems({ items, id, title, empty, traits }: { items: PlatformCom
         ))
       )}
     </section>
+  );
+}
+
+const enforcementWords: Record<NetworkFacts["policyEnforcement"], { kind: "ok" | "warn" | "unknown"; word: string }> = {
+  enforced: { kind: "ok", word: "Enforced" },
+  notEnforced: { kind: "warn", word: "Not enforced" },
+  unknown: { kind: "unknown", word: "Unknown" },
+};
+
+/**
+ * NetworkLayer: the cluster's network layer as Serendip reads it (spec 025
+ * criteria 1 and 2): what it is, whether network policies hold, and what it
+ * can't provide, with the reasons. Read-only: Serendip doesn't install or
+ * change the network layer.
+ */
+function NetworkLayer({ now }: { now: Date }) {
+  const facts = usePoll((s) => apiFetch<NetworkFacts>("GET", "/v1/networking", undefined, s), 60_000, "networking");
+  const f = facts.data;
+  return (
+    <section className="section" aria-labelledby="pf-network">
+      <h2 id="pf-network" className="section-title">
+        Network layer
+      </h2>
+      {facts.error ? (
+        notAvailableReason(facts.error) ? (
+          <NotAvailable why={notAvailableReason(facts.error)!} />
+        ) : (
+          <RequestError error={facts.error} what="the network layer" />
+        )
+      ) : !f ? (
+        <LoadingState what="the network layer" />
+      ) : (
+        <>
+          <KeyValueList
+            items={[
+              ["Network plugin (CNI)", f.plugin === "unknown" ? "Unknown: the cluster's network layer can't be told" : `${f.plugin}${f.version ? ` ${f.version}` : ""}`],
+              [
+                "Network policies",
+                <>
+                  <StatusText kind={enforcementWords[f.policyEnforcement]?.kind ?? "unknown"}>{enforcementWords[f.policyEnforcement]?.word ?? f.policyEnforcement}</StatusText>
+                  {f.policyReason && ` ${f.policyReason}`}
+                </>,
+              ],
+              ["Connection records", f.flows ? <StatusText kind="ok">Available</StatusText> : <NotAvailableInline why={unavailableFor(f, "flows")} />],
+              ["Request metrics", f.requestMetrics ? <StatusText kind="ok">Available</StatusText> : <NotAvailableInline why={unavailableFor(f, "requests")} />],
+              ["Pod address ranges", (f.podRanges ?? []).length > 0 ? <span className="mono">{f.podRanges!.join(", ")}</span> : "Not reported"],
+              ["Read", formatAge(f.readAt, now)],
+            ]}
+          />
+          {(f.unavailable ?? []).filter((u) => !u.startsWith("flows: ") && !u.startsWith("requests: ")).length > 0 && (
+            <ul className="plain-list" aria-label="Not available">
+              {f.unavailable!
+                .filter((u) => !u.startsWith("flows: ") && !u.startsWith("requests: "))
+                .map((item) => {
+                  const { what, why } = splitUnavailable(item);
+                  return (
+                    <li key={item}>
+                      <StatusText kind="unknown">Not available</StatusText> {what}
+                      {why && `: ${why}`}
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+          <p className="field-hint">Serendip reads the network layer; it doesn't install or change it. Moving a cluster to another network plugin is a reinstall.</p>
+        </>
+      )}
+      <ApiEquivalent request={{ method: "GET", path: "/v1/networking" }} />
+    </section>
+  );
+}
+
+function NotAvailableInline({ why }: { why: string | undefined }) {
+  return (
+    <>
+      <StatusText kind="unknown">Not available</StatusText>
+      {why && ` ${why}`}
+    </>
   );
 }
 
@@ -114,6 +195,8 @@ export function PlatformPage() {
           <PlatformItems items={platform.data.traits} id="pf-traits" title="Traits" empty="No traits are installed." traits />
         </>
       )}
+
+      <NetworkLayer now={now} />
 
       <section className="section" aria-labelledby="pf-projects">
         <h2 id="pf-projects" className="section-title">

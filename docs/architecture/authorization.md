@@ -60,18 +60,24 @@ Fixed IDs, the same on every install (`core/policy/builtins.go`):
 |---|---|---|
 | Owner | `*` | none |
 | Contributor | `*` except `serendip/authorization/*/write`, `serendip/authorization/*/delete` and `serendip/notificationchannels/allowPrivateDestination/action` (spec 024) | none |
-| Reader | `*/read` except `serendip/components/logs/read` | none |
-| User Access Administrator | `*/read`, `serendip/authorization/*`; no logs | none |
-| Role Based Access Control Administrator | `*/read`, role assignments write and delete; no logs | none |
+| Reader | `*/read` except `serendip/components/logs/read` and `serendip/components/traces/read` (spec 025) | none |
+| User Access Administrator | `*/read`, `serendip/authorization/*`; no logs or traces | none |
+| Role Based Access Control Administrator | `*/read`, role assignments write and delete; no logs or traces | none |
 | Secrets Officer | `serendip/secrets/*` | `serendip/secrets/value/*` |
 | Secrets User | `serendip/secrets/read` | `serendip/secrets/value/read` |
-| Log Reader | `*/read`, including logs | none |
+| Log Reader | `*/read`, including logs and traces | none |
 
 **Logs are their own action** (`serendip/components/logs/read`, spec 020):
 they can carry sensitive data, so the read-only and access-management
 roles leave them out. Log Reader adds them; Owner and Contributor have
 them. Spec 023's stored logs use the same action; its metrics use
-`serendip/observability/read`, which `*/read` includes.
+`serendip/observability/read`, which `*/read` includes. **Traces**
+(spec 025) have their own action too, `serendip/components/traces/read`,
+left out of the same roles and granted by Log Reader, Contributor and
+Owner: span attributes carry URLs, queries and user data. Request
+metrics, the traffic overlay and connection records stay
+`serendip/observability/read`; `GET /v1/networking` is
+`serendip/platform/read` (`networking.md`).
 
 Built-in roles can't be changed or deleted (400). **Custom roles**
 (`POST /v1/authorization/roleDefinitions`):

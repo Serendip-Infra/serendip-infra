@@ -3,6 +3,9 @@ package openchoreo
 import (
 	_ "embed"
 	"fmt"
+	"slices"
+
+	"github.com/serendip-infra/serendip-infra/core/reconcile"
 )
 
 // The charts this package installs, pinned in VERSIONS.md, in plan
@@ -61,6 +64,10 @@ type release struct {
 	sets, strings []string
 	// valuesFile passes prometheusValues with -f.
 	valuesFile bool
+	// noWait leaves out Helm's --wait: the installer checks readiness
+	// itself, so a pod still crash-looping past Helm's timeout doesn't
+	// mark the release failed (T001's first tracing install).
+	noWait bool
 }
 
 // releases are installed in this order and removed in the reverse.
@@ -98,8 +105,6 @@ var releases = []release{
 			"fluent-bit.existingConfigMap=" + fluentBitConfigName,
 		},
 		strings: []string{
-			// Hex may be all digits, hence a string.
-			"fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(),
 			fmt.Sprintf("openobserve-standalone.config.ZO_COMPACT_DATA_RETENTION_DAYS=%d", logRetentionDays),
 			// On by default: a heartbeat to the vendor every 30 minutes.
 			// Nothing leaves the machine unless asked (T003).
@@ -121,6 +126,12 @@ var releases = []release{
 			// chart can reach OpenObserve's API (plan decision 4).
 			"openobserve-standalone.extraEnv[1].name=ZO_SSRF_ALLOW_LOOPBACK",
 			"openobserve-standalone.extraEnv[1].value=true",
+			// A stream's deletion (the tracing package's removal) is done
+			// by the retention job, hourly by default; until it runs the
+			// stream can't be searched and spans written to it are lost
+			// (spec 025 T007, live). Every minute it's done within one.
+			"openobserve-standalone.extraEnv[2].name=ZO_COMPACT_DATA_RETENTION_INTERVAL",
+			"openobserve-standalone.extraEnv[2].value=60",
 		},
 	},
 	{
@@ -156,11 +167,50 @@ func (r release) installArgs() []string {
 	for _, s := range r.strings {
 		args = append(args, "--set-string", s)
 	}
+	if r.noWait {
+		return args
+	}
 	return append(args, "--wait", "--timeout", helmInstallTimeout)
 }
 
-func releaseNamed(name string) (release, bool) {
-	for _, r := range releases {
+// releasesFor are releases as installed with src: the logs release gets
+// Fluent Bit's config hash and, with src set, the records' directory as a
+// read-only volume (fluentbit.go).
+func releasesFor(src reconcile.FlowSource) []release {
+	out := slices.Clone(releases)
+	for k, r := range out {
+		if r.name != logsRelease {
+			continue
+		}
+		// Hex may be all digits, hence a string.
+		r.strings = append([]string{"fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(src)}, r.strings...)
+		if !src.IsZero() {
+			// Helm replaces a list rather than merging it, so the chart's
+			// own entry 0 (Fluent Bit's tail database, which its init
+			// container mounts) is restated as the chart has it at 0.8.0
+			// (seen live in T006: without it the upgrade is refused).
+			r.sets = append(slices.Clone(r.sets),
+				"fluent-bit.extraVolumes[0].name=db",
+				"fluent-bit.extraVolumes[0].hostPath.path=/var/lib/fluent-bit/db",
+				"fluent-bit.extraVolumes[0].hostPath.type=DirectoryOrCreate",
+				"fluent-bit.extraVolumes[1].name="+flowVolume,
+				"fluent-bit.extraVolumes[1].hostPath.path="+src.HostPath,
+				"fluent-bit.extraVolumes[1].hostPath.type=DirectoryOrCreate",
+				"fluent-bit.extraVolumeMounts[0].name=db",
+				"fluent-bit.extraVolumeMounts[0].mountPath=/var/lib/fluent-bit/db",
+				"fluent-bit.extraVolumeMounts[0].readOnly=false",
+				"fluent-bit.extraVolumeMounts[1].name="+flowVolume,
+				"fluent-bit.extraVolumeMounts[1].mountPath="+flowMountPath,
+				"fluent-bit.extraVolumeMounts[1].readOnly=true",
+			)
+		}
+		out[k] = r
+	}
+	return out
+}
+
+func releaseNamed(src reconcile.FlowSource, name string) (release, bool) {
+	for _, r := range releasesFor(src) {
 		if r.name == name {
 			return r, true
 		}

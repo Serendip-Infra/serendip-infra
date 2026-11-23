@@ -12,38 +12,80 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-16 (spec 024: T001–T013 done, but one credential item open)
+Last updated: 2026-11-23 (spec 025 done: T001–T015; spec PR open; spec 026 next)
 
 ## Current phase
 
-**Spec 024 (alert rules and notification channels; epic #65): all 13
-tasks done and committed on local branch `spec-024`**, except one item of
-T013's verify: the T010 scratch credentials. Nothing pushed.
-**Next, in order:**
-1. **The user:** revoke the scratch bot's token (BotFather `/revoke`;
-   `getMe` still answered 200 on 2026-11-16), delete the Gmail app
-   password and the healthchecks.io check, then
-   `~/.serendip-t018/t024/secrets/`. Then tick T013 in tasks.md
-   (`getMe` 401 is the check).
-2. **GitHub batch: RUNNING since 15:40 UTC 2026-11-19** (the user said
-   yes), expected DONE about 17:00 UTC. T001–T013's task issues under
-   epic #65 (#339 T001, #340 T002, #341 T003, #342 T004, #343 T005, …),
-   then epic #65's body (IN PROGRESS; T013 unticked). Script, log and
-   state live in this session's scratchpad:
-   `C:/Users/malit/AppData/Local/Temp/claude/d8b446d4ca44d717/7e941eb3-e500-4941-93c6-42ca49fd8d5a/scratchpad/gh024/`
-   (`run.sh`, `run.log`, `state.txt` as "T### N"). **Check `run.log`'s
-   last line first:** `DONE`, or `FAILED: …` (then re-run
-   `bash <dir>/run.sh` only after reading why; it skips tasks in
-   `state.txt`, but a task created without its board fields needs them
-   set by hand). Never two runs at once.
-3. **Link commits to issues (the user said yes):** once `run.log` says
-   DONE, `bash <dir>/closes.sh` rewrites `main..spec-024` with
-   `Closes #N` from `state.txt` and checks the tree is unchanged. It
-   leaves T013 out unless run with `--with-t013`: use that only if the
-   scratch bot's `getMe` answers 401 (step 1).
-4. **The PR (the user said yes):** push `spec-024` to the Yasindu007 fork, PR by Yasindu007
-   with `Closes #65`, merged by `serendipinfra` with a merge commit.
-5. **Then spec 025** (networking: Cilium, Hubble and traces; epic #66; the user said yes): `/new-spec` first. No code before its spec, plan and tasks are approved.
+**Spec 025 (networking: Cilium, Hubble and traces; epic #66): DONE
+2026-11-23,** all 15 tasks (#353–#367 closed). Branch `spec-025` (off
+`spec-024`, which is merged) is pushed to the Yasindu007 fork; the spec
+PR (`Closes #66`) is opened by Yasindu007 and merged by
+`serendipinfra` with a merge commit. **If the PR isn't merged yet,
+that's the first thing to check.** Then the board: #66 in Done.
+
+**Next: spec 026, Secrets into Components (epic #67).** Start with
+`/new-spec` (spec → plan → tasks, approval on plan.md). Task issues get
+opened as one paced batch when tasks.md is approved, and GitHub stays in
+step per task (commit with `Closes #N`, push, close by hand with the
+commit, tick the epic, check the board).
+
+### What spec 025 left behind
+
+- **Docs:** ADR 0023 (networking observed; **Cilium stays edge-1's
+  default**, `--cni default` for tight machines),
+  `docs/architecture/networking.md`, `operations.md` "Networking",
+  `bootstrap-agent.md` (`--cni`), `authorization.md` (traces data
+  action), build-vs-adopt, RP-081–RP-093.
+- **T013's numbers** (simulated T470,
+  `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`):
+  Cilium +443 MiB / +92 mcores idle, +461 MiB / +128 mcores at 10 req/s
+  (RP-089); tracing +145 to +180 MiB, ~730 MiB/day of disk (RP-088);
+  `serendipd` 33.2 MiB idle (criterion 12 PASS). The cilium run's
+  `harness.log` and `serendipd.1.log` (and kindnet's) are left
+  untracked, as earlier runs' logs were.
+- **Re-measure on the L470** (the user is buying a ThinkPad L470,
+  i5-7300U, 2c/4t, 8 GB to go to 16 GB, as the first real T470-class
+  node; label results "L470"; whether it counts for the reference gate
+  is the user's call, an ADR): Cilium's cost (if half a GiB is too much
+  at 8 GB, recommend `--cni default` there), `TracingRequirements`, and
+  what `k3s-uninstall.sh` leaves of Cilium (RP-083).
+- **Watch items:** RP-093 (Hubble series grow with pod pairs; count at
+  `small-3`), RP-092 (no per-pod OTLP rate limit), RP-091 (the node
+  guard keys on two namespace names).
+
+### Test beds (all stopped, for memory)
+
+- **`serendip-t025`** (Cilium dev cluster, state `~/.serendip-t025-dev`)
+  has the observability and tracing packages and T012's Components
+  (`otel-srv`, `otel-caller`, `spoofer` in `t012-a`). To use it: `docker
+  start serendip-t025-control-plane`, then `bash
+  ~/.serendip-t025-dev/t012/start.sh` as a background run. Tooling and
+  evidence in `~/.serendip-t025-dev/t012/`.
+- **`t025`** (scratch kind cluster, `~/.serendip-t025/`, kubeconfig
+  `t001/kubeconfig`, `serendipd` on `:8095` with `t025.db` and the API key
+  in `keys.env`): T001–T009 evidence. Can be deleted once nobody needs
+  it.
+- **`serendip-t018`** (kindnet, the `external` case): `docker start
+  serendip-t018-control-plane`, then `.\scripts\dev-up.ps1 -Restart
+  -NoBuild`.
+- `bench-t470` is deleted.
+- **After a laptop restart** Docker starts every kind node again
+  (restart policy `on-failure`) and no `serendipd`: stop what isn't
+  needed (`docker stop <cluster>-control-plane`).
+- **Gotchas kept:** `kind load` fails here (docker save + ctr import into
+  the node); in Git Bash pass `OBS_LIVE_KUBECONFIG` as a Windows path and
+  set `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`; long runs go from the
+  user's own terminal or with the keep-awake, because the memory reaper
+  kills shells (and a killed parent makes `helm` fail `0xc0000142`).
+
+**Spec 024 (alert rules and notification channels; epic #65): DONE
+2026-11-20.** PR #352 merged; T013 ticked (77f068b), #351 and #65 closed
+(board Done). The user took the scratch credentials as revoked; the
+local folder `~/.serendip-t018/t024/secrets/` was still there (asked
+whether to delete it). The task
+issues (#339–#351) exist, and `main..spec-024` was rewritten so that
+T001–T012's commits carry `Closes #N` (T013 left out; tree unchanged,
+checked).
 - **T013:** see tasks.md's "Done as" note. ADR 0022, `operations.md`
   "Alerts (spec 024)", the new `docs/guides/alert-integrations.md`, the
   architecture docs, build-vs-adopt, and RP-069/070/072/073/074 (RP-062,
