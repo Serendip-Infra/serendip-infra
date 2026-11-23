@@ -330,8 +330,9 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   the ProviderInstance's existence, not Ready (plan decision 11); the
   package job's timeout must exceed the 90 s removal wait; the
   observability package's removal also removes the collector (RP-086).
-  **To T009:** whether `Hidden` is shown, and only to readers of the
-  trace's other Components.
+  **To T009:** merge the spans the caller can read and answer
+  `partial`, never `Hidden`'s count (plan decision 12, decided after
+  T007).
 
 - **Do:** `openchoreo-tracing` installer (module, Serendip's collector
   config, tail sampling off, memory limiter, the module's adapter off,

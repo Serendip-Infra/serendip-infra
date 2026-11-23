@@ -58,8 +58,10 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      observability package's removal deletes the collector too (order
      or refuse it). The observability fingerprint changed (logs store
      env), so an installed package re-applies once.
-   - **To T009:** `Trace.Hidden` counts other Components' spans:
-     decide whether it's shown.
+   - **To T009 (decided 2026-11-23, plan decision 12):** a trace's
+     answer merges the spans of every Deployment in its Environment the
+     caller can read traces of, and says `partial: true` for the rest;
+     `Trace.Hidden`'s count is never returned.
    - **T006 done** (commit 908f447, `Closes #358`; tasks.md "Done as").
      `requests.go`, `traffic.go`, `flows.go`, the Lua filter; the
      `hubble` scrape job; `Installer.SetFlowSource`. All request series

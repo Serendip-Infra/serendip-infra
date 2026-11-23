@@ -319,6 +319,17 @@ decisions below are already updated. What changed from the research:
       none is not-found, so a guessed trace ID of another Component
       answers 404 (criterion 9). Spans of other Components in the same
       trace are counted, not shown, unless the caller can read them too.
+      **Decided 2026-11-23 (after T007):** the API merges the spans of
+      every Deployment in the trace's Environment the caller holds
+      `…/traces/read` on (one `Trace` call each; not-found unless one of
+      them has a span), and answers `partial: true` when spans remain
+      that it can't show. The count isn't returned: a span's parent ID
+      already shows another service took part, but the count would add
+      the other Components' fan-out (as flows show "Outside", not how
+      many). Azure: Application Insights' transaction view shows the
+      components you can read and marks the rest inaccessible. The
+      provider's `Hidden` stays internal: the merged remainder is
+      `Hidden` of any one minus the other readable targets' spans.
 13. **Alert conditions** (spec 024's model, `core/resource/alerting.go`):
     - `requestErrorRate` (percent of 5xx over the window) and
       `requestLatency` (`percentile` 95 or 99, milliseconds), from
