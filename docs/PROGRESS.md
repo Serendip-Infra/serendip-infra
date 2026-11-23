@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T010 done, T011 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T011 done, T012 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T010 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T011 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,10 +31,22 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#362 closed (board Done); #66 says
-   "T001–T010 done; T011 next". T011–T015 are #363–#367. Before the spec
+   then check the board. #353–#363 closed (board Done); #66 says
+   "T001–T011 done; T012 next". T012–T015 are #364–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T011** (console), then T012–T015 in order.
+3. **T012** (live check), then T013–T015 in order.
+   - **T011 done** (`Closes #363`; tasks.md "Done as"). Console:
+     `ui/src/screens/Networking.tsx` (HTTP requests block, Connections,
+     Traces with a span waterfall), `lib/networking.ts` (words, waterfall
+     layout, `notAvailableReason` for 409/503), the topology overlay
+     (off until turned on; status-coloured labelled edges, undeclared
+     calls dashed, a traffic table), "Network layer" on the **Platform**
+     page (not Settings: that's notifications only), the three rule
+     conditions (a refused rule shows the evaluator's message). 191 UI
+     tests; JS 118.7 → 124.9 KiB gz. **Not seen in a browser yet**:
+     `t025`'s `serendipd` is API-key only; T012 checks it on
+     `serendip-t025` (recreate that cluster first, see T005 below), and
+     needs `serendipd` rebuilt to embed the new console.
    - **T010 done** (`Closes #362`; tasks.md "Done as"). No CLI code:
      the catalogue entries already work (the parser takes `traces show
      <dep> <trace-id>` by position). Traces stay on MCP, like stored

@@ -1,4 +1,5 @@
-import type { TopologyView } from "../api/types";
+import type { TopologyView, TrafficEdge } from "../api/types";
+import { trafficLevel } from "../lib/networking";
 
 const COL = 220;
 const ROW = 64;
@@ -31,11 +32,27 @@ const short = (s: string) => (s.length > 20 ? `${s.slice(0, 19)}…` : s);
 
 /**
  * TopologyDiagram draws an Application's declared calls between its
- * Components (spec 020): what's declared, not live traffic. It's a picture
- * of the table beside it, which carries the same facts for screen readers.
+ * Components (spec 020). With traffic (spec 025's overlay), each call that
+ * was observed is labelled with its request rate and failures and drawn in
+ * a status colour; an observed call nobody declared is drawn dashed, and a
+ * declared one with no traffic stays plain. It's a picture of the tables
+ * beside it, which carry the same facts for screen readers.
  */
-export function TopologyDiagram({ view, label }: { view: TopologyView; label: string }) {
-  const level = layers(view);
+export function TopologyDiagram({ view, label, traffic }: { view: TopologyView; label: string; traffic?: TrafficEdge[] | undefined }) {
+  // Calls observed but not declared are drawn too, once per pair of ends.
+  const observed = new Map((traffic ?? []).map((t) => [`${t.from}>${t.to}`, t]));
+  const declared = new Set(view.dependencies.map((d) => `${d.from}>${d.to}`));
+  const seen = new Set<string>();
+  const edges = [
+    ...view.dependencies.flatMap((d) => {
+      const k = `${d.from}>${d.to}`;
+      if (traffic && seen.has(k)) return [];
+      seen.add(k);
+      return [{ from: d.from, to: d.to, key: `${d.from}-${d.to}-${d.port}`, observedOnly: false }];
+    }),
+    ...(traffic ?? []).filter((t) => !declared.has(`${t.from}>${t.to}`)).map((t) => ({ from: t.from, to: t.to, key: `obs-${t.from}-${t.to}`, observedOnly: true })),
+  ];
+  const level = layers({ ...view, dependencies: edges.map((e) => ({ from: e.from, to: e.to, port: "", env: "" })) });
   const rows = new Map<number, number>();
   const pos = new Map<string, { x: number; y: number }>();
   for (const c of view.components) {
@@ -54,7 +71,7 @@ export function TopologyDiagram({ view, label }: { view: TopologyView; label: st
             <path d="M0 0 10 5 0 10z" className="topology-arrow" />
           </marker>
         </defs>
-        {view.dependencies.map((d) => {
+        {edges.map((d) => {
           const a = pos.get(d.from);
           const b = pos.get(d.to);
           if (!a || !b) return null;
@@ -63,7 +80,20 @@ export function TopologyDiagram({ view, label }: { view: TopologyView; label: st
           const x2 = b.x;
           const y2 = b.y + BOX_H / 2;
           const bend = Math.max(40, Math.abs(x2 - x1) / 2);
-          return <path key={`${d.from}-${d.to}-${d.port}`} className="topology-edge" d={`M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`} markerEnd="url(#topology-arrow)" />;
+          const t = observed.get(`${d.from}>${d.to}`);
+          const level = t && trafficLevel(t);
+          const cls = ["topology-edge", level ? `topology-edge--${level.kind}` : "", d.observedOnly ? "topology-edge--undeclared" : ""].filter(Boolean).join(" ");
+          // The label sits at the curve's middle, which for this cubic is the chord's midpoint.
+          return (
+            <g key={d.key}>
+              <path className={cls} d={`M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`} markerEnd="url(#topology-arrow)" />
+              {level && (
+                <text className={`topology-edge-label topology-edge-label--${level.kind}`} x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle">
+                  {level.label}
+                </text>
+              )}
+            </g>
+          );
         })}
         {view.components.map((c) => {
           const p = pos.get(c.id)!;

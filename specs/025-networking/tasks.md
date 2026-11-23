@@ -518,6 +518,44 @@ reasons say Serendip can't read them, not that the CNI lacks them).
 - **Verify:** `npm test` and `npm run build` in `ui/`; the gzipped JS size
   recorded.
 
+**Done as** (2026-11-23):
+
+- **Observability tab** (`ui/src/screens/Networking.tsx`): an "HTTP
+  requests" block in the metrics section (requests per second, 5xx per
+  second, and one latency percentile at a time, p50/p95/p99 picked, so
+  each chart stays one series); "Connections" (all or refused only,
+  refused listed first with the policy's reason, an end the caller can't
+  read said "Not visible to you", paged by `next`); "Traces" (greyed out
+  until the `tracing` capability is ready, its own permission like logs,
+  duration and errors-only filters, the "redeploy to send traces" hint)
+  and one trace as a waterfall table with SVG bars (no inline styles,
+  CSP), a partial trace and a truncated one said, a chosen span's
+  attributes listed. Spec 023's "Traces: Not available yet" is gone.
+- **Topology overlay:** off until turned on (no traffic read before),
+  then an Environment and range; `TopologyDiagram` labels each observed
+  call "5.4/s, 9.9% failed" and strokes it in a status colour (warn above
+  0%, error at 5%); an observed call nobody declared is dashed. A live
+  traffic table carries the same facts, and `omitted` is said.
+- **Platform networking** went on the Platform page ("Network layer"):
+  the console's Settings is notifications only, and the facts are
+  platform state beside where workloads run. Plugin and version, policy
+  enforcement with its reason, flows and request metrics each available
+  or the reason, pod ranges, when read.
+- **Rule form:** the three condition types, each with what it needs; a
+  refused rule's list entry now shows the evaluator's own message
+  ("trace conditions need the tracing package installed") rather than the
+  generic words.
+- **"Not available" reasons everywhere:** a 409 or 503 from a networking
+  or traces read shows the server's detail (`notAvailableReason`), never
+  an error box.
+- **Checks:** `pnpm typecheck`, 191 tests (19 new:
+  `networking.test.tsx`, two rule-form tests and wording tests in
+  `alerts.test.tsx`), `check-contrast.mjs`, `pnpm build`. **Gzipped JS:
+  118.7 → 124.9 KiB (+6.2; budget 160).** `ui/DESIGN.md` gains the
+  overlay and waterfall rows. Not looked at in a browser here: `t025`'s
+  `serendipd` has API keys only, so no console sign-in; T012 does the
+  browser checks on `serendip-t025`.
+
 ## T012: Live check
 
 - **Do:** spec criteria 1–11 and 14 on `serendip-t025`, criterion 2 on

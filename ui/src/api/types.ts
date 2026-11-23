@@ -518,11 +518,125 @@ export interface Metrics {
   cpuLimit?: number;
   memoryRequest?: number;
   memoryLimit?: number;
+  /** HTTP requests (spec 025), absent where they can't be read: unavailable says why. */
+  requests?: RequestSeries;
   /** What the backend can't provide, each with the reason. */
   unavailable?: string[];
   from: string;
   to: string;
   summary: Partial<Record<"cpu" | "memory", SeriesSummary>>;
+}
+
+/** Requests and 5xx answers per second, and latency percentiles in milliseconds (core/reconcile RequestSeries). */
+export interface RequestSeries {
+  rate: MetricPoint[];
+  errorRate: MetricPoint[];
+  latencyP50: MetricPoint[];
+  latencyP95: MetricPoint[];
+  latencyP99: MetricPoint[];
+}
+
+// --- Networking and traces (spec 025): core/reconcile networking.go, tracing.go ---
+
+/** GET /v1/networking */
+export interface NetworkFacts {
+  plugin: string;
+  version?: string;
+  policyEnforcement: "enforced" | "notEnforced" | "unknown";
+  policyReason?: string;
+  flows: boolean;
+  requestMetrics: boolean;
+  podRanges?: string[];
+  unavailable?: string[];
+  readAt: string;
+}
+
+/** One end of a connection record. */
+export interface FlowEnd {
+  component?: string;
+  environment?: string;
+  namespace?: string;
+  workload?: string;
+  external?: boolean;
+  /** An end the caller isn't allowed to see: nothing else is set. */
+  outside?: boolean;
+}
+
+export interface Flow {
+  time: string;
+  verdict: string;
+  reason?: string;
+  source: FlowEnd;
+  destination: FlowEnd;
+  protocol: string;
+  port?: number;
+  count: number;
+}
+
+/** GET /v1/deployments/{id}/flows */
+export interface FlowPage {
+  flows: Flow[] | null;
+  next?: string;
+  truncated?: boolean;
+  from: string;
+  to: string;
+}
+
+/** Requests and 5xx answers per second between two Components. */
+export interface TrafficEdge {
+  from: string;
+  to: string;
+  rate: number;
+  errorRate: number;
+}
+
+/** GET /v1/applications/{id}/traffic */
+export interface TrafficView {
+  edges: TrafficEdge[] | null;
+  from: string;
+  to: string;
+  omitted: number;
+}
+
+export interface TraceSummary {
+  traceId: string;
+  start: string;
+  durationNs: number;
+  root?: string;
+  spans: number;
+  hasErrors: boolean;
+}
+
+/** GET /v1/deployments/{id}/traces */
+export interface TracePage {
+  traces: TraceSummary[] | null;
+  next?: string;
+  truncated?: boolean;
+  from: string;
+  to: string;
+}
+
+export interface Span {
+  spanId: string;
+  parentId?: string;
+  name: string;
+  kind?: string;
+  start: string;
+  durationNs: number;
+  failed: boolean;
+  status?: string;
+  component: string;
+  environment: string;
+  attributes?: Record<string, string>;
+}
+
+/** GET /v1/deployments/{id}/traces/{traceId} */
+export interface TraceView {
+  traceId: string;
+  spans: Span[] | null;
+  /** Some spans are from Components the caller can't read, and aren't shown. */
+  partial: boolean;
+  truncated?: boolean;
 }
 
 // --- Alerting (spec 024): core/resource/alerting.go ---
@@ -540,11 +654,16 @@ export interface CountCondition {
   windowMinutes: number;
 }
 export interface AlertCondition {
-  type: "metric" | "restarts" | "logMatch" | "packageDisk";
+  type: "metric" | "restarts" | "logMatch" | "packageDisk" | "requestErrorRate" | "requestLatency" | "traceErrors";
   metric?: MetricCondition;
   restarts?: CountCondition;
   logMatch?: CountCondition & { text: string };
   packageDisk?: { percentOfBudget: number };
+  /** Spec 025: the network layer's request metrics. */
+  requestErrorRate?: { abovePercent: number; minRequests?: number; windowMinutes: number };
+  requestLatency?: { percentile: 95 | 99; aboveMs: number; windowMinutes: number };
+  /** Spec 025: the tracing package. */
+  traceErrors?: CountCondition;
 }
 
 export interface AlertRuleSpec {

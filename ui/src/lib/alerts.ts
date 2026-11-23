@@ -46,7 +46,8 @@ const minutes = (n: number) => (n === 1 ? "1 minute" : `${n} minutes`);
 /** The value's unit for a condition: millicores, MiB or a percentage. */
 export function valueUnit(c: AlertCondition | undefined): string {
   if (!c) return "";
-  if (c.type === "packageDisk") return "%";
+  if (c.type === "packageDisk" || c.type === "requestErrorRate") return "%";
+  if (c.type === "requestLatency") return " ms";
   if (c.type === "metric" && c.metric) {
     if (c.metric.as !== "value") return "%";
     return c.metric.metric === "cpu" ? "m" : " MiB";
@@ -75,6 +76,16 @@ export function conditionText(c: AlertCondition): string {
       return c.logMatch ? `More than ${c.logMatch.above} log lines containing “${c.logMatch.text}” in ${minutes(c.logMatch.windowMinutes)}` : "Log lines";
     case "packageDisk":
       return c.packageDisk ? `Stored data above ${c.packageDisk.percentOfBudget}% of the package's disk budget` : "Package disk";
+    case "requestErrorRate": {
+      const r = c.requestErrorRate;
+      if (!r) return "Request error rate";
+      const min = r.minRequests ? `, with at least ${r.minRequests} requests` : "";
+      return `More than ${formatValue(r.abovePercent, c)} of requests failing in ${minutes(r.windowMinutes)}${min}`;
+    }
+    case "requestLatency":
+      return c.requestLatency ? `p${c.requestLatency.percentile} request latency above ${formatValue(c.requestLatency.aboveMs, c)} over ${minutes(c.requestLatency.windowMinutes)}` : "Request latency";
+    case "traceErrors":
+      return c.traceErrors ? `More than ${c.traceErrors.above} traces with an error in ${minutes(c.traceErrors.windowMinutes)}` : "Traces with errors";
     default:
       return String((c as { type: string }).type);
   }
@@ -94,7 +105,9 @@ export function ruleStateWords(r: AlertRule, now: Date): { kind: "ok" | "warn" |
       NotDeployed: "the component isn't deployed there",
       NoData: "there's no data yet",
     };
-    const why = r.status.activeReason ? (reasons[r.status.activeReason] ?? r.status.activeReason) : "not evaluated yet";
+    // A refused condition's own words say what's missing, such as the tracing package (spec 025).
+    const refused = r.status.activeReason === "ConditionRefused" ? r.status.conditions?.find((c) => c.type === "Evaluating")?.message : undefined;
+    const why = refused || (r.status.activeReason ? (reasons[r.status.activeReason] ?? r.status.activeReason) : "not evaluated yet");
     return { kind: "warn", word: "Inactive", detail: why };
   }
   if (silenced) return { kind: "warn", word: "Silenced", detail: `until ${new Date(silence.until).toLocaleString()}: ${silence.reason}` };

@@ -172,6 +172,44 @@ describe("a component's alerts", () => {
     expect(body.spec.channelIds).toEqual(["ch1"]);
     expect(body.spec.environmentId).toBe("e1");
   });
+
+  it("creates request and trace rules, saying what each needs (spec 025)", async () => {
+    goTo("/applications/app1/components/c1?tab=observability");
+    mockFetch(routes);
+    render(<App />);
+    fireEvent.click(await enabled("New rule"));
+    const form = screen.getByRole("form", { name: "New alert rule" });
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "web-slow" } });
+    fireEvent.change(within(form).getByLabelText("Summary"), { target: { value: "web is slow" } });
+    fireEvent.change(within(form).getByLabelText("Condition"), { target: { value: "requestLatency" } });
+    expect(within(form).getByText(/Needs request metrics from the cluster's network layer/)).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText("Percentile"), { target: { value: "99" } });
+    fireEvent.change(within(form).getByLabelText("Above, milliseconds"), { target: { value: "700000" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Create rule" }));
+    expect(await within(form).findByText(/at most 600000/)).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText("Above, milliseconds"), { target: { value: "250" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Create rule" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "POST" && c.url === "/v1/alertrules")).toBeTruthy());
+    const body = calls.find((c) => c.method === "POST" && c.url === "/v1/alertrules")!.body as { spec: { condition: unknown } };
+    expect(body.spec.condition).toEqual({ type: "requestLatency", requestLatency: { percentile: 99, aboveMs: 250, windowMinutes: 5 } });
+  });
+
+  it("sends an error-rate rule's minimum only when it's set", async () => {
+    goTo("/applications/app1/components/c1?tab=observability");
+    mockFetch(routes);
+    render(<App />);
+    fireEvent.click(await enabled("New rule"));
+    const form = screen.getByRole("form", { name: "New alert rule" });
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "web-errors" } });
+    fireEvent.change(within(form).getByLabelText("Summary"), { target: { value: "web is failing" } });
+    fireEvent.change(within(form).getByLabelText("Condition"), { target: { value: "requestErrorRate" } });
+    fireEvent.change(within(form).getByLabelText("Above, % of requests failing"), { target: { value: "5" } });
+    fireEvent.change(within(form).getByLabelText("At least, requests"), { target: { value: "20" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Create rule" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "POST" && c.url === "/v1/alertrules")).toBeTruthy());
+    const body = calls.find((c) => c.method === "POST" && c.url === "/v1/alertrules")!.body as { spec: { condition: unknown } };
+    expect(body.spec.condition).toEqual({ type: "requestErrorRate", requestErrorRate: { abovePercent: 5, minRequests: 20, windowMinutes: 5 } });
+  });
 });
 
 describe("an alert", () => {
@@ -278,6 +316,17 @@ describe("alert words", () => {
     expect(conditionText({ type: "logMatch", logMatch: { text: "panic", above: 0, windowMinutes: 10 } })).toBe("More than 0 log lines containing “panic” in 10 minutes");
     expect(conditionText({ type: "packageDisk", packageDisk: { percentOfBudget: 85 } })).toBe("Stored data above 85% of the package's disk budget");
     expect(formatValue(512, { type: "metric", metric: { metric: "memory", as: "value", above: 1, forMinutes: 1 } })).toBe("512 MiB");
+    expect(conditionText({ type: "requestErrorRate", requestErrorRate: { abovePercent: 5, minRequests: 20, windowMinutes: 10 } })).toBe("More than 5% of requests failing in 10 minutes, with at least 20 requests");
+    expect(conditionText({ type: "requestLatency", requestLatency: { percentile: 95, aboveMs: 250, windowMinutes: 5 } })).toBe("p95 request latency above 250 ms over 5 minutes");
+    expect(conditionText({ type: "traceErrors", traceErrors: { above: 0, windowMinutes: 1 } })).toBe("More than 0 traces with an error in 1 minute");
+  });
+
+  it("says what a refused condition needs, in the evaluator's words", () => {
+    const r = {
+      ...rule,
+      status: { active: false, activeReason: "ConditionRefused", conditions: [{ type: "Evaluating", status: "False", reason: "ConditionRefused", message: "trace conditions need the tracing package installed", lastTransitionTime: at }] },
+    } as unknown as AlertRule;
+    expect(ruleStateWords(r, new Date(at)).detail).toBe("trace conditions need the tracing package installed");
   });
 
   it("keeps a 30-day silence inside the server's limit", () => {
