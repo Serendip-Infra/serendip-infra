@@ -406,6 +406,10 @@ func TestSpec025Criterion9_Traces(t *testing.T) {
 	if n := len(w.tracing.calls) - calls; n != 1 || !slices.Equal(w.tracing.calls[calls], []string{w.webDev, w.apiDev}) {
 		t.Errorf("web's own trace: %d calls, %v", n, w.tracing.calls[calls:])
 	}
+	// ... but not under api, which has no span in it, though web's spans
+	// are readable (criterion 8: T012).
+	trace("tok-logreader", w.apiDev, own, http.StatusNotFound)
+	trace("tok-owner", w.apiDev, own, http.StatusNotFound)
 
 	// Traces of web's Deployment only: api's spans are hidden too.
 	one := map[string]any{"type": "person", "id": "sub-onetrace"}

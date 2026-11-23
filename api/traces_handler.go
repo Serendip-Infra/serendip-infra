@@ -157,7 +157,10 @@ type traceAnswer struct {
 // Deployment's Environment the caller may read traces of (this one
 // included), in start order. None from any of them is 404, whatever other
 // Components' spans exist, so a guessed trace ID tells nothing (spec
-// criterion 9).
+// criterion 9). A whole trace with no span from this Deployment is 404
+// too: a trace is shown under a Component only if it's part of it (spec
+// criterion 8; T012 found an Owner could open any trace of the
+// Environment through any Deployment).
 func (h *TracesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	reqID := audit.RequestIDFrom(r.Context())
 	traceID := strings.ToLower(r.PathValue("traceId"))
@@ -199,6 +202,14 @@ func (h *TracesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		h.readFailed(w, r, err, ctx.Err())
+		return
+	}
+	// A truncated trace may have dropped this Deployment's spans, so only
+	// a whole one is checked.
+	if !tr.Truncated && !slices.ContainsFunc(tr.Spans, func(s reconcile.Span) bool {
+		return s.Component == t.Component.Metadata.ID && s.Environment == t.Environment.Metadata.ID
+	}) {
+		WriteProblem(w, http.StatusNotFound, "not found", "trace "+traceID+" not found for Deployment/"+d.Metadata.ID, reqID)
 		return
 	}
 	// Hidden is never returned: partial says only that there's more.

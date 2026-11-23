@@ -17,7 +17,9 @@ read from files and never printed.
   console embedded, on `127.0.0.1:8089`. It was rebuilt twice as fixes
   F1 and F2 landed, and restarted to add API keys. It set up OpenBao,
   ThunderID, kgateway and OpenChoreo by itself. The observability
-  package was installed through `POST /v1/provider-instances`.
+  package was installed through `POST /v1/provider-instances`. For
+  criteria 7, 8, 9 and 11 (after T013) it was rebuilt at 9469e4c, with
+  the tracing package's measured requirements, and again with fix F6.
 - **API keys:**
   - `verifier`: Owner at `/`.
   - `reader-a`: Reader at Project `t012-a` only.
@@ -139,16 +141,58 @@ read from files and never printed.
    - The calls are dropped by B's OpenChoreo policy (same-namespace
      only), so every row is a refusal.
    - Finding F4: an Owner sees B's end as outside too.
-7. **Traces from a standard SDK. PENDING (after T013).**
-   - `t012-otel` (otelhttp, OTLP/HTTP, nothing Serendip-specific) is
-     built and loaded.
-   - The tracing package can't be installed through `serendipd` until
-     T013 sets its requirements: `packages list` says "not installable
-     until its resource cost is measured".
-   - `traces list` answers 503 through the CLI and MCP.
-8. **Trace identity. PENDING through `serendipd`** (after T013). It held
-   at the provider level in T007 (the spoofing Component, tasks.md T007).
-9. **Trace scoping. PENDING** (after T013).
+7. **Traces from a standard SDK. PASS** (17:00 UTC, after T013; evidence
+   `c789-api.txt`, `c7-cli-mcp.txt`, `ui-c7-traces.txt`,
+   `ui-c7-traces-on.png`).
+   - **Install:** `serendipd` rebuilt with T013's `TracingRequirements`.
+     The package installed through `POST /v1/provider-instances` and was
+     Ready in 46 s.
+   - **The workloads:** in `t012-a`, three Components on `t012-otel:2`
+     (otelhttp, OTLP/HTTP, configured only by `OTEL_*`; its source is
+     now `profiles/edge-1/bench/traffic-app`):
+     - `otel-srv`: exposed, 10% 500s, 15 ms delay;
+     - `otel-caller`: calls it twice a second, a dependency;
+     - `spoofer`: see criterion 8.
+     Each got the trace endpoint in its first release; nothing in the app
+     names Serendip.
+   - **API:** each Deployment lists its traces. Opening one of
+     `otel-srv`'s shows three spans in start order: `call` and
+     `HTTP GET` from `otel-caller`, then `GET` from `otel-srv`. Each
+     span names its Component and carries its HTTP attributes.
+   - **CLI:** `serendip traces list` and `traces show` (exit 0). A Reader
+     is refused with exit 3, "missing
+     serendip/components/traces/read".
+   - **MCP:** `deployments_traces_list` and `deployments_traces_get`, as
+     the signed-in admin.
+   - **Console:** `otel-caller`'s Observability tab lists its traces
+     (newest first, OK/Error), opens one as a waterfall (`otel-caller`
+     twice, then `otel-srv`) and shows a span's attributes.
+8. **Trace identity. PASS after fix F6.**
+   - **The spoofer:** `spoofer` calls only itself, with
+     `OTEL_SERVICE_NAME=otel-srv`. Its `OTEL_RESOURCE_ATTRIBUTES` claim
+     `otel-srv`'s pod name and namespace, and its OpenChoreo component,
+     environment and project UIDs, all copied from the live pod's labels.
+   - **Its spans are attributed to `spoofer`,** from the sending pod. None
+     of the 20 traces listed under `otel-srv` is the spoofer's. Its
+     spans kept none of the claimed `service.*`, `k8s.*` or `openchoreo`
+     attributes.
+   - **Finding F6:** an Owner opening the spoofer's trace ID through
+     `otel-srv`'s route got 200, showing only `spoofer`'s spans. After the
+     fix that answers 404 ("not found for Deployment"), as a trace in which
+     `otel-srv` has no span should.
+9. **Trace scoping. PASS.**
+   - **`reader-c`:** Reader on Application `shop` (Reader leaves out trace
+     read), plus a custom role `t012-trace-reader` with only
+     `serendip/components/traces/read`, at `otel-caller`'s Deployment.
+   - **`otel-srv`'s traces:** 403 for the list, and 403 for one of its
+     trace IDs opened under `otel-srv` ("missing
+     serendip/components/traces/read at Deployment/…").
+   - **`otel-caller`'s traces:** listed. The caller→server trace opens
+     with only `otel-caller`'s spans and `partial: true`, so
+     `otel-srv`'s span isn't shown or counted.
+   - **A guessed ID:** the spoofer's trace ID, guessed under
+     `otel-caller`, is 404.
+   - **`reader-a`** (Reader at Project `t012-a`): 403 on any trace read.
 10. **Latency and error-rate rules. PASS after fix F1 and F2.**
     - **The rules:** `t012-srv-p95` (p95 above 200 ms over 5 min,
       warning) and `t012-srv-errors` (5xx above 30% over 5 min, at
@@ -169,7 +213,25 @@ read from files and never printed.
         leave the window, less up to one 1-minute scrape.
     - **Console:** the Alerts page lists all four with values and
       thresholds (`ui-c10-alerts.png`).
-11. **Removing tracing. PENDING** (after T013, with criterion 7).
+11. **Removing tracing. PASS** (`c11-api.txt`).
+    - **Before:** a `traceErrors` rule on `otel-srv` (above 999 traces
+      with errors in 5 min) evaluated to 66.
+    - **The removal:** `DELETE /v1/provider-instances/{tracing}` at
+      16:59:05 answered 204 with Approval `01a20958…` (Owner, decided by
+      policy). It was Executed at once and CleanedUp at 17:00:56, after
+      the store's stream deletion.
+    - **After:**
+      - the collector pod is gone, and trace reads answer 503 ("traces
+        need the tracing package … it isn't installed");
+      - the rule is kept, `Evaluating=False/ConditionRefused` with "trace
+        conditions need the tracing package installed";
+      - stored logs and metrics (CPU, memory and the request series)
+        still answer;
+      - the three traced Components restarted once (17:00:55), without
+        the trace variables.
+    - **Stored traces deleted:** tracing was reinstalled (Ready in 23 s).
+      The window from 16:40 to the removal then lists 0 traces for all
+      three Components.
 12. **Control-plane footprint. PASS** (T013,
     `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`):
     `serendipd` at idle read 33.2 MiB (kindnet) and 82.1 MiB (Cilium),
@@ -182,8 +244,12 @@ read from files and never printed.
     - Tracing costs +145 to +180 MiB and ~10 mcores, and ~730 MiB a day
       of the logs store (RP-088).
     - The edge-1 default stays Cilium. ADR 0023 (T015) gives the reason.
-14. **Audit. PASS for what ran; the tracing install and removal are
-    PENDING** (after T013).
+14. **Audit. PASS** (`c14-audit.txt`; the tracing rows in
+    `c14-tracing-audit.txt`).
+    - **The tracing package:** the install (`verifier`, "allow: Owner at
+      /"), the removal ("approved: 01a20958… by policy"), its Approval's
+      rows and the reinstall are audited, with the reconciler's status
+      writes. The removal needed an Approval (constitution 5).
     - **Audited, from the live store:**
       - the observability install (`verifier`, `http`, allow: Owner at
         `/`);
@@ -249,13 +315,31 @@ read from files and never printed.
     hint name the three causes.
 - **F5 (fixed, nit):** the latency chart's zero tick read "0 µs"; it now
   reads "0 ms".
+- **F6 (fixed): a trace opened under a Deployment that has no span in it.**
+  - `GET /v1/deployments/{id}/traces/{traceId}` answered 404 only when
+    none of the caller's readable Deployments in the Environment had a
+    span in the trace. So an Owner could open any trace of the
+    Environment through any Deployment's route. That isn't a leak (they
+    may read every span shown), but the trace was "shown under" a
+    Component it has no part in.
+  - **Fix:** a whole trace with no span from the route's own Deployment
+    is 404 too. A truncated trace is exempt, since its own spans may be
+    past the cap. The catalogue summary and `docs/cli-and-mcp.md` say "one
+    trace this Deployment is part of".
+  - **Test:** `TestSpec025Criterion9_Traces` (a trace of web's alone,
+    opened through api's Deployment, by a Log Reader and by the Owner).
+  - Confirmed live after a rebuild: the spoofer's trace under `otel-srv`
+    is 404.
+- **F7 (fixed, test tooling):** `t012-otel` used `TARGET` as a URL, but
+  OpenChoreo gives a dependency on a port other than 80 as `host:port`.
+  So the caller's requests failed before reaching the network (found
+  in T013's first run). It now adds `http://` when there's no scheme
+  (`t012-otel:2`).
 
 ## Carried
 
-- **Criteria 7, 8, 9, 11 and the tracing part of 14:** the tracing
-  package is installable only once T013 has measured it. They are run
-  through `serendipd` (API, CLI, MCP, console) after T013, on this
-  cluster, with `t012-otel`.
+- Nothing: criteria 7, 8, 9, 11 and the tracing part of 14 ran after
+  T013, through `serendipd` on this cluster.
 
 ## Also seen
 

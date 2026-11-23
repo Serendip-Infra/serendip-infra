@@ -556,7 +556,7 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   `serendipd` has API keys only, so no console sign-in; T012 does the
   browser checks on `serendip-t025`.
 
-## T012: Live check
+## T012: Live check ✅
 
 - **Do:** spec criteria 1–11 and 14 on `serendip-t025`, criterion 2 on
   `serendip-t018`, in the browser and through the CLI and MCP; findings
@@ -564,6 +564,21 @@ reasons say Serendip can't read them, not that the CNI lacks them).
 - **Files:** `specs/025-networking/verification.md`.
 - **Verify:** `verification.md` lists each criterion with its evidence
   and result.
+
+**Done as** (2026-11-23, in two parts: 15406ad, then after T013):
+`specs/025-networking/verification.md`. Criteria 1–11 and 14 pass on
+`serendip-t025` (criterion 2 on `serendip-t018`). Criteria 12 and 13 are
+T013's. Seven findings, all fixed:
+- F1: request and trace rules were never wired;
+- F2: replaced pods dropped from conditions (RP-085);
+- F3–F5: wording, and the latency chart's 0 tick;
+- F6: a trace opened through a Deployment it has no span in. Now 404
+  (`api/traces_handler.go`, `TestSpec025Criterion9_Traces`);
+- F7: the test app's scheme-less `TARGET`.
+
+The tracing part ran through the API, CLI, MCP and console. It covered
+the spoofing Component, `reader-c` with trace read at one Deployment, and
+removal with its Approval, shown to delete stored traces by reinstalling.
 
 ## T013: Bench on the simulated T470 ✅
 

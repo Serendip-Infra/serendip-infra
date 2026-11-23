@@ -373,7 +373,7 @@ var operations = func() []Operation {
 				{Name: "before", In: InQuery, Description: "The next value of the previous page, for the page after it"}},
 			Hints: Hints{ReadOnly: true}},
 		Operation{Name: "deployments_traces_get", CLI: []string{"traces", "show"}, MCP: true,
-			Summary: "One trace's spans, in start order, from the Deployments in its Environment whose traces you may read; partial says it has spans you can't see. Needs the tracing package",
+			Summary: "One trace this Deployment is part of: its spans in start order, from the Deployments in its Environment whose traces you may read; partial says it has spans you can't see. Needs the tracing package",
 			Method:  "GET", Path: "/v1/deployments/{id}/traces/{traceId}",
 			Params: []Param{id("Deployment"), {Name: "traceId", In: InPath, Required: true, Description: "The trace ID, 32 hexadecimal digits"}},
 			Hints:  Hints{ReadOnly: true}},
