@@ -12,31 +12,49 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T013 done; T014 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T014 done; T015 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T013 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T014 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
-1. **T014 (#366): reviews.** go-reviewer, contract-guardian, a security
-   review of the scoping and the collector's identity, test-writer for
-   gaps; findings fixed; `go test ./...` and `go vet ./...`. Then **T015
-   (#367): docs and close-out**: ADR 0023 (the edge-1 default stays
-   Cilium, with T013's numbers), `docs/architecture/networking.md`,
+1. **T015 (#367): docs and close-out**: ADR 0023 (the edge-1 default
+   stays Cilium, with T013's numbers), `docs/architecture/networking.md`,
    `capability-model.md`, `operations.md`, `bootstrap-agent.md`,
-   build-vs-adopt, this file. Then the spec PR (`Closes #66`); check
-   that every task issue is closed first.
+   build-vs-adopt, this file. The docs must cover T014's node metrics
+   guard (below). Then the spec PR (`Closes #66`); check that every task
+   issue is closed first.
 2. **GitHub is in step, per task** (the user, 2026-11-20: no tracking
    backlog). After each task: commit with `Closes #N`, push `spec-025`,
    close #N by hand with a comment naming the commit, tick it in epic
-   #66's checklist and status line, then check the board. T001–T013
-   (#353–#365) are closed; #66 says "T001–T013 done".
+   #66's checklist and status line, then check the board. T001–T014
+   (#353–#366) are closed; #66 says "T001–T014 done".
    - **Issue numbers:** T012 #364, T013 #365, T014 #366, T015 #367.
      T013's two commits first said `#366` by mistake. Both were reworded
      to `#365` and `spec-025` was force-pushed (the user, 2026-11-23).
+3. **T014 done** (a14a6d5; tasks.md "Done as"). The reviews were
+   go-reviewer (two passes), contract-guardian (twice), security and
+   test-writer.
+   - **Security fix:** the `cilium` provider keeps
+     `serendip-node-metrics-guard` (`nodeguard.go`), a deny-only
+     CiliumClusterwideNetworkPolicy. It closes the node's metrics ports
+     9962–9965 to pods outside `kube-system` and
+     `openchoreo-observability-plane`. Before it, any pod could read every
+     Component's Hubble request metrics. It was checked live on `t025`
+     (evidence `~/.serendip-t025-dev/t012/evidence/t014-node-guard.txt`;
+     RP-091).
+   - **Race fix:** the observability removal and the tracing package's
+     jobs now share `opLock` (`cmd/serendipd/packages.go`). The removal
+     uses `RemoveCollector`.
+   - **Other fixes:** a truncated trace needs this Deployment's own
+     spans; the store's credentials are cached for a minute; atomic CNI
+     manifests; more in tasks.md.
+   - **New risks:** RP-090 (visibility audit rows in memory), RP-091,
+     RP-092 (OTLP flood).
+   - `t025` and its `serendipd` are stopped again.
 3. **T013 done** (a6f6cce, 3dc9709; tasks.md "Done as"; results
    `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`,
    its README the summary).
@@ -63,7 +81,7 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    - F6 fixed: a trace opened through a Deployment with no span in it is
      now 404.
    - F7: the test app's scheme-less `TARGET`.
-   - **Test bed `serendip-t025` is running**, with its `serendipd`
+   - **Test bed `serendip-t025` is stopped** (T014 stopped it). Its `serendipd` is
      (rebuilt at 8657e3b, started by `bash
      ~/.serendip-t025-dev/t012/start.sh` as a background run), the
      observability and tracing packages installed, and the
