@@ -12,12 +12,12 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-20 (spec 025: T001–T005 done, T006 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T006 done, T007 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T005 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T006 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
@@ -31,12 +31,29 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#357 closed (board Done); #66 says
-   "T001–T005 done; T006 next". T006–T015 are #358–#367. Before the spec
+   then check the board. #353–#358 closed (board Done); #66 says
+   "T001–T006 done; T007 next". T007–T015 are #359–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T006** (request metrics, traffic and flows in the observability
-   provider; its Verify carries T001's live Fluent Bit tail), then
-   T007–T015 in order.
+3. **T007** (the tracing package), then T008–T015 in order.
+   - **T006 done** (commit 908f447, `Closes #358`; tasks.md "Done as").
+     `requests.go`, `traffic.go`, `flows.go`, the Lua filter; the
+     `hubble` scrape job; `Installer.SetFlowSource`. All request series
+     from Serendip's own PromQL (plan decision 7 amended). RP-084,
+     RP-085; RP-054 extended. contract-guardian passed; its and
+     go-reviewer's findings fixed (allow-listed flow ends, tie order,
+     SQL bounds, one-to-one pairing, ...).
+   - **Carried to T008:** wire `WithRequestMetrics` (from the cached
+     `NetworkFacts.RequestMetrics` and its reason) and
+     `Installer.SetFlowSource` (from the cilium provider's `FlowSource`).
+     A test that `obsplane.FlowFormat` equals `cilium.FlowFormat`
+     (contract-guardian).
+   - **Carried to T009:** gate `/flows` on `NetworkFacts.Flows` ("not
+     collected", not an empty list); `/traffic` maps
+     `ErrRequestsUnavailable` to a clear answer, not a 500.
+   - **Live-test gotcha:** in Git Bash, pass `OBS_LIVE_KUBECONFIG` as a
+     Windows path (`cygpath -w`) and set
+     `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`, or MSYS rewrites
+     `/var/run/...` into a Windows path.
    - **T005 done** (commit 76adcfe, `Closes #357`; tasks.md "Done as").
      `serendip-agent bootstrap --cni cilium|default` (cilium default):
      `INSTALL_K3S_EXEC` flags and a HelmChart written after the script
@@ -73,22 +90,27 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 - **Spec 025 test bed** (`~/.serendip-t025/`):
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
-  - `serendipd` (spec-024 build) on `127.0.0.1:8095`, store
-    `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
-    Restarted 2026-11-21 06:50 (it had been stopped on low memory) as a
-    background run of `bin/serendipd.exe` with SERENDIP_KUBECONFIG
-    `t001/kubeconfig`, SERENDIP_DB_PATH `t025.db`, SERENDIP_ADDR
-    `127.0.0.1:8095`, SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
+  - `serendipd` (**spec-025 build at 908f447**) on `127.0.0.1:8095`,
+    store `t025.db`, API key in `keys.env` (`t001/api.sh` wraps curl).
+    Restarted 2026-11-23 06:55 as a background run of
+    `bin/serendipd.exe` with SERENDIP_KUBECONFIG `t001/kubeconfig`,
+    SERENDIP_DB_PATH `t025.db`, SERENDIP_ADDR `127.0.0.1:8095`,
+    SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
     SERENDIP_API_KEYS `<token from keys.env>:verifier`, logging to
-    `serendipd.log`. Rebuild `bin/serendipd.exe` from `spec-025` for T006's
-    live checks;
+    `serendipd.log`. It was stopped for T006's live install (the user ran
+    the taskkill; the session's was refused). Until T008 wires the flow
+    source, its package check reverts Fluent Bit to the config without
+    the flow input; stop it again for a live flow check
+    (`taskkill //PID <pid> //F` in Git Bash);
+  - T006's evidence in `~/.serendip-t025/t006/` (`live.db` store copy,
+    `install.log`); a probe pod `t006-probe` (completed) in `default`;
   - the observability package, and the tracing module installed by hand
     with Serendip's collector config (`t001/otel-cm.yaml`);
   - Project `t025`, Application `shop` with Components `srv` (10%
     errors, 20 ms delay), `caller` and `spoofer`, all sending traces
     (IDs in `t001/ids.txt`); the test image `t025-http:1` (`t001/img/`).
-  - A hand-added `hubble` scrape job in the live Prometheus ConfigMap
-    (T006 makes it real).
+  - The `hubble` scrape job is now the product's (T006's live install
+    applied `prometheus-values.yaml`).
   - `bench-t470` was **stopped** (`docker stop`), not deleted, to free
     memory. `serendip-t018` (and its `serendipd`) and `serendip-t025`
     (and its `serendipd`) are **stopped** too (2026-11-21, for memory):
