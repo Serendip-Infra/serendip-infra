@@ -12,58 +12,76 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T011 done; T012 partly done (15406ad), its tracing criteria wait for T013; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T013 done; T014 next; spec 024 closed)
 
 ## Current phase
 
 **Spec 025 (networking: Cilium, Hubble and traces; epic #66): spec, plan
-and tasks approved 2026-11-19; T001–T011 done** (see tasks.md's "Done
+and tasks approved 2026-11-19; T001–T013 done** (see tasks.md's "Done
 as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
 `spec-024`, **pushed to the Yasindu007 fork after every task commit**
 (the user, 2026-11-20). **Next, in order:**
-1. **GitHub batch for spec 025: DONE** (02:43 UTC 2026-11-20): task
-   issues #353–#367 (T001–T015) under epic #66, its body IN PROGRESS.
-   `after.sh` then merged PR #352 (02:45) and set the fields on #65 and
-   #66. The merge's `Closes #65` closed spec 024's epic while T013 (#351)
-   was open, so #65 was reopened (comment, status line "merged in #352;
-   closes with #351", board Status In Progress).
-2. **GitHub is in step (03:11 UTC 2026-11-20), and stays so per task**
-   (the user, 2026-11-20: no tracking backlog). After each task: commit
-   with `Closes #N`, push `spec-025`, close #N by hand with a comment
-   naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#363 closed (board Done); #66 says
-   "T001–T011 done; T012 next". T012–T015 are #364–#367. Before the spec
-   PR merges, check that every task issue is closed (#65 closed early).
-3. **T012 partly done** (15406ad, pushed, `Part of #364`; #364 stays
-   open with a progress comment). `specs/025-networking/verification.md`:
-   criteria 1–6, 10 and 14 PASS. Five findings fixed:
-   - F1: the alert evaluator had no request or trace source, so those
-     rules were always refused;
-   - F2: conditions dropped replaced pods (RP-085);
-   - F3–F5: flow count and "outside" wording, and the "0 ms" axis tick.
-   Contract-guardian and go-reviewer passed; their cheap findings are
-   fixed. **Criteria 7, 8, 9 and 11 and the tracing part of 14 are
-   pending:** the tracing package can't be installed through `serendipd`
-   until T013 sets its requirements. The ordering question (run T013
-   first, then finish T012) was put to the user.
-   - **T012 test bed:** `serendip-t025` was recreated 2026-11-23 and
-     sign-in works.
-     - State: `~/.serendip-t025-dev`, store `serendipd.db`, keys in
-       `api-keys.env`: `verifier`; `reader-a`, Reader at Project
-       `t012-a`; `reader-c`, caller-only.
-     - Start it with `bash ~/.serendip-t025-dev/t012/start.sh` as a
-       background run.
-     - Tooling and evidence: `~/.serendip-t025-dev/t012/` (`api.sh`,
-       `api.py`, `mcp.py` (CLI signed in as admin in `cli-person`),
-       `console/*.mjs`, `ids.json`, `loadgen/`, the `otelapp/` image
-       `t012-otel:1` already loaded, `evidence/`).
-     - Workloads in Projects `t012-a` (`srv`, `caller`, probes, `a-to-b`)
-       and `t012-b`. The observability package is installed.
-     - It and its `serendipd` are **stopped** now. So are
-       `serendip-t018` and the `t025` test bed (`~/.serendip-t025`; its
-       `serendipd` was killed).
-     - Criterion 2's evidence: `~/.serendip-t018/t025-t012/`.
-   - Then T013–T015 in order.
+1. **T014 (#366): reviews.** go-reviewer, contract-guardian, a security
+   review of the scoping and the collector's identity, test-writer for
+   gaps; findings fixed; `go test ./...` and `go vet ./...`. Then **T015
+   (#367): docs and close-out**: ADR 0023 (the edge-1 default stays
+   Cilium, with T013's numbers), `docs/architecture/networking.md`,
+   `capability-model.md`, `operations.md`, `bootstrap-agent.md`,
+   build-vs-adopt, this file. Then the spec PR (`Closes #66`); check
+   that every task issue is closed first.
+2. **GitHub is in step, per task** (the user, 2026-11-20: no tracking
+   backlog). After each task: commit with `Closes #N`, push `spec-025`,
+   close #N by hand with a comment naming the commit, tick it in epic
+   #66's checklist and status line, then check the board. T001–T013
+   (#353–#365) are closed; #66 says "T001–T013 done".
+   - **Issue numbers:** T012 #364, T013 #365, T014 #366, T015 #367.
+     T013's two commits first said `#366` by mistake. Both were reworded
+     to `#365` and `spec-025` was force-pushed (the user, 2026-11-23).
+3. **T013 done** (a6f6cce, 3dc9709; tasks.md "Done as"; results
+   `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`,
+   its README the summary).
+   - **Harness:** `bench-edge1 --package-traffic --package-tracing`. The
+     traffic image's source is `profiles/edge-1/bench/traffic-app`
+     (`t012-otel:2`; load it with docker save + ctr import).
+   - **Criterion 12 PASS:** `serendipd` idle 33.2 MiB on kindnet and 82.1
+     MiB on Cilium. The 82 is the Windows working set: a restart on the
+     same stack read 28.6 MiB.
+   - **Criterion 13:**
+     - Cilium costs +443 MiB and +92 mcores at idle, and +461 MiB and
+       +128 mcores under 10 req/s (RP-089);
+     - tracing costs +145 to +180 MiB and ~10 mcores, and ~730 MiB a
+       day of the logs store (RP-088);
+     - **the edge-1 default stays Cilium** (to record in ADR 0023, T015).
+   - `TracingRequirements` (idle 180 MiB / 10 mc, peak 370 / 200, disk
+     730 MiB/day for 3 days in the logs store's 5 GiB) makes the tracing
+     package installable.
+   - The first Cilium attempt died: the memory reaper killed its shell,
+     then `helm` failed `0xc0000142`. It was rerun.
+   - `bench-t470` is deleted.
+4. **T012 done** (15406ad, 8657e3b; `specs/025-networking/verification.md`):
+   criteria 1–11 and 14 PASS.
+   - F6 fixed: a trace opened through a Deployment with no span in it is
+     now 404.
+   - F7: the test app's scheme-less `TARGET`.
+   - **Test bed `serendip-t025` is running**, with its `serendipd`
+     (rebuilt at 8657e3b, started by `bash
+     ~/.serendip-t025-dev/t012/start.sh` as a background run), the
+     observability and tracing packages installed, and the
+     `otel-srv`/`otel-caller`/`spoofer` Components in `t012-a`.
+     - The rule `t012-otel-srv-trace-errors` evaluates. `reader-c` has
+       `t012-trace-reader` at `otel-caller`'s Deployment.
+     - Tooling and evidence: `~/.serendip-t025-dev/t012/` (`c7deploy.py`,
+       `c789.py`, `c11.py`, `console/c-traces.mjs`, `evidence/`).
+     - Stop it for memory when not needed (`docker stop
+       serendip-t025-control-plane`).
+   - `serendip-t018` and `t025` stay stopped.
+5. **The user is buying a ThinkPad L470** (i5-7300U, 2c/4t, 8 GB in
+   slots, to go to 16 GB) as the first real T470-class node. Label its
+   results "L470". Whether it counts for the reference gate is the
+   user's call (an ADR).
+
+### Older spec 025 notes (T001–T011)
+
    - **T011 done** (`Closes #363`; tasks.md "Done as"). Console:
      `ui/src/screens/Networking.tsx` (HTTP requests block, Connections,
      Traces with a span waterfall), `lib/networking.ts` (words, waterfall

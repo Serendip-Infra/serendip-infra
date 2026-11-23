@@ -18,7 +18,7 @@ read from files and never printed.
   F1 and F2 landed, and restarted to add API keys. It set up OpenBao,
   ThunderID, kgateway and OpenChoreo by itself. The observability
   package was installed through `POST /v1/provider-instances`. For
-  criteria 7, 8, 9 and 11 (after T013) it was rebuilt at 9469e4c, with
+  criteria 7, 8, 9 and 11 (after T013) it was rebuilt at 3dc9709, with
   the tracing package's measured requirements, and again with fix F6.
 - **API keys:**
   - `verifier`: Owner at `/`.
