@@ -44,6 +44,7 @@ Last updated: 2026-11-16.
 | Store-level uniqueness | `resources.unique_key` with `UNIQUE (kind, unique_key)`, closing RP-033 | Spec 022 plan decision 9, T003 |
 | Alert evaluation (`core/reconcile/alerts.go`) and delivery (`delivery.go`) | OpenChoreo's path needs the Prometheus Operator and Alertmanager ADR 0021 removed, and its Observer would be a second alert store and sender; fixed conditions polled by `serendipd` cost +4.2 mcores for 200 rules (RP-080). Design from WSO2 cs-tools (folding, a separate retrying delivery loop, digests) | Spec 024, ADR 0022 |
 | The notification sender (`core/notify`): Telegram, SMTP, the signed `serendip.alert.v1` webhook, the heartbeat | A handful of HTTPS POSTs and one SMTP send, standard library only, through one client that checks every dialed address (SSRF). No library or product does that check for us | Spec 024 plan decision 5, ADR 0022 |
+| Request metrics, traffic and connection-record reads (spec 025 T006) | Serendip's own PromQL on Hubble's metrics, joined to the pods by UID, and SQL on OpenObserve for the records. OpenChoreo's `metric=http` has no p95 and doesn't define "unsuccessful" as 5xx, which the alert conditions use, so the chart and the alert would disagree; Hubble relay (gRPC) was rejected in the plan | Spec 025 plan decisions 7–9, T006 |
 
 ## Adopted (other projects, integrated)
 

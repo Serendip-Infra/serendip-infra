@@ -111,6 +111,11 @@ type Installer struct {
 	// (tests). usageMu holds one usage read at a time.
 	logsHTTP *http.Client
 	usageMu  sync.Mutex
+	// flowSource is the network layer's connection records to collect
+	// (SetFlowSource), under mu; applying is Install's copy of it, read
+	// only by the one package job running.
+	flowSource reconcile.FlowSource
+	applying   reconcile.FlowSource
 }
 
 var _ reconcile.PackageInstaller = (*Installer)(nil)
@@ -154,15 +159,33 @@ func observerSecret() kubernetes.Object {
 	}
 }
 
-// Fingerprint identifies what a full install applies: every release's
-// Helm arguments, the Prometheus values, and the hand-built objects. When
-// an instance's status.applied equals it, Install only checks (plan
-// decision 12). The generated password and the copied CA aren't in it.
-func Fingerprint() string { return fingerprint() }
+// SetFlowSource gives the installer the network layer's connection
+// records to collect (specs/025-networking plan decision 9), the value
+// cmd/serendipd reads from the networking capability. The zero value
+// collects none. A change takes effect at the next Install, as a full
+// install: the fingerprint covers it.
+func (i *Installer) SetFlowSource(src reconcile.FlowSource) error {
+	if err := checkFlowSource(src); err != nil {
+		return fmt.Errorf("openchoreo observability: %w", err)
+	}
+	i.mu.Lock()
+	i.flowSource = src
+	i.mu.Unlock()
+	return nil
+}
 
-var fingerprint = sync.OnceValue(func() string {
+// Fingerprint identifies what a full install applies without connection
+// records: see fingerprint.
+func Fingerprint() string { return fingerprint(reconcile.FlowSource{}) }
+
+// fingerprint identifies what a full install with src applies: every
+// release's Helm arguments, the Prometheus values, and the hand-built
+// objects. When an instance's status.applied equals it, Install only
+// checks (plan decision 12). The generated password and the copied CA
+// aren't in it.
+func fingerprint(src reconcile.FlowSource) string {
 	var args [][]string
-	for _, r := range releases {
+	for _, r := range releasesFor(src) {
 		args = append(args, r.installArgs())
 	}
 	values := sha256.Sum256(prometheusValues)
@@ -170,10 +193,10 @@ var fingerprint = sync.OnceValue(func() string {
 		Helm    [][]string          `json:"helm"`
 		Values  string              `json:"values"`
 		Objects []kubernetes.Object `json:"objects"`
-	}{args, hex.EncodeToString(values[:]), []kubernetes.Object{observabilityPlane(), observerSecret(), fluentBitConfig()}})
+	}{args, hex.EncodeToString(values[:]), []kubernetes.Object{observabilityPlane(), observerSecret(), fluentBitConfig(src)}})
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
-})
+}
 
 // allReleases, as a problem's release, repairs by running every release.
 const allReleases = "*"
@@ -207,7 +230,10 @@ func (i *Installer) Install(ctx context.Context, inst resource.ProviderInstance)
 	if _, err := fluentBitConf(); err != nil {
 		return reconcile.PackageState{}, fmt.Errorf("openchoreo observability: %w", err)
 	}
-	want := fingerprint()
+	i.mu.Lock()
+	i.applying = i.flowSource
+	i.mu.Unlock()
+	want := fingerprint(i.applying)
 	if inst.Status.Applied != want {
 		return i.install(ctx, want, allReleases, false)
 	}
@@ -329,7 +355,7 @@ func (i *Installer) applyObjects(ctx context.Context, plane func(context.Context
 	if err := plane(ctx); err != nil {
 		return err
 	}
-	if _, err := apply(ctx, i.client, configMapsPath, fluentBitConfig()); err != nil {
+	if _, err := apply(ctx, i.client, configMapsPath, fluentBitConfig(i.applying)); err != nil {
 		return fmt.Errorf("openchoreo observability: %w", err)
 	}
 	return nil
@@ -341,7 +367,7 @@ func (i *Installer) helmReleases(ctx context.Context, which string, names ...str
 		if which != allReleases && which != name {
 			continue
 		}
-		r, _ := releaseNamed(name)
+		r, _ := releaseNamed(i.applying, name)
 		if err := i.helmInstall(ctx, r); err != nil {
 			return fmt.Errorf("openchoreo observability: install %s: %w", r.what, err)
 		}
@@ -513,7 +539,7 @@ func (i *Installer) checkFluentBit(ctx context.Context) (*problem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openchoreo observability: get configmap %s: %w", fluentBitConfigName, err)
 	}
-	if !dataEqual(cm.Data, fluentBitConfig().Data) {
+	if !dataEqual(cm.Data, fluentBitConfig(i.applying).Data) {
 		return &problem{message: "the log collector's configuration was changed", restartCollector: true}, nil
 	}
 	return nil, nil

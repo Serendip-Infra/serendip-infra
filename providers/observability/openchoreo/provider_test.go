@@ -21,6 +21,7 @@ import (
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
+	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
 )
 
 // fakeObserver stands in for the API server: the OpenChoreo objects the
@@ -59,6 +60,11 @@ type fakeObserver struct {
 	promCount string
 	// noTotal leaves total out of the logs answer.
 	noTotal bool
+	// promAnswer, when set, answers /api/v1/query and /api/v1/query_range
+	// by the query, before prom (spec 025).
+	promAnswer func(path string, q url.Values) string
+	// deployments answers the Deployments list, by label selector.
+	deployments map[string][]kubernetes.Object
 
 	logRequests     []map[string]any
 	metricsRequests []map[string]any
@@ -106,16 +112,23 @@ func (f *fakeObserver) handler(t *testing.T) http.HandlerFunc {
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			f.metricsRequests = append(f.metricsRequests, req)
 			_ = json.NewEncoder(w).Encode(f.metrics)
-		case r.Method == http.MethodGet && strings.HasSuffix(p, "/services/"+prometheusService+":"+fmt.Sprint(prometheusPort)+"/proxy/api/v1/query"):
+		case r.Method == http.MethodGet && (strings.HasSuffix(p, "/services/"+prometheusService+":"+fmt.Sprint(prometheusPort)+"/proxy/api/v1/query") ||
+			strings.HasSuffix(p, "/services/"+prometheusService+":"+fmt.Sprint(prometheusPort)+"/proxy/api/v1/query_range")):
 			f.promQueries = append(f.promQueries, r.URL.Query())
 			if f.promStatus != 0 {
 				w.WriteHeader(f.promStatus)
+			}
+			if f.promAnswer != nil {
+				_, _ = io.WriteString(w, f.promAnswer(p, r.URL.Query()))
+				return
 			}
 			if f.promCount != "" && strings.HasPrefix(r.URL.Query().Get("query"), "count(") {
 				_, _ = io.WriteString(w, f.promCount)
 				return
 			}
 			_, _ = io.WriteString(w, f.prom)
+		case r.Method == http.MethodGet && p == "/apis/apps/v1/deployments":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.deployments[r.URL.Query().Get("labelSelector")]})
 		case r.Method == http.MethodGet && strings.HasSuffix(p, "/proxy/metrics"):
 			for svc, text := range f.storeMetrics {
 				if strings.Contains(p, "/services/"+svc+":") {
@@ -499,7 +512,7 @@ func TestMetrics_UnitsLimitsAndUnavailable(t *testing.T) {
 	if m.CPURequest == nil || *m.CPURequest != 250 || m.MemoryRequest == nil || *m.MemoryRequest != 64 || *m.MemoryLimit != 128 || m.CPULimit != nil {
 		t.Errorf("requests and limits = %v %v %v %v", m.CPURequest, m.CPULimit, m.MemoryRequest, m.MemoryLimit)
 	}
-	if !slices.Contains(m.Unavailable, httpUnavailable) || !slices.Contains(m.Unavailable, "cpu limit: not set") {
+	if !slices.Contains(m.Unavailable, "requests: the cluster's network layer doesn't provide request metrics") || !slices.Contains(m.Unavailable, "cpu limit: not set") {
 		t.Errorf("unavailable = %q", m.Unavailable)
 	}
 	req := f.metricsRequests[0]

@@ -183,11 +183,13 @@ decisions below are already updated. What changed from the research:
      `metric_relabel_configs` keeping only `hubble_http_requests_total`,
      `hubble_http_request_duration_seconds_{bucket,sum,count}`,
      `hubble_drop_total` and `hubble_flows_processed_total` (T001);
-   - `Metrics` gains a `Requests` block (rate, error rate, p50/p95/p99):
-     rate, errors, mean and p50/p99 from the metrics adapter's
-     `metric=http`, and **p95 from Serendip's own PromQL** in the same
-     shape, since the adapter has only P50/P90/P99 (T001). P90 isn't
-     shown;
+   - `Metrics` gains a `Requests` block (rate, error rate, p50/p95/p99),
+     **all from Serendip's own PromQL** (amended in T006): the adapter's
+     `metric=http` has no p95 (T001) and its "unsuccessful" isn't
+     defined as 5xx, which the alert conditions are, so using it for four
+     series would let the chart and the alert disagree. The queries join
+     `hubble_http_*{reporter="server"}` to `kube_pod_labels` by the three
+     UIDs, as the restarts condition does. P90 isn't shown;
    - `Unavailable` says "requests: the cluster's CNI doesn't provide
      request metrics" on an `external` cluster, and "requests: no HTTP
      endpoint" for TCP-only Components;

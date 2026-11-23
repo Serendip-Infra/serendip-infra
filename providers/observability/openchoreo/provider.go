@@ -30,6 +30,11 @@ type Provider struct {
 	// built-in packageDisk rule (WithDiskUsage).
 	usage     reconcile.PackageUsage
 	budgetMiB int
+	// requests says whether the network layer records HTTP requests
+	// (WithRequestMetrics); nil is no.
+	requests func(ctx context.Context) (bool, string)
+	// flows reads the network layer's connection records (flows.go).
+	flows *flowStore
 	// maxAnswer is the most lines asked of one query (adapterMaxLimit;
 	// smaller in tests).
 	maxAnswer int
@@ -43,7 +48,8 @@ func NewProvider(client *kubernetes.Client) *Provider {
 }
 
 func newProvider(client *kubernetes.Client, now func() time.Time) *Provider {
-	return &Provider{adapters: adapters{client: client}, prometheus: prometheus{client: client}, scopes: newScopes(client, now), now: now, maxAnswer: adapterMaxLimit}
+	return &Provider{adapters: adapters{client: client}, prometheus: prometheus{client: client}, scopes: newScopes(client, now),
+		flows: newFlowStore(client), now: now, maxAnswer: adapterMaxLimit}
 }
 
 const (
@@ -61,10 +67,6 @@ const (
 // ErrTooManyTargets is returned for a search over more than
 // reconcile.MaxLogTargets Deployments.
 var ErrTooManyTargets = errors.New("openchoreo observability: at most " + fmt.Sprint(reconcile.MaxLogTargets) + " targets a search")
-
-// httpUnavailable is why request metrics aren't offered: they need
-// Hubble's L7 metrics, which aren't installed (spike finding 7).
-const httpUnavailable = "requests, errors and latency: needs request metrics, not installed"
 
 // argoLineRE matches the lines Argo's emissary writes into a step's main
 // container (spec 022 T001 item 4), which the build provider hides too.
@@ -448,7 +450,9 @@ func cutLine(s string) (string, bool) {
 }
 
 // Metrics reads t's CPU and memory, with its requests and limits
-// (decision 7). Request metrics are always reported unavailable.
+// (decision 7), and its HTTP request series where the network layer
+// records them (requests.go). A failed request read is reported in
+// Unavailable rather than failing the CPU and memory it came with.
 func (p *Provider) Metrics(ctx context.Context, t reconcile.LogTarget, q reconcile.MetricsQuery) (reconcile.Metrics, error) {
 	to := q.To
 	if to.IsZero() {
@@ -457,10 +461,14 @@ func (p *Provider) Metrics(ctx context.Context, t reconcile.LogTarget, q reconci
 	if !q.From.Before(to) {
 		return reconcile.Metrics{}, errors.New("openchoreo observability: the metrics range is empty")
 	}
+	reqOK, reqWhy := p.requestsAvailable(ctx, t)
 	scope, err := p.scopes.component(ctx, t)
 	if errors.Is(err, errNoScope) {
+		if reqOK {
+			reqWhy = "requests: the Deployment isn't on the platform"
+		}
 		return reconcile.Metrics{CPU: []reconcile.MetricPoint{}, Memory: []reconcile.MetricPoint{},
-			Unavailable: []string{"cpu and memory: the Deployment isn't on the platform", httpUnavailable}}, nil
+			Unavailable: []string{"cpu and memory: the Deployment isn't on the platform", reqWhy}}, nil
 	}
 	if err != nil {
 		return reconcile.Metrics{}, fmt.Errorf("openchoreo observability: %w", err)
@@ -496,7 +504,25 @@ func (p *Provider) Metrics(ctx context.Context, t reconcile.LogTarget, q reconci
 	if len(out.Memory) == 0 {
 		unavailable = append(unavailable, "memory: no samples in this range")
 	}
-	out.Unavailable = append(unavailable, httpUnavailable)
+	switch {
+	case !reqOK:
+		unavailable = append(unavailable, reqWhy)
+	default:
+		req, err := p.requestSeries(ctx, scope, q.From, to, step)
+		switch {
+		case err != nil:
+			if ctx.Err() != nil {
+				return reconcile.Metrics{}, ctx.Err()
+			}
+			unavailable = append(unavailable, requestsMessage(err))
+		case len(req.Rate) == 0:
+			out.Requests = req
+			unavailable = append(unavailable, "requests: none in this range")
+		default:
+			out.Requests = req
+		}
+	}
+	out.Unavailable = unavailable
 	return out, nil
 }
 

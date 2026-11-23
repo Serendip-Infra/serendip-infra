@@ -61,8 +61,9 @@ kube-state-metrics:
   metricLabelsAllowlist:
     - pods=[openchoreo.dev/component-uid,openchoreo.dev/project-uid,openchoreo.dev/environment-uid,openchoreo.dev/release-line-uid,openchoreo.dev/release-line-component-uid,openchoreo.dev/namespace,openchoreo.dev/component,openchoreo.dev/project,openchoreo.dev/environment]
 
-# Only the two sources the adapter reads; the chart's other defaults
-# (pods, services, endpoints, API server, nodes) would scrape far more.
+# Only the two sources the adapter reads, and Hubble's request and flow
+# counters (spec 025); the chart's other defaults (pods, services,
+# endpoints, API server, nodes) would scrape far more.
 scrapeConfigs:
   prometheus:
     enabled: false
@@ -105,3 +106,20 @@ scrapeConfigs:
     static_configs:
       - targets:
           - kube-state-metrics:8080
+  # Spec 025 (plan decision 7): Hubble's metrics, one target per node
+  # through the headless hubble-metrics Service Cilium's chart makes. On a
+  # cluster without Cilium the name doesn't resolve and the job has no
+  # targets. Only the request, drop and flow counters are kept: Hubble
+  # exports more, and the pod-context labels make them many series.
+  hubble:
+    job_name: hubble
+    dns_sd_configs:
+      - names:
+          - hubble-metrics.kube-system.svc.cluster.local
+        type: A
+        port: 9965
+        refresh_interval: 1m
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: hubble_(http_requests_total|http_request_duration_seconds_(bucket|sum|count)|drop_total|flows_processed_total)
+        action: keep

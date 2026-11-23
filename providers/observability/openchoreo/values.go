@@ -3,6 +3,9 @@ package openchoreo
 import (
 	_ "embed"
 	"fmt"
+	"slices"
+
+	"github.com/serendip-infra/serendip-infra/core/reconcile"
 )
 
 // The charts this package installs, pinned in VERSIONS.md, in plan
@@ -98,8 +101,6 @@ var releases = []release{
 			"fluent-bit.existingConfigMap=" + fluentBitConfigName,
 		},
 		strings: []string{
-			// Hex may be all digits, hence a string.
-			"fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(),
 			fmt.Sprintf("openobserve-standalone.config.ZO_COMPACT_DATA_RETENTION_DAYS=%d", logRetentionDays),
 			// On by default: a heartbeat to the vendor every 30 minutes.
 			// Nothing leaves the machine unless asked (T003).
@@ -159,8 +160,44 @@ func (r release) installArgs() []string {
 	return append(args, "--wait", "--timeout", helmInstallTimeout)
 }
 
-func releaseNamed(name string) (release, bool) {
-	for _, r := range releases {
+// releasesFor are releases as installed with src: the logs release gets
+// Fluent Bit's config hash and, with src set, the records' directory as a
+// read-only volume (fluentbit.go).
+func releasesFor(src reconcile.FlowSource) []release {
+	out := slices.Clone(releases)
+	for k, r := range out {
+		if r.name != logsRelease {
+			continue
+		}
+		// Hex may be all digits, hence a string.
+		r.strings = append([]string{"fluent-bit.podAnnotations.serendip-fluent-bit-config=" + fluentBitConfigHash(src)}, r.strings...)
+		if !src.IsZero() {
+			// Helm replaces a list rather than merging it, so the chart's
+			// own entry 0 (Fluent Bit's tail database, which its init
+			// container mounts) is restated as the chart has it at 0.8.0
+			// (seen live in T006: without it the upgrade is refused).
+			r.sets = append(slices.Clone(r.sets),
+				"fluent-bit.extraVolumes[0].name=db",
+				"fluent-bit.extraVolumes[0].hostPath.path=/var/lib/fluent-bit/db",
+				"fluent-bit.extraVolumes[0].hostPath.type=DirectoryOrCreate",
+				"fluent-bit.extraVolumes[1].name="+flowVolume,
+				"fluent-bit.extraVolumes[1].hostPath.path="+src.HostPath,
+				"fluent-bit.extraVolumes[1].hostPath.type=DirectoryOrCreate",
+				"fluent-bit.extraVolumeMounts[0].name=db",
+				"fluent-bit.extraVolumeMounts[0].mountPath=/var/lib/fluent-bit/db",
+				"fluent-bit.extraVolumeMounts[0].readOnly=false",
+				"fluent-bit.extraVolumeMounts[1].name="+flowVolume,
+				"fluent-bit.extraVolumeMounts[1].mountPath="+flowMountPath,
+				"fluent-bit.extraVolumeMounts[1].readOnly=true",
+			)
+		}
+		out[k] = r
+	}
+	return out
+}
+
+func releaseNamed(src reconcile.FlowSource, name string) (release, bool) {
+	for _, r := range releasesFor(src) {
 		if r.name == name {
 			return r, true
 		}

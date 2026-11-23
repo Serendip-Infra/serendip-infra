@@ -50,6 +50,14 @@ func TestLiveInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Spec 025: OBS_LIVE_FLOW_SOURCE "<dir>/<file>" installs with the
+	// network layer's connection records collected.
+	if fs := os.Getenv("OBS_LIVE_FLOW_SOURCE"); fs != "" {
+		k := strings.LastIndex(fs, "/")
+		if err := inst.SetFlowSource(reconcile.FlowSource{HostPath: fs[:k], File: fs[k+1:], Format: FlowFormat}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 	var applied string
@@ -421,4 +429,86 @@ func podRequests(t *testing.T, pod kubernetes.Object) (cpu, mem float64) {
 		mem = v * 1024
 	}
 	return cpu, mem
+}
+
+// TestLiveNetworking (spec 025 T006) reads, for the store copy's
+// Components, their request series, the traffic between them, the two
+// request conditions and their connection records. OBS_LIVE_RECORD names
+// a directory the answers are written to, for the unit tests.
+func TestLiveNetworking(t *testing.T) {
+	client, _ := liveClient(t)
+	ctx := context.Background()
+	targets := liveTargets(t, ctx)
+	p := NewProvider(client).WithRequestMetrics(func(context.Context) (bool, string) { return true, "" })
+	now := time.Now()
+	record := func(name string, v any) {
+		dir := os.Getenv("OBS_LIVE_RECORD")
+		if dir == "" {
+			return
+		}
+		b, _ := json.MarshalIndent(v, "", " ")
+		if err := os.WriteFile(dir+"/"+name, b, 0o644); err != nil {
+			t.Error(err)
+		}
+	}
+	for _, tg := range targets {
+		name := tg.Component.Metadata.Name
+		m, err := p.Metrics(ctx, tg, reconcile.MetricsQuery{From: now.Add(-15 * time.Minute), To: now})
+		if err != nil {
+			t.Errorf("%s metrics: %v", name, err)
+			continue
+		}
+		if m.Requests != nil {
+			last := func(ps []reconcile.MetricPoint) string {
+				if len(ps) == 0 {
+					return "-"
+				}
+				return strconv.FormatFloat(ps[len(ps)-1].Value, 'f', 3, 64)
+			}
+			r := m.Requests
+			t.Logf("%s requests: %d points; last rate %s/s, 5xx %s/s, p50 %s ms, p95 %s ms, p99 %s ms",
+				name, len(r.Rate), last(r.Rate), last(r.ErrorRate), last(r.LatencyP50), last(r.LatencyP95), last(r.LatencyP99))
+			record("t006-requests-"+name+".json", r)
+		}
+		t.Logf("%s unavailable: %q", name, m.Unavailable)
+		for _, c := range []resource.AlertCondition{
+			{Type: resource.ConditionTypeRequestErrorRate, RequestErrorRate: &resource.RequestErrorRateCondition{AbovePercent: 5, MinRequests: 10, WindowMinutes: 10}},
+			{Type: resource.ConditionTypeRequestLatency, RequestLatency: &resource.RequestLatencyCondition{Percentile: 95, AboveMs: 100, WindowMinutes: 10}},
+		} {
+			v, err := p.EvaluateCondition(ctx, tg, c, 10*time.Minute)
+			t.Logf("%s %s: value %.3f current %.3f err %v", name, c.Type, v.Value, v.Current, err)
+		}
+		page, err := p.Flows(ctx, []reconcile.LogTarget{tg}, reconcile.FlowQuery{From: now.Add(-30 * time.Minute), Limit: 20})
+		if err != nil {
+			t.Errorf("%s flows: %v", name, err)
+			continue
+		}
+		for _, f := range page.Flows {
+			t.Logf("%s flow %s %s %s %+v -> %+v %s/%d x%d", name, f.Time.Format(time.TimeOnly), f.Verdict, f.Reason, f.Source, f.Destination, f.Protocol, f.Port, f.Count)
+		}
+		t.Logf("%s flows: %d, next %q", name, len(page.Flows), page.Next)
+		dropped, err := p.Flows(ctx, []reconcile.LogTarget{tg}, reconcile.FlowQuery{From: now.Add(-3 * time.Hour), DroppedOnly: true, Limit: 5})
+		if err != nil {
+			t.Errorf("%s dropped flows: %v", name, err)
+			continue
+		}
+		for _, f := range dropped.Flows {
+			t.Logf("%s dropped %s %s %+v -> %+v %s/%d x%d", name, f.Time.Format(time.TimeOnly), f.Reason, f.Source, f.Destination, f.Protocol, f.Port, f.Count)
+		}
+	}
+	byEnv := map[string][]reconcile.LogTarget{}
+	for _, tg := range targets {
+		byEnv[tg.Environment.Metadata.ID] = append(byEnv[tg.Environment.Metadata.ID], tg)
+	}
+	for env, ts := range byEnv {
+		edges, err := p.Traffic(ctx, ts, now.Add(-5*time.Minute), now)
+		if err != nil {
+			t.Errorf("traffic in %s: %v", env, err)
+			continue
+		}
+		for _, e := range edges {
+			t.Logf("traffic %s -> %s: %.3f/s, 5xx %.3f/s", e.From, e.To, e.Rate, e.ErrorRate)
+		}
+		record("t006-traffic.json", edges)
+	}
 }

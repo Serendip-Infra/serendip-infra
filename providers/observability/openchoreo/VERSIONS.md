@@ -103,6 +103,8 @@ Recorded answers: `testdata/t001-*`.
 | `metric=http` | answers `requestCount`, `successfulRequestCount`, `unsuccessfulRequestCount` (absent when zero), `meanLatency`, `latencyP50`, `latencyP90`, `latencyP99` (seconds; requests per second), with the same `componentScope` as `resource`; **no p95** | T006 |
 | Traces in OpenObserve | stream `default`, type `traces`; `POST /api/default/_search?type=traces` with SQL; identity fields `service_openchoreo_dev_{component,environment,project}_uid` (and names), `service_k8s_pod_name`, `service_k8s_namespace_name`, from the collector's `k8sattributes` | T007 |
 | Fluent Bit (logs module 0.8.0) | the subchart takes `extraVolumes` and `extraVolumeMounts` (values lines 364, 366); its DaemonSet mounts `/var/log`, `/var/lib/docker/containers`, `/etc/machine-id` and its DB only | T006 |
+| Fluent Bit 5.1.5 flow input (T006, live) | the chart's defaults hold `extraVolumes[0]`/`extraVolumeMounts[0]` = `db` (`/var/lib/fluent-bit/db`, which the init container mounts), so they're restated at index 0 and the flow directory goes at 1; the chart runs Fluent Bit with `--workdir=/fluent-bit/etc`, so `Parsers_File parsers.conf` is the image's file and the flow parser is a second `Parsers_File` by absolute path; the `lua` filter and `Time_Format %Y-%m-%dT%H:%M:%S.%LZ` work; Fluent Bit runs as UID 10000 and Hubble's file is `0644` | `fluentbit.go`, `values.go` |
+| OpenObserve search (T006, live) | `POST /api/default/_search` `{"query":{"sql","start_time","end_time","from","size"}}` (microseconds), answer `hits`; a missing stream is 400 code 20002, an unknown field 400 code 20004, both echoing the SQL | `flows.go` |
 
 Notes (T001):
 

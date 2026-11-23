@@ -1,6 +1,6 @@
 # Tasks: Spec 025, Networking: Cilium, Hubble and traces
 
-Status: Approved, 2026-11-19. T001–T002 done.
+Status: Approved, 2026-11-19. T001–T006 done.
 
 [P] = can run in parallel with the task before it. [A] = subagent-eligible.
 
@@ -215,7 +215,54 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   bootstrapped with the agent's flags and manifest reaches Ready with
   Cilium; `kind-t470-setup.sh up` with `CNI=cilium` gives a Ready node.
 
-## T006: Request metrics, traffic and flows in the observability provider
+## T006: Request metrics, traffic and flows in the observability provider ✅
+
+**Done as** (2026-11-23):
+- **Prometheus:** a `hubble` scrape job (DNS on `hubble-metrics`, keep
+  list of six series) in `prometheus-values.yaml` and the bench copy;
+  the client gained labelled vectors and range queries.
+- **Requests** (`requests.go`): all five series from Serendip's own
+  PromQL, not the adapter's `metric=http` (plan decision 7 amended: one
+  5xx definition for the chart and the alert). `WithRequestMetrics`
+  takes the networking facts' answer (T008 wires it); unavailable
+  reasons: not provided, "no HTTP endpoint" (no exposed port), store
+  unreadable (CPU and memory still returned), none in range. The two
+  conditions read over at least 2 minutes (a 1-minute rule would never
+  have two samples).
+- **Traffic** (`traffic.go`): the Environment's pods with their UIDs, then
+  the rates in their namespaces, joined in Go; both ends must be
+  targets; `ErrRequestsUnavailable` when not provided.
+- **Flows:** `Installer.SetFlowSource` (validated; in the fingerprint)
+  adds a read-only hostPath volume, a tail input, a Lua filter
+  (`fluent-bit/serendip-flows.lua`) that flattens each record, and an
+  output to `serendip_flows`. `flows.go` reads it with SQL from the
+  targets' Deployments (found by UID labels), with time bounds and a
+  full sort order in the SQL, the logs' cursor, and EGRESS/INGRESS
+  pairs de-duplicated one to one. The other end is named only for a
+  target or a platform namespace (an allow-list); anything else is
+  Outside.
+- **Found live:** Helm replaces `extraVolumes`, so the chart's `db`
+  entry is restated; the chart's `--workdir` makes `parsers.conf` the
+  image's file, so the flow parser is a second `Parsers_File`; only the
+  source records a connection through the L7 proxy, and the proxy's own
+  leg (no namespace) is dropped. RP-084, RP-085; RP-054 extended.
+- **Live on `t025`** (`TestLiveInstall` with `OBS_LIVE_FLOW_SOURCE`,
+  `TestLiveNetworking`): Fluent Bit tails `events.log` into
+  `serendip_flows` (carried from T001); srv 5.6 req/s, 5xx about 9%,
+  p50 17.7 ms, p95 24.5 ms, p99 39 ms; caller and spoofer "no HTTP
+  endpoint"; edges caller→srv 5.2/s and spoofer→srv 1.0/s; a probe from
+  `default` dropped, "refused by a network policy", 24 attempts.
+  Recorded answers in `testdata/t006-*`.
+- **Reviews:** contract-guardian passed; its allow-list point, the zero
+  `From` (clamped to the retention) and the window minimum are fixed;
+  T009 gates flows on the facts. go-reviewer's findings fixed: tie
+  order, bounds in SQL, the over-limit cursor, one-to-one pairing,
+  header copy, decoder limits, cache pruning, two queries at a time, a
+  sentinel for an unreachable store, the output's host from the
+  constants. Left as is, by design: a cursor newer than `to` restarts
+  (as logs do); `SELECT *` (naming a field the stream hasn't had yet is
+  an error); `Installer.applying` read without the lock (only Install
+  reaches it, one package job at a time).
 
 - **Do:** the Hubble scrape job and allowlist; `Requests` in `Metrics`;
   `Traffic`; the request conditions; the Fluent Bit flow input from

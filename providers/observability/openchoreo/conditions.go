@@ -24,7 +24,10 @@ import (
 //   - restarts: kube-state-metrics' restart counter in Prometheus, max −
 //     min over the window per container, joined to the pods' labels on
 //     the three UIDs (spike finding 3: increase() extrapolates);
-//   - packageDisk: the package's own disk use against its budget.
+//   - packageDisk: the package's own disk use against its budget;
+//   - requestErrorRate and requestLatency (spec 025): Hubble's request
+//     counter and latency histogram over the window, joined the same way
+//     (requests.go).
 //
 // A target whose platform objects don't exist has no data: ErrNoData,
 // never a zero, so nothing resolves for lack of data.
@@ -90,6 +93,10 @@ func (p *Provider) EvaluateCondition(ctx context.Context, t reconcile.LogTarget,
 		return p.logMatchCondition(ctx, scope, *c.LogMatch, now, window)
 	case c.Restarts != nil:
 		return p.restartsCondition(ctx, scope, now, window)
+	case c.RequestErrorRate != nil:
+		return p.requestErrorRateCondition(ctx, t, scope, *c.RequestErrorRate, now, window)
+	case c.RequestLatency != nil:
+		return p.requestLatencyCondition(ctx, t, scope, *c.RequestLatency, now, window)
 	}
 	return reconcile.ConditionValue{}, &reconcile.ConditionRefusedError{Why: "unknown condition type " + c.Type}
 }
@@ -185,10 +192,8 @@ func (p *Provider) logMatchCondition(ctx context.Context, scope componentScope, 
 }
 
 func (p *Provider) restartsCondition(ctx context.Context, scope componentScope, now time.Time, window time.Duration) (reconcile.ConditionValue, error) {
-	for _, uid := range []string{scope.ComponentUID, scope.EnvironmentUID, scope.ProjectUID} {
-		if !uidRE.MatchString(uid) {
-			return reconcile.ConditionValue{}, fmt.Errorf("openchoreo observability: a resolved UID isn't a UID (%d characters)", len(uid))
-		}
+	if err := checkUIDs(scope); err != nil {
+		return reconcile.ConditionValue{}, err
 	}
 	q := fmt.Sprintf(restartsQuery, int(window/time.Minute), scope.ComponentUID, scope.EnvironmentUID, scope.ProjectUID)
 	v, ok, err := p.prometheus.instant(ctx, q, now)

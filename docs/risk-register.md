@@ -104,6 +104,8 @@ purpose), **Closed** (fixed).
 | RP-081 | The L7 proxy that gives request metrics retries 5xx and rewrites paths by default | Correctness (application behaviour) | Mitigated (both off; on drift the L7 policies are removed, T004) | Spec 025 T001 |
 | RP-082 | Request visibility copies each Component's NetworkPolicy; a shape it can't copy faithfully leaves that Component without request metrics | Correctness (coverage); security (isolation) | Accepted | Spec 025 T004 |
 | RP-083 | A Cilium bootstrap fetches the chart and images from the internet at first boot, and the node is NotReady until they arrive | Availability (install); footprint (first boot) | Accepted | Spec 025 T005 |
+| RP-084 | Connection records: de-duplicated within a page only, proxied ports recorded at the source only, and Fluent Bit's config depends on the logs chart's layout | Correctness (counts); upgrade | Accepted | Spec 025 T006 |
+| RP-085 | Request metrics from Hubble's histogram: coarse percentiles, extrapolated counts, a DNS lookup that fails on clusters without Cilium | Correctness (precision); log noise | Accepted | Spec 025 T006 |
 
 ---
 
@@ -1312,6 +1314,10 @@ purpose), **Closed** (fixed).
 - **Revisit:** on every OpenChoreo or module upgrade (`VERSIONS.md`), and
   if the Observer's authorization becomes usable with Serendip's
   identity.
+- **Spec 025 T006:** connection records are read the same way: SQL on
+  the logs store's search API, over the port-forward, with the admin
+  credentials, scoped by Deployment names Serendip reads from the
+  cluster (never caller text).
 
 ## RP-055 — OpenObserve's log search slows as stored logs grow
 
@@ -2071,3 +2077,72 @@ The text below is the T013 record.
 - **Not checked:** what `k3s-uninstall.sh` leaves of Cilium on a real host
   (its interfaces, BPF mounts, `/etc/cni/net.d`): only containers were
   used. Check on the reference hardware before calling uninstall clean.
+
+## RP-084 — Connection records are de-duplicated per page, and the collector's config leans on the logs chart
+
+- **Kind:** correctness (counts); upgrade. **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T006 (live on `t025`).
+- **What:**
+  - **Both ends write a record** of a connection between two cluster
+    endpoints (EGRESS at the source, INGRESS at the destination). Reads
+    keep the destination's and drop the source's when both are in the
+    same page within a minute (`flows.go` `dedupe`). A pair split across
+    two pages shows twice.
+  - **Through the L7 proxy** (a Component's HTTP port, spec 025's request
+    visibility) only the source's EGRESS record exists: Envoy terminates
+    the connection, so no INGRESS SYN is seen. The proxy's own upstream
+    leg is recorded with the client's identity and no namespace; the Lua
+    filter drops it, as the client's record already counts it.
+  - **Fluent Bit's config** is the logs chart's render plus Serendip's
+    pipeline. Two things depend on the chart's layout at 0.8.0: the chart
+    starts Fluent Bit with `--workdir=/fluent-bit/etc`, so its
+    `Parsers_File parsers.conf` is the image's file and the flow parser
+    goes in its own file, added by absolute path; and Helm replaces the
+    `extraVolumes`/`extraVolumeMounts` lists, so the chart's `db` entry is
+    restated beside the flow directory (without it the upgrade was
+    refused).
+- **Volume:** drops and new connections with an end at a Component,
+  aggregated per minute; T001 measured about 7.5 MiB a day for three
+  Components talking. The stream has the logs' retention (3 days,
+  `ZO_COMPACT_DATA_RETENTION_DAYS`) and counts towards the package's
+  disk use (spec 024's `packageDisk`). T013 measures it on the bench.
+- **Cost:** a page can show a connection twice; a proxied port's counts
+  are the client's view only; a chart upgrade that moves either piece
+  breaks the flow input (the parsers line is checked at Install, the
+  `db` entry isn't).
+- **Not signalled by a read:** an empty page doesn't say whether
+  records are collected at all (no flow source yet, Fluent Bit down);
+  T009's API checks the networking facts' `flows` for that.
+- **Why accepted:** a cross-page de-dup needs state the cursor doesn't
+  carry, for a rare duplicate; the client's record of a proxied
+  connection is the honest one available.
+- **Revisit:** on a logs chart upgrade (re-render, compare its default
+  `extraVolumes`); if duplicates show in the console, de-dup by the
+  minute in SQL.
+
+## RP-085 — Request metrics are as coarse as Hubble's histogram
+
+- **Kind:** correctness (precision); log noise. **Status:** Accepted,
+  2026-11-23. **Found:** spec 025 T006.
+- **What:**
+  - **Percentiles** are interpolated within Hubble's latency buckets
+    (5, 10, 25, 50, 100 ms, ...). A server answering in 20 ms plus a
+    little shows p50 17.6 ms and p95 24.5 ms: inside the right bucket,
+    not exact.
+  - **Counts** for `requestErrorRate`'s `minRequests` come from
+    `increase()`, which extrapolates to the window's edges, so they're
+    not whole numbers.
+  - **The `hubble` scrape job** looks up `hubble-metrics.kube-system` by
+    DNS every minute. On a cluster without Cilium the name doesn't
+    resolve, the job has no targets, and Prometheus logs the failed
+    lookup each time.
+  - **Requests are counted once,** by the server's side
+    (`reporter="server"`): a call to something outside the mesh of L7
+    policies (a platform service, the internet) isn't in the traffic
+    overlay.
+- **Cost:** latency alerts near a bucket edge fire a little early or
+  late; a little log noise on `external` clusters.
+- **Why accepted:** Hubble's buckets are its defaults; finer ones cost
+  series on every pod pair (the cardinality risk in the plan).
+- **Revisit:** at the bench (T013), with the series count; if a latency
+  rule is too coarse in practice, set Hubble's `httpV2` buckets.
