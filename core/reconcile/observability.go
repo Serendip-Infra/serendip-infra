@@ -127,6 +127,11 @@ type ConditionValue struct {
 	Current float64
 }
 
+// ErrNotCollected is a read of something the platform doesn't collect,
+// such as request metrics on a network layer that doesn't record them.
+// Retrying won't help; wrapping errors may add why, in Serendip's words.
+var ErrNotCollected = errors.New("reconcile: not collected")
+
 // ErrNoData is a condition whose window has too few points to decide.
 var ErrNoData = errors.New("reconcile: no data for the condition's window")
 

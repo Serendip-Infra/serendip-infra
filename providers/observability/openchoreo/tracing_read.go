@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -371,26 +372,43 @@ func cutText(s string, n int) string {
 	return s
 }
 
-// Trace returns traceID's spans from t, in start order. Spans from other
-// Components are counted in Hidden and never read. None from t is
-// ErrTraceNotFound, whatever else the trace has.
-func (tr *Tracing) Trace(ctx context.Context, t reconcile.LogTarget, traceID string) (reconcile.Trace, error) {
+// Trace returns traceID's spans from any of targets, in start order, with
+// two queries whatever their number. Spans from other Components are
+// counted in Hidden and never read. None from targets is ErrTraceNotFound,
+// whatever else the trace has.
+func (tr *Tracing) Trace(ctx context.Context, targets []reconcile.LogTarget, traceID string) (reconcile.Trace, error) {
 	if !reconcile.ValidTraceID(traceID) {
 		return reconcile.Trace{}, reconcile.ErrTraceNotFound
 	}
-	scopes, err := tr.resolve(ctx, []reconcile.LogTarget{t})
-	if err != nil {
-		return reconcile.Trace{}, err
+	if len(targets) > reconcile.MaxLogTargets {
+		return reconcile.Trace{}, ErrTooManyTargets
 	}
-	if len(scopes) == 0 {
+	// Each scope with the target it came from, for the span's IDs.
+	type scoped struct {
+		s componentScope
+		t reconcile.LogTarget
+	}
+	var in []scoped
+	var wheres []string
+	for _, t := range targets {
+		s, err := tr.resolve(ctx, []reconcile.LogTarget{t})
+		if err != nil {
+			return reconcile.Trace{}, err
+		}
+		if len(s) == 1 {
+			in = append(in, scoped{s[0], t})
+			wheres = append(wheres, scopeWhere(s[0]))
+		}
+	}
+	if len(in) == 0 {
 		return reconcile.Trace{}, reconcile.ErrTraceNotFound
 	}
 	from, to := tr.window(time.Time{}, time.Time{})
-	where := scopeWhere(scopes[0])
+	where := "(" + strings.Join(wheres, " OR ") + ")"
 	var rows []spanRow
 	sql := fmt.Sprintf(`SELECT * FROM "%s" WHERE trace_id = '%s' AND %s ORDER BY start_time ASC, span_id ASC LIMIT %d`,
 		tracesStream, traceID, where, reconcile.MaxTraceSpans+1)
-	err = tr.search(ctx, sql, from, to.Add(time.Microsecond), reconcile.MaxTraceSpans+1, &rows)
+	err := tr.search(ctx, sql, from, to.Add(time.Microsecond), reconcile.MaxTraceSpans+1, &rows)
 	if noTraces(err) {
 		return reconcile.Trace{}, reconcile.ErrTraceNotFound
 	}
@@ -401,15 +419,20 @@ func (tr *Tracing) Trace(ctx context.Context, t reconcile.LogTarget, traceID str
 	for _, r := range rows {
 		// The SQL selected these; checked again, so a store that ignored
 		// part of the query can't show another Component's span.
-		if r.str("trace_id") != traceID || r.str(colComponentUID) != scopes[0].ComponentUID ||
-			r.str(colEnvironmentUID) != scopes[0].EnvironmentUID || r.str(colProjectUID) != scopes[0].ProjectUID {
+		if r.str("trace_id") != traceID {
+			continue
+		}
+		i := slices.IndexFunc(in, func(x scoped) bool {
+			return r.str(colComponentUID) == x.s.ComponentUID && r.str(colEnvironmentUID) == x.s.EnvironmentUID && r.str(colProjectUID) == x.s.ProjectUID
+		})
+		if i < 0 {
 			continue
 		}
 		if len(out.Spans) == reconcile.MaxTraceSpans {
 			out.Truncated = true
 			break
 		}
-		out.Spans = append(out.Spans, toSpan(r, t))
+		out.Spans = append(out.Spans, toSpan(r, in[i].t))
 	}
 	if len(out.Spans) == 0 {
 		return reconcile.Trace{}, reconcile.ErrTraceNotFound

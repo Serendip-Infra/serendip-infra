@@ -246,8 +246,11 @@ type serverOptions struct {
 	packages  reconcile.Catalogue
 	builds    reconcile.BuildProvider
 	obs       reconcile.ObservabilityProvider
-	metadata  *ResourceMetadata
-	mcp       bool
+	// tracing and networkFacts are spec 025's traces and network facts.
+	tracing      reconcile.TracingProvider
+	networkFacts NetworkFactsFunc
+	metadata     *ResourceMetadata
+	mcp          bool
 	// notifier and notifySecrets send test notifications (spec 024).
 	notifier      Notifier
 	notifySecrets notify.SecretReader
@@ -361,7 +364,12 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	}).Register(apiMux)
 	// Stored logs and metrics (spec 023), scoped before the provider is
 	// asked.
-	newObservabilityHandler(deployStore, envStore, compStore, appStore, opts.obs, providers, opts.packages).Register(apiMux)
+	obsHandler := newObservabilityHandler(deployStore, envStore, compStore, appStore, opts.obs, providers, opts.packages)
+	obsHandler.facts = opts.networkFacts
+	obsHandler.Register(apiMux)
+	// Networking facts, flows, traffic and traces (spec 025).
+	(&NetworkingHandler{facts: opts.networkFacts}).Register(apiMux)
+	newTracesHandler(obsHandler, opts.tracing, providers, opts.packages).Register(apiMux)
 	// Capability's store is shared with RegistryHandler below (T019 gap
 	// fix -- specs/002-http-api/spec.md Scope-IN item 2, "get/set a
 	// capability's default provider", was never wired up) rather than

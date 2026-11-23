@@ -238,6 +238,13 @@ decisions below are already updated. What changed from the research:
    - **Scoping:** a flow is returned if either end is a target the
      caller can read; the other end's names are kept only if the caller
      can read it too, else "outside your access" (spec criterion 6).
+     **Amended in T009:** the provider names only its targets, so the
+     API passes the other Deployments of the Environment the caller may
+     read as `FlowQuery.Peers`: named, never searched (at most
+     `MaxLogTargets`; past that an end shows as outside). The API also
+     clears any named end that isn't the target or a peer. A network
+     layer without flows or request metrics answers 409 with the facts'
+     reason, never an empty list; 503 until the facts are first read.
      `ObservabilityProvider.Flows(ctx, targets, q FlowQuery) (FlowPage, error)`,
      cursor like logs.
    - Hubble relay (gRPC) is rejected: a gRPC client is a dependency
@@ -321,15 +328,19 @@ decisions below are already updated. What changed from the research:
       trace are counted, not shown, unless the caller can read them too.
       **Decided 2026-11-23 (after T007):** the API merges the spans of
       every Deployment in the trace's Environment the caller holds
-      `…/traces/read` on (one `Trace` call each; not-found unless one of
-      them has a span), and answers `partial: true` when spans remain
-      that it can't show. The count isn't returned: a span's parent ID
+      `…/traces/read` on (not-found unless one of them has a span), and
+      answers `partial: true` when spans remain that it can't show.
+      **Amended in T009:** one `Trace` call with all of them
+      (`Trace(ctx, targets []LogTarget, traceID)`, at most
+      `MaxLogTargets`), not one each: each call is two queries over the
+      whole retention, so twenty readable Deployments would have been 40
+      queries to open one trace on a T470. One call is two queries, and
+      `Hidden` is then exactly the spans of no readable Deployment. The count isn't returned: a span's parent ID
       already shows another service took part, but the count would add
       the other Components' fan-out (as flows show "Outside", not how
       many). Azure: Application Insights' transaction view shows the
       components you can read and marks the rest inaccessible. The
-      provider's `Hidden` stays internal: the merged remainder is
-      `Hidden` of any one minus the other readable targets' spans.
+      provider's `Hidden` stays internal.
 13. **Alert conditions** (spec 024's model, `core/resource/alerting.go`):
     - `requestErrorRate` (percent of 5xx over the window) and
       `requestLatency` (`percentile` 95 or 99, milliseconds), from

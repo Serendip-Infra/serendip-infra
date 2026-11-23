@@ -241,6 +241,17 @@ func routeTable() map[string]rule {
 		"GET /v1/applications/{id}/logs/search": {action: action(resource.KindApplication, "read"), target: targetResource, kind: resource.KindApplication},
 		"GET /v1/deployments/{id}/metrics":      {action: policy.Action{Name: policy.ActionObservabilityRead}, target: targetResource, kind: resource.KindDeployment},
 
+		// Networking and traces (specs/025-networking plan decision 14).
+		// Flows and traffic are connection metadata, read like metrics; an
+		// Application's traffic reads the Application here, and its handler
+		// keeps only the Deployments the caller may read metrics of. Traces
+		// are their own data action, like logs.
+		"GET /v1/networking":                        {action: policy.Action{Name: policy.ActionPlatformRead}, target: targetRoot},
+		"GET /v1/deployments/{id}/flows":            {action: policy.Action{Name: policy.ActionObservabilityRead}, target: targetResource, kind: resource.KindDeployment},
+		"GET /v1/applications/{id}/traffic":         {action: action(resource.KindApplication, "read"), target: targetResource, kind: resource.KindApplication},
+		"GET /v1/deployments/{id}/traces":           {action: policy.Action{Name: policy.ActionComponentTracesRead}, target: targetResource, kind: resource.KindDeployment},
+		"GET /v1/deployments/{id}/traces/{traceId}": {action: policy.Action{Name: policy.ActionComponentTracesRead}, target: targetResource, kind: resource.KindDeployment},
+
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
 	}

@@ -106,6 +106,8 @@ purpose), **Closed** (fixed).
 | RP-083 | A Cilium bootstrap fetches the chart and images from the internet at first boot, and the node is NotReady until they arrive | Availability (install); footprint (first boot) | Accepted | Spec 025 T005 |
 | RP-084 | Connection records: de-duplicated within a page only, proxied ports recorded at the source only, and Fluent Bit's config depends on the logs chart's layout | Correctness (counts); upgrade | Accepted | Spec 025 T006 |
 | RP-085 | Request metrics from Hubble's histogram: coarse percentiles, extrapolated counts, a DNS lookup that fails on clusters without Cilium | Correctness (precision); log noise | Accepted | Spec 025 T006 |
+| RP-086 | Trace identity leans on the store's key flattening; removing traces waits for the store and rolls Components | Security (span identity); availability; performance | Accepted | Spec 025 T007 |
+| RP-087 | Flows and traces read the caller's readable Deployments in the Environment, capped at 20 | Correctness (names past the cap); performance (lookups per read) | Accepted | Spec 025 T009 |
 
 ---
 
@@ -2204,3 +2206,31 @@ The text below is the T013 record.
   `testdata/t007-spoof-span-otlp.json` from an unlabelled pod and check
   nothing is stored with an identity, and re-time a stream's deletion;
   at T013 with the retention job's cost and the open-trace query time.
+
+## RP-087 — Flows and traces read the caller's readable Deployments in the Environment, capped at 20
+
+- **Kind:** correctness (naming past the cap); performance. **Status:**
+  Accepted, 2026-11-23. **Found:** spec 025 T009.
+- **What:**
+  - **Flows** name the other end only for a target, a peer or a platform
+    service. Peers are the Environment's other Deployments the caller
+    may read with observability read, at most 20 (`MaxLogTargets`). Past
+    that, a readable end is shown as outside: never a wrong name, but
+    less than the caller could see. An end in another Environment is
+    always outside, readable or not.
+  - **Each flows read resolves every peer** (a scope lookup and the
+    Component's workloads), even when the page comes back empty, and
+    the API checks each Deployment's permission first.
+  - **Opening a trace** reads the spans of up to 20 readable Deployments
+    in one query pair, each over the whole retention (RP-086). Past 20,
+    the rest count as hidden, so the trace says `partial`.
+  - **Traffic** refuses an Application with more than 20 Deployments in
+    the Environment (422) instead of answering part of it.
+- **Cost:** up to 20 extra platform lookups per flows read; a trace's
+  two queries grow with the number of scopes in the OR.
+- **Why accepted:** 20 Deployments in one Environment is well past
+  edge-1's scale, and the cap matches stored logs' (spec 023). Naming
+  less is the safe side.
+- **Revisit:** at `small-3`, or if an Environment holds more than 20
+  Components: resolve peers lazily (only the ends a page has), or page
+  the merge. T013 times a flows read and a trace open.

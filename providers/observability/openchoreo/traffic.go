@@ -24,7 +24,7 @@ var _ reconcile.TrafficReader = (*Provider)(nil)
 
 // ErrRequestsUnavailable is Traffic's answer when the network layer
 // doesn't record HTTP requests; the error's text says why.
-var ErrRequestsUnavailable = errors.New("request metrics aren't available")
+var ErrRequestsUnavailable = fmt.Errorf("%w: request metrics aren't available", reconcile.ErrNotCollected)
 
 // dnsLabelRE is what a namespace or pod name read back from the store
 // may be before it's put in a query: a DNS label (RFC 1123) or subdomain.

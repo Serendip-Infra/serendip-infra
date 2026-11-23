@@ -211,14 +211,44 @@ func flowSQL(refs []workloadRef, droppedOnly bool, from, upper time.Time) string
 	return sql + flowOrder
 }
 
+// flowRefs adds targets' workloads to names, returning each workload once
+// in the order first seen. A target whose platform objects are gone is
+// left out.
+func (p *Provider) flowRefs(ctx context.Context, targets []reconcile.LogTarget, names map[workloadRef]flowTarget, now time.Time) ([]workloadRef, error) {
+	var refs []workloadRef
+	for _, t := range targets {
+		s, err := p.scopes.component(ctx, t)
+		if errors.Is(err, errNoScope) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("openchoreo observability: %w", err)
+		}
+		deps, err := p.flows.deployments(ctx, s, now)
+		if errors.Is(err, errNoScope) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("openchoreo observability: %w", err)
+		}
+		for _, d := range deps {
+			if _, dup := names[d]; !dup {
+				refs = append(refs, d)
+			}
+			names[d] = flowTarget{component: t.Deployment.Spec.Component, environment: t.Environment.Metadata.ID}
+		}
+	}
+	return refs, nil
+}
+
 // Flows reads the connection records with an end among targets, newest
-// first. The other end is named only if it's a target too, or a platform
-// service (platformNamespace); any other in-cluster end is marked
+// first. The other end is named only if it's a target too, one of
+// q.Peers, or a platform service (platformNamespace); any other in-cluster end is marked
 // Outside, and an address outside the cluster External. A page with no
 // records doesn't say whether records are collected: the caller checks
 // the networking capability's facts for that.
 func (p *Provider) Flows(ctx context.Context, targets []reconcile.LogTarget, q reconcile.FlowQuery) (reconcile.FlowPage, error) {
-	if len(targets) > reconcile.MaxLogTargets {
+	if len(targets) > reconcile.MaxLogTargets || len(q.Peers) > reconcile.MaxLogTargets {
 		return reconcile.FlowPage{}, ErrTooManyTargets
 	}
 	limit := q.Limit
@@ -247,27 +277,19 @@ func (p *Provider) Flows(ctx context.Context, targets []reconcile.LogTarget, q r
 	page := reconcile.FlowPage{Flows: []reconcile.Flow{}}
 
 	names := map[workloadRef]flowTarget{}
-	var refs []workloadRef
-	for _, t := range targets {
-		s, err := p.scopes.component(ctx, t)
-		if errors.Is(err, errNoScope) {
-			continue
-		}
-		if err != nil {
-			return reconcile.FlowPage{}, fmt.Errorf("openchoreo observability: %w", err)
-		}
-		deps, err := p.flows.deployments(ctx, s, now)
-		if errors.Is(err, errNoScope) {
-			continue
-		}
-		if err != nil {
-			return reconcile.FlowPage{}, fmt.Errorf("openchoreo observability: %w", err)
-		}
-		for _, d := range deps {
-			if _, dup := names[d]; !dup {
-				refs = append(refs, d)
-			}
-			names[d] = flowTarget{component: t.Deployment.Spec.Component, environment: t.Environment.Metadata.ID}
+	refs, err := p.flowRefs(ctx, targets, names, now)
+	if err != nil {
+		return reconcile.FlowPage{}, err
+	}
+	// Peers are named, never searched: their refs are dropped. A target's
+	// own name wins over a peer's for a shared workload.
+	peerNames := map[workloadRef]flowTarget{}
+	if _, err := p.flowRefs(ctx, q.Peers, peerNames, now); err != nil {
+		return reconcile.FlowPage{}, err
+	}
+	for d, t := range peerNames {
+		if _, own := names[d]; !own {
+			names[d] = t
 		}
 	}
 	upper := to

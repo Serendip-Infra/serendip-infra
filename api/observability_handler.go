@@ -63,6 +63,9 @@ type ObservabilityHandler struct {
 	provider reconcile.ObservabilityProvider
 	// ready says why stored logs and metrics can't be read now.
 	ready func() error
+	// facts is the network layer's cached facts (spec 025); nil when
+	// this server doesn't read them.
+	facts NetworkFactsFunc
 	// retention is the longest range a query may cover.
 	retention time.Duration
 	limit     *streamLimiter
@@ -83,6 +86,8 @@ func (h *ObservabilityHandler) Register(mux Mux) {
 	mux.HandleFunc("GET /v1/deployments/{id}/logs/search", h.SearchDeployment)
 	mux.HandleFunc("GET /v1/applications/{id}/logs/search", h.SearchApplication)
 	mux.HandleFunc("GET /v1/deployments/{id}/metrics", h.Metrics)
+	mux.HandleFunc("GET /v1/deployments/{id}/flows", h.Flows)
+	mux.HandleFunc("GET /v1/applications/{id}/traffic", h.Traffic)
 }
 
 // packageNames names the catalogue's packages for capability, for
@@ -105,11 +110,16 @@ func packageNames(packages reconcile.Catalogue, capability, what string) string 
 // 503 naming the package, and whether it's not installed, installing or
 // not ready (spec item 10).
 func observabilityReadiness(providers *provider.Registry, packages reconcile.Catalogue) func() error {
-	name := packageNames(packages, observabilityCapability, "the observability package")
+	return packageReadiness(providers, packages, observabilityCapability, "stored logs and metrics need "+packageNames(packages, observabilityCapability, "the observability package"))
+}
+
+// packageReadiness says why capability's package can't be read from:
+// needs (what needs which package) and the package's state, as a 503.
+func packageReadiness(providers *provider.Registry, packages reconcile.Catalogue, capability, needs string) func() error {
 	return func() error {
 		var rd provider.Readiness
 		if providers != nil {
-			rd = providers.Readiness()[observabilityCapability]
+			rd = providers.Readiness()[capability]
 		}
 		if rd.Ready {
 			return nil
@@ -122,10 +132,12 @@ func observabilityReadiness(providers *provider.Registry, packages reconcile.Cat
 			state = "it's installing; retry shortly"
 		case reconcile.ReasonRemoving:
 			state = "it's being removed"
+		case reconcile.ReasonUnavailable:
+			state = "it can't be installed in this build: " + cmp.Or(rd.Message, "not available yet")
 		default:
 			state = "it's installed but not ready (" + rd.Reason + ")"
 		}
-		return deployRefuse(http.StatusServiceUnavailable, "service unavailable", "stored logs and metrics need %s installed and ready; %s", name, state)
+		return deployRefuse(http.StatusServiceUnavailable, "service unavailable", "%s installed and ready; %s", needs, state)
 	}
 }
 
@@ -170,28 +182,47 @@ func (h *ObservabilityHandler) unavailable() error {
 	return nil
 }
 
+// readSource names what a read was of, for readFailed's answers: the
+// package's readiness, the package and the data, in Serendip's words.
+type readSource struct {
+	ready     func() error
+	pkg, what string
+}
+
+func (h *ObservabilityHandler) source() readSource {
+	return readSource{ready: h.ready, pkg: "the observability package", what: "stored logs and metrics"}
+}
+
 // readFailed answers a failed provider read under the query's context
 // ctx. Never the error's text, which can name the backend's internals;
 // it's logged for the operator. A client that went away gets nothing.
 func (h *ObservabilityHandler) readFailed(w http.ResponseWriter, r *http.Request, ctx context.Context, err error) {
+	h.readFailedFrom(w, r, h.source(), ctx.Err(), err)
+}
+
+// readFailedFrom is readFailed for src, given the query context's error.
+func (h *ObservabilityHandler) readFailedFrom(w http.ResponseWriter, r *http.Request, src readSource, ctxErr, err error) {
 	reqID := audit.RequestIDFrom(r.Context())
 	switch {
 	case r.Context().Err() != nil:
 		return
 	case errors.Is(err, reconcile.ErrProviderNotReady):
-		if rerr := h.ready(); rerr != nil {
+		if rerr := src.ready(); rerr != nil {
 			h.fail(w, r, rerr)
 			return
 		}
 		w.Header().Set("Retry-After", "10")
-		WriteProblem(w, http.StatusServiceUnavailable, "service unavailable", "the observability package is still being set up; retry shortly", reqID)
+		WriteProblem(w, http.StatusServiceUnavailable, "service unavailable", src.pkg+" is still being set up; retry shortly", reqID)
+	case errors.Is(err, reconcile.ErrNotCollected):
+		// The facts said yes, the package says no (spec 025).
+		WriteProblem(w, http.StatusConflict, "not available", "this isn't collected on this platform now; GET /v1/networking says what the network layer provides", reqID)
 	case errors.Is(err, reconcile.ErrBadCursor):
 		WriteProblem(w, http.StatusBadRequest, "validation failed", "before: not a cursor from this search's next; start again without it", reqID)
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		WriteProblem(w, http.StatusGatewayTimeout, "gateway timeout", "the query took longer than "+obsQueryTimeout.String()+"; narrow the time range or the text", reqID)
+	case errors.Is(ctxErr, context.DeadlineExceeded):
+		WriteProblem(w, http.StatusGatewayTimeout, "gateway timeout", "the query took longer than "+obsQueryTimeout.String()+"; narrow the time range", reqID)
 	default:
-		log.Printf("api: %s %s: observability read failed (request %s): %v", r.Method, r.URL.Path, reqID, err)
-		WriteProblem(w, http.StatusBadGateway, "bad gateway", "stored logs and metrics couldn't be read; retry later, quoting the request ID", reqID)
+		log.Printf("api: %s %s: %s read failed (request %s): %v", r.Method, r.URL.Path, src.what, reqID, err)
+		WriteProblem(w, http.StatusBadGateway, "bad gateway", src.what+" couldn't be read; retry later, quoting the request ID", reqID)
 	}
 }
 
@@ -365,22 +396,8 @@ func (h *ObservabilityHandler) SearchApplication(w http.ResponseWriter, r *http.
 		h.fail(w, r, err)
 		return
 	}
-	// One answer for missing and unreadable, so an Environment's existence
-	// isn't told to someone who can't read it.
-	env, err := h.envs.Get(r.Context(), envID)
-	if err == nil {
-		var readable bool
-		readable, err = allowedAt(r.Context(), environmentRead, resource.Scope{Kind: resource.KindEnvironment, ID: envID})
-		if err == nil && !readable {
-			err = store.ErrNotFound
-		}
-	}
-	if errors.Is(err, store.ErrNotFound) {
-		WriteProblem(w, http.StatusNotFound, "not found", "environment: Environment "+envID+" not found", reqID)
-		return
-	}
-	if err != nil {
-		h.fail(w, r, err)
+	env, ok := h.readableEnvironment(w, r, envID)
+	if !ok {
 		return
 	}
 	deps, err := h.deployments.List(r.Context(), store.ListOptions{OwnerID: env.Metadata.ID})
@@ -442,6 +459,29 @@ func (h *ObservabilityHandler) SearchApplication(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, searchAnswer{LogPage: nonNilPage(page), Omitted: &omitted})
 }
 
+// readableEnvironment reads Environment envID, answering 404 itself when
+// it's missing or the caller can't read it: one answer for both, so an
+// Environment's existence isn't told to someone who can't read it.
+func (h *ObservabilityHandler) readableEnvironment(w http.ResponseWriter, r *http.Request, envID string) (resource.Environment, bool) {
+	env, err := h.envs.Get(r.Context(), envID)
+	if err == nil {
+		var readable bool
+		readable, err = allowedAt(r.Context(), environmentRead, resource.Scope{Kind: resource.KindEnvironment, ID: envID})
+		if err == nil && !readable {
+			err = store.ErrNotFound
+		}
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		WriteProblem(w, http.StatusNotFound, "not found", "environment: Environment "+envID+" not found", audit.RequestIDFrom(r.Context()))
+		return env, false
+	}
+	if err != nil {
+		h.fail(w, r, err)
+		return env, false
+	}
+	return env, true
+}
+
 func nonNilPage(p reconcile.LogPage) reconcile.LogPage {
 	p.Lines = nonNil(p.Lines)
 	return p
@@ -464,6 +504,9 @@ type metricsAnswer struct {
 	To      time.Time                 `json:"to"`
 	Summary map[string]*seriesSummary `json:"summary"`
 }
+
+// finiteNumber reports whether v can be carried in JSON.
+func finiteNumber(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 // finite is s without the samples JSON can't carry, never nil.
 func finite(s []reconcile.MetricPoint) []reconcile.MetricPoint {
@@ -511,7 +554,8 @@ func downsample(s []reconcile.MetricPoint, n int) []reconcile.MetricPoint {
 
 // Metrics answers a Deployment's CPU (millicores) and memory (MiB) over
 // ?from to ?to (the last hour by default, at least 15 minutes), its
-// requests and limits where known, what isn't available and why, and a
+// requests and limits where known, its HTTP requests where the network
+// layer records them (spec 025), what isn't available and why, and a
 // summary of each series. ?summary=true keeps at most 60 points a series.
 func (h *ObservabilityHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	reqID := audit.RequestIDFrom(r.Context())
@@ -559,6 +603,23 @@ func (h *ObservabilityHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if s := summarise(m.Memory); s != nil {
 		out.Summary["memory"] = s
+	}
+	if rq := m.Requests; rq != nil {
+		// Spec 025: the HTTP request series, treated as CPU and memory are.
+		series := []struct {
+			name string
+			s    *[]reconcile.MetricPoint
+		}{{"requests.rate", &rq.Rate}, {"requests.errorRate", &rq.ErrorRate}, {"requests.latencyP50", &rq.LatencyP50},
+			{"requests.latencyP95", &rq.LatencyP95}, {"requests.latencyP99", &rq.LatencyP99}}
+		for _, e := range series {
+			*e.s = finite(*e.s)
+			if s := summarise(*e.s); s != nil {
+				out.Summary[e.name] = s
+			}
+			if brief {
+				*e.s = downsample(*e.s, summaryPoints)
+			}
+		}
 	}
 	if brief {
 		m.CPU, m.Memory = downsample(m.CPU, summaryPoints), downsample(m.Memory, summaryPoints)

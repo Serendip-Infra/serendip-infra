@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -443,6 +444,42 @@ func (l *lazyObservability) Metrics(ctx context.Context, t reconcile.LogTarget, 
 	return p.Metrics(ctx, t, q)
 }
 
+var (
+	_ reconcile.FlowReader    = (*lazyObservability)(nil)
+	_ reconcile.TrafficReader = (*lazyObservability)(nil)
+)
+
+// errNoFlows and errNoTraffic answer an observability package that keeps
+// neither.
+var (
+	errNoFlows   = fmt.Errorf("%w: the observability package doesn't keep connection records", reconcile.ErrNotCollected)
+	errNoTraffic = fmt.Errorf("%w: the observability package doesn't keep request metrics", reconcile.ErrNotCollected)
+)
+
+func (l *lazyObservability) Flows(ctx context.Context, targets []reconcile.LogTarget, q reconcile.FlowQuery) (reconcile.FlowPage, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.FlowPage{}, err
+	}
+	fr, ok := p.(reconcile.FlowReader)
+	if !ok {
+		return reconcile.FlowPage{}, errNoFlows
+	}
+	return fr.Flows(ctx, targets, q)
+}
+
+func (l *lazyObservability) Traffic(ctx context.Context, targets []reconcile.LogTarget, from, to time.Time) ([]reconcile.TrafficEdge, error) {
+	p, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	tr, ok := p.(reconcile.TrafficReader)
+	if !ok {
+		return nil, errNoTraffic
+	}
+	return tr.Traffic(ctx, targets, from, to)
+}
+
 // lazyTracing is the tracing capability (spec 025), set while the tracing
 // package reports Ready and cleared when it stops.
 type lazyTracing struct {
@@ -459,12 +496,12 @@ func (l *lazyTracing) SearchTraces(ctx context.Context, targets []reconcile.LogT
 	return p.SearchTraces(ctx, targets, q)
 }
 
-func (l *lazyTracing) Trace(ctx context.Context, t reconcile.LogTarget, traceID string) (reconcile.Trace, error) {
+func (l *lazyTracing) Trace(ctx context.Context, targets []reconcile.LogTarget, traceID string) (reconcile.Trace, error) {
 	p, err := l.get()
 	if err != nil {
 		return reconcile.Trace{}, err
 	}
-	return p.Trace(ctx, t, traceID)
+	return p.Trace(ctx, targets, traceID)
 }
 
 func (l *lazyTracing) EvaluateCondition(ctx context.Context, t reconcile.LogTarget, c resource.AlertCondition, window time.Duration) (reconcile.ConditionValue, error) {

@@ -78,8 +78,10 @@ type Span struct {
 	Attributes  map[string]string `json:"attributes,omitempty"`
 }
 
-// Trace is one trace's spans from the target, in start order. Hidden
-// counts the trace's spans from other Components, which aren't returned.
+// Trace is one trace's spans from the targets, in start order. Hidden
+// counts the trace's spans from other Components, which aren't returned;
+// it's for the API layer to say a trace is partial, never shown as a
+// number (specs/025-networking plan decision 12).
 type Trace struct {
 	TraceID   string `json:"traceId"`
 	Spans     []Span `json:"spans"`
@@ -91,10 +93,11 @@ type Trace struct {
 // provider reads only spans the collector attested to the targets.
 type TracingProvider interface {
 	SearchTraces(ctx context.Context, targets []LogTarget, q TraceQuery) (TracePage, error)
-	// Trace returns traceID's spans from t, and ErrTraceNotFound when it
-	// has none, whether or not other Components' spans exist: a guessed
-	// trace ID tells nothing (spec criterion 9).
-	Trace(ctx context.Context, t LogTarget, traceID string) (Trace, error)
+	// Trace returns traceID's spans from any of targets (at most
+	// MaxLogTargets), and ErrTraceNotFound when they have none, whether or
+	// not other Components' spans exist: a guessed trace ID tells nothing
+	// (spec criterion 9).
+	Trace(ctx context.Context, targets []LogTarget, traceID string) (Trace, error)
 	// EvaluateCondition reads a trace condition, as
 	// ObservabilityProvider.EvaluateCondition does.
 	EvaluateCondition(ctx context.Context, t LogTarget, c resource.AlertCondition, window time.Duration) (ConditionValue, error)

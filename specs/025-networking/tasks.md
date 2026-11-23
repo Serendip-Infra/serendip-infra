@@ -415,7 +415,55 @@ reasons say Serendip can't read them, not that the CNI lacks them).
   CNI in its log; on `t025` a pass that writes leaves an audit event
   naming the policies, and one that doesn't leaves none.
 
-## T009: API
+## T009: API ✅
+
+**Done as** (2026-11-23):
+- **Routes** (rules in `authz.go`, plan decision 14):
+  `GET /v1/networking` (`NetworkingHandler`, `platform/read` at `/`):
+  the cached facts, 503 until first read. `GET /v1/deployments/{id}/flows`
+  and `GET /v1/applications/{id}/traffic` (`networking_handler.go`,
+  `observability/read`): gated on the facts (`networkGate`: 409 "not
+  available: <the facts' reason>"), then the provider. Traffic passes
+  only the Application's Deployments in the Environment the caller may
+  read (`envTargets`), counts the rest in `omitted`, 422 past 20, and
+  keeps only edges with both ends readable. `GET /v1/deployments/{id}/traces`
+  and `…/traces/{traceId}` (`traces_handler.go`, `components/traces/read`;
+  503 naming the tracing package, with "can't be installed in this
+  build" for `ReasonUnavailable`). Metrics' request series are made
+  finite, summarised (`requests.*`) and downsampled like CPU and memory.
+- **Flows' other end** (plan decision 9 amended): `FlowQuery.Peers`
+  (core): the Environment's other Deployments the caller may read,
+  named and never searched (`flowRefs` in the provider); the API clears
+  any other named end (`redactEnd`).
+- **One trace read** (plan decision 12 amended): `TracingProvider.Trace`
+  takes every readable target at once (two queries, an OR of the
+  scopes); `partial` is `Hidden > 0`, which is never returned.
+- **`reconcile.ErrNotCollected`**: the provider's
+  `ErrRequestsUnavailable` wraps it; `lazyObservability` forwards
+  `Flows`/`Traffic` and answers it for a package without them. Read
+  failures name their data (`readSource`): 409, 503 with Retry-After,
+  504, or 502 without the error's text.
+- **Catalogue:** `networking_get`, `deployments_flows`,
+  `applications_traffic`, `deployments_traces_list`,
+  `deployments_traces_get`, on the CLI and MCP (traces on MCP like stored
+  logs; T010 may revisit); rows in `docs/cli-and-mcp.md`.
+- **Tests:** `spec025_acceptance_test.go` over fakes that name every end
+  and edge (so the API's own scoping is what passes): criterion 6 (A→B
+  with B outside, no B→B, peers only A's), 5, 9 (Reader 403, guessed ID
+  404, merge and partial), 2's 409s, failure mapping, the traffic cap.
+  Checked by mutation: with `redactEnd` off, criterion 6 fails.
+- **Live on `t025`** (`serendipd-t009.exe`, `~/.serendip-t025/t009/`):
+  facts, srv's flows with caller and spoofer named as peers and the
+  collector as a platform service, two traffic edges, request series in
+  metrics, traces 503 (the package isn't installable until T013).
+  `TestLiveTraces` opened traces as all targets: 2 spans, 0 hidden,
+  against 1 and 1 as one target.
+- **Reviews:** contract-guardian passed; its doc note fixed. go-reviewer's
+  findings fixed (labelled read failures, stop at the cap, tests for
+  every failure path, comments); its trace-loop findings went away with
+  the one-call `Trace`. Left as is: the five-series loop in Metrics (a
+  small allocation per request).
+
 
 - **Do:** the six routes of the plan's table, authorization, scoping
   before the backend, the other end's redaction, audit of every new

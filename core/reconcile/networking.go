@@ -93,6 +93,11 @@ type FlowQuery struct {
 	Limit int
 	// Before is the opaque cursor from the previous page's Next.
 	Before string
+	// Peers are Deployments the caller may also read: an end among them
+	// is named, but records are read only for the targets, so peers never
+	// widen the search. At most MaxLogTargets, as targets are; a provider
+	// refuses more.
+	Peers []LogTarget
 }
 
 // FlowEnd is one end of a connection. Component and Environment are set
@@ -157,16 +162,18 @@ type TrafficEdge struct {
 
 // FlowReader is optional on an ObservabilityProvider whose package stores
 // the network layer's connection records. Callers scope before calling:
-// a provider reads only records with an end among targets, and marks the
-// other end with its Component and Environment IDs for the API layer to
-// keep or clear.
+// a provider reads only records with an end among targets, names an end
+// only when it's a target, one of q.Peers or a platform service, and marks
+// any other in-cluster end Outside. It answers ErrNotCollected when the
+// records aren't kept.
 type FlowReader interface {
 	Flows(ctx context.Context, targets []LogTarget, q FlowQuery) (FlowPage, error)
 }
 
 // TrafficReader is optional on an ObservabilityProvider that stores
 // request metrics: the traffic between targets (all in one Environment)
-// over [from, to). Edges with an end outside targets aren't returned.
+// over [from, to). Edges with an end outside targets aren't returned. It
+// answers ErrNotCollected when the network layer doesn't record requests.
 type TrafficReader interface {
 	Traffic(ctx context.Context, targets []LogTarget, from, to time.Time) ([]TrafficEdge, error)
 }

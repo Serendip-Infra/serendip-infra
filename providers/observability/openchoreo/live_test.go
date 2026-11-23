@@ -587,7 +587,7 @@ func TestLiveTraces(t *testing.T) {
 			}
 		}
 		if len(page.Traces) > 0 {
-			got, err := tr.Trace(ctx, tg, page.Traces[0].TraceID)
+			got, err := tr.Trace(ctx, []reconcile.LogTarget{tg}, page.Traces[0].TraceID)
 			if err != nil {
 				t.Errorf("%s open %s: %v", name, page.Traces[0].TraceID, err)
 				continue
@@ -601,8 +601,27 @@ func TestLiveTraces(t *testing.T) {
 		v, err := tr.EvaluateCondition(ctx, tg, c, 10*time.Minute)
 		t.Logf("%s traceErrors over 10m: %.0f, %v", name, v.Value, err)
 		if id := os.Getenv("OBS_LIVE_TRACE"); id != "" {
-			got, err := tr.Trace(ctx, tg, id)
+			got, err := tr.Trace(ctx, []reconcile.LogTarget{tg}, id)
 			t.Logf("%s opens %s: %d spans, %d hidden, %v", name, id, len(got.Spans), got.Hidden, err)
+		}
+		// Opened as every target at once (T009): the same trace, its spans
+		// each attributed to the target that sent them, the rest hidden.
+		if len(page.Traces) > 0 {
+			id := page.Traces[0].TraceID
+			one, err1 := tr.Trace(ctx, []reconcile.LogTarget{tg}, id)
+			all, err := tr.Trace(ctx, targets, id)
+			if err != nil || err1 != nil {
+				t.Errorf("%s open %s as all targets: %v %v", name, id, err, err1)
+				continue
+			}
+			if len(all.Spans)+all.Hidden != len(one.Spans)+one.Hidden || len(all.Spans) < len(one.Spans) {
+				t.Errorf("%s: as all, %d spans %d hidden; as itself, %d spans %d hidden", name, len(all.Spans), all.Hidden, len(one.Spans), one.Hidden)
+			}
+			by := map[string]int{}
+			for _, sp := range all.Spans {
+				by[sp.Component]++
+			}
+			t.Logf("%s opens %s as all targets: spans by Component %v, %d hidden", name, id, by, all.Hidden)
 		}
 	}
 }

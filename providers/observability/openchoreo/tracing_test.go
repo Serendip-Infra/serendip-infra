@@ -289,7 +289,7 @@ func TestTraces_SearchFromRecording(t *testing.T) {
 func TestTrace_SpansOfTheTargetOnly(t *testing.T) {
 	tr, store, srv, caller := traceFixture(t)
 	ctx := context.Background()
-	got, err := tr.Trace(ctx, srv, recordedTrace)
+	got, err := tr.Trace(ctx, []reconcile.LogTarget{srv}, recordedTrace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,16 +310,16 @@ func TestTrace_SpansOfTheTargetOnly(t *testing.T) {
 	// holds: the caller's own trace looked up as a Component with no span
 	// in it.
 	store.spans = slices.DeleteFunc(store.spans, func(sp map[string]any) bool { return sp[colComponentUID] == srvUID })
-	if _, err := tr.Trace(ctx, srv, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
+	if _, err := tr.Trace(ctx, []reconcile.LogTarget{srv}, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
 		t.Errorf("another's trace = %v, want ErrTraceNotFound", err)
 	}
-	if _, err := tr.Trace(ctx, caller, recordedTrace); err != nil {
+	if _, err := tr.Trace(ctx, []reconcile.LogTarget{caller}, recordedTrace); err != nil {
 		t.Errorf("caller's own = %v", err)
 	}
 	// An ID that isn't one never reaches the store.
 	store.sqls = nil
 	for _, id := range []string{"", "x' OR '1'='1", strings.Repeat("0", 32), strings.ToUpper(recordedTrace)} {
-		if _, err := tr.Trace(ctx, caller, id); !errors.Is(err, reconcile.ErrTraceNotFound) {
+		if _, err := tr.Trace(ctx, []reconcile.LogTarget{caller}, id); !errors.Is(err, reconcile.ErrTraceNotFound) {
 			t.Errorf("Trace(%q) = %v", id, err)
 		}
 	}
@@ -343,7 +343,7 @@ func TestTrace_SpoofedAttributesRemoved(t *testing.T) {
 			sp["service_k8s_pod_name"] = "x"
 		}
 	}
-	got, err := tr.Trace(context.Background(), srv, recordedTrace)
+	got, err := tr.Trace(context.Background(), []reconcile.LogTarget{srv}, recordedTrace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestTrace_SpoofedAttributesRemoved(t *testing.T) {
 		}
 	}
 	store.extra = []map[string]any{other}
-	got, err = tr.Trace(context.Background(), srv, recordedTrace)
+	got, err = tr.Trace(context.Background(), []reconcile.LogTarget{srv}, recordedTrace)
 	if err != nil || len(got.Spans) != 1 || got.Spans[0].SpanID != "e56e3114e9141c71" {
 		t.Errorf("with the store answering another's span: %+v, %v", got, err)
 	}
@@ -389,7 +389,7 @@ func TestTrace_SpanCap(t *testing.T) {
 	for n := range reconcile.MaxTraceSpans + 5 {
 		store.spans = append(store.spans, span(traceID(0), start.Add(time.Duration(n)*time.Microsecond), time.Millisecond, false, n))
 	}
-	got, err := tr.Trace(context.Background(), srv, traceID(0))
+	got, err := tr.Trace(context.Background(), []reconcile.LogTarget{srv}, traceID(0))
 	if err != nil || len(got.Spans) != reconcile.MaxTraceSpans || !got.Truncated || got.Hidden != 0 {
 		t.Errorf("trace = %d spans, truncated %v, hidden %d, %v", len(got.Spans), got.Truncated, got.Hidden, err)
 	}
@@ -456,7 +456,7 @@ func TestTraces_NothingStoredYet(t *testing.T) {
 	if err != nil || len(page.Traces) != 0 || page.Traces == nil {
 		t.Errorf("no stream: %+v, %v; want an empty page", page, err)
 	}
-	if _, err := tr.Trace(context.Background(), srv, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
+	if _, err := tr.Trace(context.Background(), []reconcile.LogTarget{srv}, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
 		t.Errorf("no stream: Trace = %v", err)
 	}
 	c := resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: 0, WindowMinutes: 5}}
@@ -712,7 +712,7 @@ func TestTracing_StreamBeingDeleted(t *testing.T) {
 	if err != nil || len(page.Traces) != 0 {
 		t.Errorf("search while deleting = %+v, %v", page, err)
 	}
-	if _, err := tr.Trace(context.Background(), srv, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
+	if _, err := tr.Trace(context.Background(), []reconcile.LogTarget{srv}, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
 		t.Errorf("open while deleting = %v", err)
 	}
 
@@ -782,7 +782,7 @@ func TestTraces_NoIdentityColumnsYet(t *testing.T) {
 	if page, err := tr.SearchTraces(context.Background(), []reconcile.LogTarget{srv}, reconcile.TraceQuery{}); err != nil || len(page.Traces) != 0 {
 		t.Errorf("search = %+v, %v", page, err)
 	}
-	if _, err := tr.Trace(context.Background(), srv, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
+	if _, err := tr.Trace(context.Background(), []reconcile.LogTarget{srv}, recordedTrace); !errors.Is(err, reconcile.ErrTraceNotFound) {
 		t.Errorf("open = %v", err)
 	}
 	c := resource.AlertCondition{Type: resource.ConditionTypeTraceErrors, TraceErrors: &resource.TraceErrorsCondition{Above: 0, WindowMinutes: 5}}

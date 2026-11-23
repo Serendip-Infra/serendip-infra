@@ -553,6 +553,31 @@ func TestFlows_FromRecording(t *testing.T) {
 	if err != nil || len(page.Flows) != 1 || !strings.HasSuffix(store.sqls[2], ` AND verdict = 'DROPPED'`+flowOrder) {
 		t.Errorf("dropped only: %d flows, %v, sql %s", len(page.Flows), err, store.sqls[2])
 	}
+
+	// Given caller as a peer (spec 025 T009): named, but its own records
+	// aren't searched, so the SQL is srv's alone.
+	page, err = p.Flows(context.Background(), []reconcile.LogTarget{srv}, reconcile.FlowQuery{From: now.Add(-time.Hour), Limit: 500, Peers: []reconcile.LogTarget{caller}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(store.sqls[3], "cmp-34f31b6c12-env-8582189a02-97469aac") {
+		t.Errorf("a peer was searched: %s", store.sqls[3])
+	}
+	named = 0
+	for _, f := range page.Flows {
+		if f.Source == (reconcile.FlowEnd{Component: "caller", Environment: "dev"}) {
+			if f.Destination.Component != "srv" {
+				t.Errorf("a peer's flow not to srv: %+v", f)
+			}
+			named++
+		}
+	}
+	if named != 3 {
+		t.Errorf("caller named in %d flows to srv, want 3", named)
+	}
+	if _, err := p.Flows(context.Background(), []reconcile.LogTarget{srv}, reconcile.FlowQuery{Peers: make([]reconcile.LogTarget, reconcile.MaxLogTargets+1)}); !errors.Is(err, ErrTooManyTargets) {
+		t.Errorf("too many peers: %v", err)
+	}
 }
 
 func TestFlows_Paging(t *testing.T) {
