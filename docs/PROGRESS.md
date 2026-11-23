@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025: T001–T008 done, T009 next; spec 024 closed)
+Last updated: 2026-11-23 (spec 025: T001–T009 done, T010 next; spec 024 closed)
 
 ## Current phase
 
@@ -31,10 +31,32 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
    (the user, 2026-11-20: no tracking backlog). After each task: commit
    with `Closes #N`, push `spec-025`, close #N by hand with a comment
    naming the commit, tick it in epic #66's checklist and status line,
-   then check the board. #353–#360 closed (board Done); #66 says
-   "T001–T008 done; T009 next". T009–T015 are #361–#367. Before the spec
+   then check the board. #353–#361 closed (board Done); #66 says
+   "T001–T009 done; T010 next". T010–T015 are #362–#367. Before the spec
    PR merges, check that every task issue is closed (#65 closed early).
-3. **T009** (API), then T010–T015 in order.
+3. **T010** (CLI and MCP), then T011–T015 in order.
+   - **T009 done** (979c2ff, `Closes #361`; tasks.md "Done as"). The six
+     routes of the plan's table (`api/networking_handler.go`,
+     `api/traces_handler.go`, metrics' `requests`), catalogue entries
+     (`networking_get`, `deployments_flows`, `applications_traffic`,
+     `deployments_traces_list`, `deployments_traces_get`; CLI words
+     `networking show`, `flows`, `traffic`, `traces list|show`; all on
+     MCP, traces like stored logs) and rows in `docs/cli-and-mcp.md`.
+     Two contract changes, recorded as plan amendments (decisions 9 and
+     12): `FlowQuery.Peers` (the caller's other readable Deployments in
+     the Environment, named, never searched) and `TracingProvider.Trace`
+     taking every readable target at once (two queries, not two per
+     Deployment). `reconcile.ErrNotCollected` → 409. RP-087 (the
+     20-Deployment cap; RP-086's missing index row added). Both reviews
+     passed, findings fixed. Live on `t025`; `TestLiveTraces` opened
+     traces as all targets.
+   - **For T010:** the catalogue entries exist; T010 is the CLI's
+     output for them (`traces show` has two positional IDs: check the
+     CLI handles a second path parameter) and the MCP parity test.
+     Whether traces stay on MCP is T010's call (plan "API, CLI, MCP").
+     The tracing package can't be installed through `serendipd` until
+     T013 sets its requirements, so live trace reads through the API
+     answer 503 until then (provider-level live test works).
    - **T008 done** (`Closes #360`; tasks.md "Done as").
      `cmd/serendipd/networking.go` (detection, a facts cache on the
      re-ensure interval, the visibility pass with an audit row when it
@@ -45,11 +67,6 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      `sqlite.RecordExternalChange`; `cilium.Detect`. RP-076 updated.
      Live on `t025` (cilium) and `serendip-t018` (kindnet). Reviews
      passed, findings fixed.
-   - **For T009:** `kubeWiring.network.Facts()` is the cached
-     `NetworkFacts` for `GET /v1/networking` (`ok` false before the first
-     read); `kubeWiring.tracing` is the lazy `TracingProvider`. The
-     observability provider's `FlowReader`/`TrafficReader` are still
-     reached through `lazyObservability`, which doesn't forward them yet.
    - **T007 done** (`Closes #359`; tasks.md "Done as"). `tracing.go`
      (`TracingInstaller`, `OTLPEndpoint`, `TracingFingerprint`),
      `tracing_read.go` (`Tracing`, a `reconcile.TracingProvider`),
@@ -62,10 +79,6 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      `ZO_COMPACT_DATA_RETENTION_INTERVAL=60` on the logs store; removal
      waits 90 s). RP-086. contract-guardian passed; its and
      go-reviewer's findings fixed.
-   - **To T009 (decided 2026-11-23, plan decision 12):** a trace's
-     answer merges the spans of every Deployment in its Environment the
-     caller can read traces of, and says `partial: true` for the rest;
-     `Trace.Hidden`'s count is never returned.
    - **T006 done** (commit 908f447, `Closes #358`; tasks.md "Done as").
      `requests.go`, `traffic.go`, `flows.go`, the Lua filter; the
      `hubble` scrape job; `Installer.SetFlowSource`. All request series
@@ -73,9 +86,6 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
      RP-085; RP-054 extended. contract-guardian passed; its and
      go-reviewer's findings fixed (allow-listed flow ends, tie order,
      SQL bounds, one-to-one pairing, ...).
-   - **Carried to T009:** gate `/flows` on `NetworkFacts.Flows` ("not
-     collected", not an empty list); `/traffic` maps
-     `ErrRequestsUnavailable` to a clear answer, not a 500.
    - **Live-test gotcha:** in Git Bash, pass `OBS_LIVE_KUBECONFIG` as a
      Windows path (`cygpath -w`) and set
      `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`, or MSYS rewrites
@@ -105,25 +115,26 @@ as" notes and plan.md's "Checked live in T001"). Branch `spec-025`, off
        chose to do that later, with `t025` stopped (T012 at the latest).
        It and its `serendipd` are stopped.
    - **T004 done** (commit 3b981fc, `Closes #356`): `providers/networking/cilium`.
-   - T003 (`external`, a8ca27c). T002 left for T009: the API must answer clearly (not a 500)
-   when the observability provider lacks `FlowReader`/`TrafficReader`,
-   and clear a flow's unreadable end; for T015: custom `*/read` roles now
-   include traces, as they include logs.
+   - T003 (`external`, a8ca27c). T002 left for T015: custom `*/read`
+     roles now include traces, as they include logs.
 - **Spec 025 test bed** (`~/.serendip-t025/`):
   - kind cluster `t025` (Cilium 1.20.5 with `t001/cilium-values-v6.yaml`,
     kubeconfig `t001/kubeconfig`);
-  - `serendipd` (**spec-025 T008 build**, `bin/serendipd-t008.exe`) on
+  - `serendipd` (**spec-025 T009 build**, `bin/serendipd-t009.exe`) on
     `127.0.0.1:8095`, store `t025.db`, API key in `keys.env`
-    (`t001/api.sh` wraps curl). Started 2026-11-23 10:03 as a background
+    (`t001/api.sh` wraps curl; `source <(sed 's/ /\n/g' t001/ids.txt |
+    grep =)` loads the IDs). Started 2026-11-23 ~10:50 as a background
     run with SERENDIP_KUBECONFIG `t001/kubeconfig`, SERENDIP_DB_PATH
     `t025.db`, SERENDIP_ADDR `127.0.0.1:8095`,
     SERENDIP_OPENBAO_CREDENTIALS_PATH `openbao-init.json`,
-    SERENDIP_API_KEYS `<token from keys.env>:verifier`, and
-    **SERENDIP_REENSURE_INTERVAL `1m`** (for T008's live check; drop it
-    for measurements), logging to `serendipd.log`. It now passes the flow
+    SERENDIP_API_KEYS `<token from keys.env>:verifier` (the default
+    re-ensure interval now), logging to `serendipd.log`. It now passes the flow
     source, so Fluent Bit keeps its flow input. Stop it with
     `taskkill //PID <pid> //F` in Git Bash (the PID is in `netstat -ano`
     for :8095);
+  - T009's evidence in `~/.serendip-t025/t009/` (`live.txt` route
+    answers, `live-traces.txt`, `live.db` store copy, the first run's
+    log);
   - T008's evidence in `~/.serendip-t025/t008/` (logs, `audit-rows.txt`,
     and `t018/` with the serendip-t018 run's log and its store copy);
   - T006's evidence in `~/.serendip-t025/t006/` (`live.db` store copy,
