@@ -318,7 +318,44 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `go test ./api/... ./cmd/...` (criterion 6's and 10's unit
   tests named in `verification.md`); contract-guardian; go-reviewer.
 
-## T007: CLI and MCP [P]
+## T007: CLI and MCP [P] ✅
+
+**Done as** (2026-11-24):
+- **Catalogue (`api/catalog`):**
+  - A `Repeat` parameter flag (a list of strings; a repeatable CLI flag)
+    and an `InEdit` placement: parameters that edit the `InBody`
+    document through the operation's `edit` hook, on a deep copy. An
+    edit with no document is refused, never sent unedited.
+  - `secretenv.go`: `--secret-env NAME=SECRET_ID:KEY` (add or replace)
+    and `--remove-secret-env NAME` on `components create|update`
+    (`spec.secretEnv`) and `deployments create|update`
+    (`spec.overrides.secretEnv`). Both are CLI-only. The MCP tools take
+    the whole document, and their summaries give the list's shape.
+  - `secrets status` / `secrets_status` were already added in T006.
+    (The plan's singular `serendip secret status` is the plural
+    `secrets` group, like every other command.)
+- **CLI (`cmd/serendip`):** an update given only edit flags, with no
+  `--file`, reads the resource first. It drops `status`, edits the
+  document and sends it back with the `resourceVersion` it read, so a
+  change made in between is a conflict (exit 6). The flags' format is
+  checked before the read. `--dry-run` still reads.
+- **Docs:** `docs/cli-and-mcp.md` has a "Secret variables" section, and
+  its table carries the new summaries.
+- **Tests:** `api/catalog/secretenv_test.go` covers the edits, the edge
+  cases and the MCP schema. `cmd/serendip/secretenv_test.go` runs the
+  CLI end to end against the API, including the value-read 403 that
+  needs Secrets User.
+- **Reviews:** go-reviewer found no blockers. Fixed: a refused edit when
+  there's no document, a recursive deep copy (no float round trip),
+  flags checked before the read, `InEdit` rather than `Repeat` deciding
+  the read, the schema wrap order, a clearer message, non-nil args to
+  `printFailure`, comma-ok assertions, and no empty parent objects
+  added.
+- **Left as designed:** removing a name that isn't set is a usage error,
+  not a no-op, so a typo doesn't pass silently.
+- **Verified:** `go test ./...` passes, as do `go vet`, `gofmt` and
+  check-imports.
+
 
 - **Do:**
   - `--secret-env` and `--remove-secret-env` on component and

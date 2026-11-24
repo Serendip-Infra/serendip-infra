@@ -1,5 +1,7 @@
 package catalog
 
+import "strings"
+
 // kind is a resource kind the API serves, with its collection path.
 type kind struct {
 	Name, Path string
@@ -100,7 +102,7 @@ var searchParams = []Param{
 // MCP tools when the kind is one an AI writes in this spec.
 func crud(k kind) []Operation {
 	what := k.Name
-	return []Operation{
+	ops := []Operation{
 		{Name: underscore(k.Path) + "_list", CLI: []string{k.cli(), "list"}, MCP: k.AI,
 			Summary: "List " + k.Path + " the caller may read", Method: "GET", Path: "/v1/" + k.Path,
 			Params: []Param{ownerParam, labelsParam}, Hints: Hints{ReadOnly: true}},
@@ -118,6 +120,15 @@ func crud(k kind) []Operation {
 			Method:  "DELETE", Path: "/v1/" + k.Path + "/{id}",
 			Params: []Param{id(what), cascadeParam}, Hints: Hints{Destructive: true, Idempotent: true}},
 	}
+	if path, ok := secretEnvPath[k.Name]; ok {
+		for _, i := range []int{2, 3} {
+			ops[i].Params = append(ops[i].Params, secretEnvParams...)
+			ops[i].edit = secretEnvEdit(path)
+			ops[i].Summary += ". Secret variables are spec." + strings.Join(path, ".") +
+				`: [{"env": NAME, "secret": a Secret ID, "key": a key of its value}]; naming a Secret needs reading its value`
+		}
+	}
+	return ops
 }
 
 var operations = func() []Operation {
