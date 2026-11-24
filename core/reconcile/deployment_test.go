@@ -48,7 +48,7 @@ func (f *fakeDeployments) Releases(context.Context, resource.Component) ([]recon
 func (f *fakeDeployments) CreateRelease(context.Context, resource.Component) (reconcile.Release, error) {
 	return reconcile.Release{}, nil
 }
-func (f *fakeDeployments) Deploy(_ context.Context, _ resource.Application, comp resource.Component, _ resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+func (f *fakeDeployments) Deploy(_ context.Context, _ resource.Application, comp resource.Component, _ resource.Environment, d resource.Deployment, _ string) (reconcile.DeploymentObservation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deployed = append(f.deployed, d.Metadata.ID)

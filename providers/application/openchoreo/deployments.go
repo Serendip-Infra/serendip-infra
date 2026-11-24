@@ -232,7 +232,7 @@ type workloadOverrides struct {
 // promotion and a rollback are the same call. When the Deployment is
 // Ready, the Component's legacy binding from before spec 020 is removed:
 // the Deployment has taken over what it ran.
-func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment, secretEnvVersion string) (reconcile.DeploymentObservation, error) {
 	project := projectName(app.Metadata.ID)
 	name := componentName(comp.Metadata.ID)
 	// A pinned release must exist and be this Component's: checked before

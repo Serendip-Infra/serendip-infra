@@ -203,7 +203,7 @@ func TestReleaseNameIsItsContent(t *testing.T) {
 
 func deploy(t *testing.T, p *Provider, d resource.Deployment) reconcile.DeploymentObservation {
 	t.Helper()
-	obs, err := p.Deploy(context.Background(), testApp(), testComp(webSpec), testEnv(), d)
+	obs, err := p.Deploy(context.Background(), testApp(), testComp(webSpec), testEnv(), d, "")
 	if err != nil {
 		t.Fatalf("Deploy() = %v", err)
 	}
@@ -332,7 +332,7 @@ func TestDeploy_WaitingForComponentsItCalls(t *testing.T) {
 	run := func(api *fakeAPI) reconcile.DeploymentObservation {
 		t.Helper()
 		api.put(bindingPath(), kubernetes.Object{Metadata: kubernetes.ObjectMeta{Name: deploymentBindingName(testCompID, testEnvID), Generation: 1}, Status: pending})
-		obs, err := NewProvider(newTestKubeClient(t, api.handler(t)), testGateway).Deploy(context.Background(), testApp(), comp, testEnv(), testDeployment(resource.DeploymentSpec{}))
+		obs, err := NewProvider(newTestKubeClient(t, api.handler(t)), testGateway).Deploy(context.Background(), testApp(), comp, testEnv(), testDeployment(resource.DeploymentSpec{}), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -417,7 +417,7 @@ func TestDeploy_ReadyReportsEndpointsAndRemovesTheLegacyBinding(t *testing.T) {
 		api.put(legacy, kubernetes.Object{Metadata: kubernetes.ObjectMeta{Name: releaseBindingName(testCompID)}})
 		p := NewProvider(newTestKubeClient(t, api.handler(t)), testGateway)
 
-		obs, err := p.Deploy(context.Background(), testApp(), testComp(exposedSpec), testEnv(), testDeployment(resource.DeploymentSpec{}))
+		obs, err := p.Deploy(context.Background(), testApp(), testComp(exposedSpec), testEnv(), testDeployment(resource.DeploymentSpec{}), "")
 		if err != nil {
 			t.Fatal(err)
 		}

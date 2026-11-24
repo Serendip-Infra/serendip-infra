@@ -71,7 +71,38 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `go test ./core/...`; `bash .claude/scripts/check-imports.sh`;
   contract-guardian.
 
-## T003: Resolution and delivery in the reconciler
+## T003: Resolution and delivery in the reconciler ✅
+
+**Done as** (2026-11-24):
+- **`core/reconcile/secretenv.go`:**
+  - `SecretEnvProvider` (optional, with `ErrSecretEnvPending` and
+    `ErrSecretEnvUnsupported`);
+  - `UseSecrets` on the Deployment reconciler;
+  - `resolveSecretEnv`: values are read only on a version mismatch; the
+    reasons of decision 11; a False result or a not-ready Secrets
+    capability leaves the platform as it was;
+  - `EnqueueSecretUsers`.
+- **`Deploy` gained `secretEnvVersion`:** the version goes in the same
+  ReleaseBinding apply, so there's one writer.
+- **`SecretReconciler.OnValueWritten`.**
+- **`lazy.go` forwards** the two calls.
+- **Reviews:** contract-guardian and go-reviewer both caught one bug: a
+  failed pass blanked `status.secretEnvVersion`, which would have
+  stranded values on the platform when the last variable went. Fixed
+  with a `held` version and a "resolved this pass" flag, so a removal
+  the platform can't do yet is retried. Regression tests are in. Also
+  fixed:
+  - the lazy handle now answers `ErrSecretEnvUnsupported` (Unsupported,
+    not a retried error);
+  - provider errors are wrapped with the Deployment ID;
+  - decoded values are cleared.
+- **Left as designed:**
+  - Not-delivered reasons wait for the value-write hook or resync,
+    rather than requeueing early.
+  - Ready goes False while secret variables can't be delivered (spec
+    item 5).
+  - The one platform GET per pass goes in the risk register (T011).
+- **Wiring** `UseSecrets` and `OnValueWritten` in `serendipd` is T006's.
 
 - **Do:**
   - Extend `DeploymentProvider` with `EnsureSecretEnv(ctx, comp, env, d,

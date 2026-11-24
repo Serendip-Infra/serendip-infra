@@ -72,6 +72,18 @@ type SecretsProvider interface {
 type SecretReconciler struct {
 	secrets  store.Store[resource.SecretSpec, resource.SecretStatus]
 	provider SecretsProvider
+	// written, when set, is told each Secret whose value was just written
+	// (OnValueWritten; spec 026).
+	written func(ctx context.Context, id string)
+}
+
+// OnValueWritten sets f to be called after each successful value write,
+// with the Secret's ID: how a rotation reaches the Deployments using the
+// value without waiting for resync (EnqueueSecretUsers). f must be quick.
+// Set it once, at wiring time, before the reconciler is used.
+func (r *SecretReconciler) OnValueWritten(f func(ctx context.Context, id string)) *SecretReconciler {
+	r.written = f
+	return r
 }
 
 func NewSecretReconciler(
@@ -171,7 +183,11 @@ func (r *SecretReconciler) WriteValue(ctx context.Context, id string, value map[
 		LastTransitionTime: now,
 	})
 
-	return r.secrets.Update(ctx, sec)
+	updated, err := r.secrets.Update(ctx, sec)
+	if err == nil && r.written != nil {
+		r.written(ctx, id)
+	}
+	return updated, err
 }
 
 // ReadValue reads the value currently at id's Path. No store write --

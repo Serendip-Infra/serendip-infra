@@ -78,7 +78,7 @@ func (f *fakePlatform020) CreateRelease(context.Context, resource.Component) (re
 
 // Deploy runs d's release, or the latest when it names none, with d's own
 // overrides, the way the platform would.
-func (f *fakePlatform020) Deploy(_ context.Context, _ resource.Application, _ resource.Component, env resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+func (f *fakePlatform020) Deploy(_ context.Context, _ resource.Application, _ resource.Component, env resource.Environment, d resource.Deployment, _ string) (reconcile.DeploymentObservation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if d.Spec.Release == "" {
