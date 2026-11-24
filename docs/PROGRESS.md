@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T009 and T012 done, T010 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T010 and T012 done, T011 next)
 
 ## Current phase
 
@@ -21,19 +21,29 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T009 and T012 done, T010 
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added). #369–#377
+- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added). #369–#378
   and #380 are closed with their commits, and #67's checklist has
-  T001–T009 and T012 ticked.
+  T001–T010 and T012 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T010, Lightweight check** (criterion 12: `serendipd` idle RSS
-with a Deployment using secret variables, A/B against spec 025's baseline
-on the same host, and no new pods), then T011.
-- T010 is a bench run. Long runs go from the user's own Git Bash,
-  because the memory reaper kills background shells. Start the
-  keep-awake beside it.
+**Next: T011, Docs and close-out** (tasks.md T011). Then the spec's
+PR: branch `spec-026` → `main`, `Closes #67`, after checking every task
+issue is closed. The user reviews the whole spec at the end.
+- **T011's operations notes should also say:** a downgrade to a pre-026
+  build drops secret variables from running pods (the type loses
+  `serendipSecretEnv`, so they roll) until the upgrade returns (T010).
+- **T010, done** (`c849380`; criterion 12 in `verification.md`). It was
+  a same-host A/B on `serendip-t018`: `main`'s `serendipd` against
+  `spec-026`'s, run A, B, A, B on copies of the t026 store.
+  - B − A was −0.1 MiB and +1.0 MiB.
+  - The working set read 83 MiB in pair 1 and 35 MiB in pair 2, for both
+    binaries (the Windows effect).
+  - No new pods ran.
+  - The evidence is in
+    `profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`.
+  - It ran from Claude Code's shell (about 22 min), and wasn't reaped.
 - **T011's RPs start at RP-096.** T009 used RP-094 and RP-095.
 
 - **T001–T008, done:** tasks.md's "Done as" entries have the detail
