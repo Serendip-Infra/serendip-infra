@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T007 done, T008 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T008 done, T009 next)
 
 ## Current phase
 
@@ -21,43 +21,34 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T007 done, T008 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#375 are
-  closed with their commits (#375 too), and #67's checklist has T001–T007 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#376 are
+  closed with their commits, and #67's checklist has T001–T008 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T008, Console** (`tasks.md`), then T009 → T011.
+**Next: T009, Live verification** (`tasks.md`), then T010 → T011.
 
-- **T006, done (794966a; tasks.md's "Done as" has the detail):**
-  - `api/secretenv_check.go` checks newly named entries: value read
-    (403, audited), then existence and Project-or-above (422).
-  - A Component update is checked against its Deployments' overrides
-    (409).
-  - One lock covers Component and Deployment writes.
-  - `GET /v1/secrets/status` exists, and so does the catalogue entry
-    `secrets_status` (`serendip secrets status`), already in
-    `docs/cli-and-mcp.md`.
-  - serendipd wires `UseSecrets`, `OnValueWritten` →
-    `EnqueueSecretUsers`, and `WithSecretEnvChanged` →
-    `enqueueComponentDeployments`.
-- **T007, done (4cc5434; tasks.md's "Done as" has the detail):**
-  - The catalogue has a `Repeat` param flag and an `InEdit` placement
-    (params that edit the `InBody` document through an `edit` hook).
-  - `--secret-env NAME=SECRET_ID:KEY` and `--remove-secret-env NAME`
-    work on components and deployments create/update. They are CLI-only.
-    An update without `--file` reads, edits and writes back with the read
-    `resourceVersion`.
-  - MCP tools take the whole document; their summaries give the shape.
-  - `docs/cli-and-mcp.md` has a "Secret variables" section.
-- **T008 needs:**
-  - the Component page's "Secret variables" table and add form (pick a
-    readable Secret in scope, then type the key);
-  - the same on the Deployment overrides form ("for this environment");
-  - the `SecretEnvDelivered` condition shown;
-  - the encryption banner on the Secrets page (`GET /v1/secrets/status`);
-  - no value fetched anywhere;
-  - check: `npm test` and `npm run build` in `ui/`.
+- **T001–T007, done:** core, the reconciler, the provider (T004, not yet
+  live), encryption at rest, the API (`api/secretenv_check.go`, `GET
+  /v1/secrets/status`), and the CLI and MCP (`--secret-env`,
+  `--remove-secret-env`, `secrets status`). tasks.md's "Done as" entries
+  have the detail.
+- **T008, done (tasks.md's "Done as" has the detail):**
+  - `ui/src/lib/secretEnv.ts` holds the rules. `ui/src/screens/SecretEnv.tsx`
+    has the editor, the read-only table and the delivery status.
+  - The Component edit form and overview show secret variables. The
+    Deployment Configure form has "Secret variables for <env>". The
+    Deploy tab shows delivery from `SecretEnvDelivered`. The Secrets
+    page has the encryption banner (none on a 403).
+  - The picker offers the Secrets the caller can list, minus those
+    known to be in another Project. The server decides value-read and
+    scope.
+  - **Fixed on the way:** the Component edit form used to drop
+    `spec.dependencies` on save. Check that live in T009 too.
+- **Before T009:** run `corepack pnpm build` in `ui/` (done once
+  already; `dist` isn't tracked), then rebuild `serendipd` so it embeds
+  the new console. T009 checks the console live.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
