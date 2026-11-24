@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T003 done, T004 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T004 done, T005 next)
 
 ## Current phase
 
@@ -21,14 +21,13 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T003 done, T004 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#371 are
-  closed with their commits, and #67's checklist has T001–T003 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#372 are
+  closed with their commits, and #67's checklist has T001–T004 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T004, the OpenChoreo provider** (`tasks.md`), then T005 →
-T011.
+**Next: T005, encryption at rest** (`tasks.md`), then T006 → T011.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
@@ -54,21 +53,19 @@ T011.
   - The optional `SecretEnvProvider`, with `ErrSecretEnvPending` and
     `ErrSecretEnvUnsupported`.
   - `SecretReconciler.OnValueWritten` and `EnqueueSecretUsers`.
-- **T004 must:**
-  - change `componentTypeSpec()` in `providers/application/openchoreo/defaults.go`
-    (schema property, pod annotation, and the `envFrom` CEL **wrapped in
-    `dyn()`**, as T001 found);
-  - implement `SecretEnvVersion` and `WriteSecretEnv`, with the
-    namespace from `ProjectReleaseBinding.status.namespace` (else
-    `ErrSecretEnvPending`) and the version as an annotation on the
-    cluster Secret;
-  - make `Deploy` set the property in the same binding apply;
-  - report `ReasonNeedsNewRelease` when the running release's type
-    snapshot lacks `serendipSecretEnv` (T001: old releases silently
-    ignore it);
-  - delete the Secret in `Undeploy`;
-  - strip the reserved property from reported schemas and refuse it in
-    user `config`.
+- **Provider, done (T004, `providers/application/openchoreo/secretenv.go`;
+  tasks.md's "Done as").**
+  - `SecretEnvVersion` and `WriteSecretEnv` work on `<cmp>-secret-env`.
+    The namespace comes from `ProjectReleaseBinding.status.namespace`,
+    and pending covers both a missing namespace and an apply 404.
+  - `Deploy` sets `serendipSecretEnv` only when there's a version. It
+    returns `NeedsNewRelease` before the binding apply when the release's
+    type lacks the property.
+  - `Undeploy` deletes the Secret first.
+  - `ConfigSchemas` strips the property.
+  - **Not yet live:** the real template change, checked first in T009.
+    Every running Deployment rolls once on upgrade, because the type is
+    in the release hash (decision 12). Confirm that in T009 too.
 - **T006 must:**
   - call `ValidateComponentSecretEnv` and `ValidateDeploymentSecretEnv`
     in the handlers;
@@ -83,7 +80,12 @@ T011.
   - references aren't release-bound;
   - delivery reads aren't audited;
   - a rotation rolls every user;
-  - one platform GET per Deployment per pass;
+  - two platform GETs per Deployment with secret variables per pass
+    (the project binding and the Secret);
+  - an apply 404 reads as pending for good if the path were ever wrong;
+  - clearing value buffers is best effort;
+  - every Deployment rolls once on the upgrade (a new type, so a new
+    release);
   - a clash with platform-injected variables (spec 025's tracing ones).
 
 ### Test beds
