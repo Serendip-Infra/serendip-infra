@@ -457,7 +457,17 @@ the agent's flags (`encryptionAtRest: on`). The evidence is in
 - **Verify:** every criterion 1–11 recorded PASS (or a fix and re-check)
   with its evidence.
 
-## T010: Lightweight check
+## T010: Lightweight check ✅
+
+**Done as** (2026-11-24): a same-host A/B on `serendip-t018`, `main`
+against `spec-026`, A, B, A, B, on copies of the T009 store with a
+Deployment using a secret variable. B − A came out at −0.1 MiB and
++1.0 MiB. The same pods ran throughout, apart from rolled workload pods.
+Evidence is in
+`profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`, and the
+result is criterion 12 in `verification.md`. For T011: a downgrade to a
+pre-026 build drops secret variables from running pods until the
+upgrade returns, so `operations.md` should say that.
 
 - **Do:** criterion 12. `serendipd` idle RSS with a Deployment using
   secret variables, against spec 025's baseline on the same host (A/B,

@@ -228,7 +228,21 @@ it reports `NeedsNewRelease` (T004).
     (never `Init`), the 10 s limit, an unreadable credentials file, and
     no unseal configured. (`c13.txt`)
 
-Criterion 12 is T010's.
+12. **Lightweight (T010). PASS.** A same-host A/B on `serendip-t018`,
+    2026-11-24 15:28–15:51. `serendipd` from `main` (spec 025, A) and
+    from `spec-026` (B), run as A, B, A, B, each on a fresh copy of this
+    store, with `t026-reseal`'s Deployment using a secret variable, and
+    read 4.5 min after start:
+    - pair 1: A 83.2 MiB, B 83.1 MiB (−0.1);
+    - pair 2: A 35.1 MiB, B 36.1 MiB (+1.0).
+
+    Both pairs are within 2 MiB. The 83/35 split hit both binaries
+    alike: it's the Windows working-set effect from specs 024 and 025.
+    The same 39 pods ran in every listing, apart from the 4 workload pods
+    that rolled. Switching to `main` rolls the Deployments following the
+    latest release and drops their secret variables until `spec-026`
+    comes back (decision 12, both ways). The Secret itself was never
+    rewritten. (`profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`)
 
 ## Findings
 
