@@ -114,6 +114,8 @@ purpose), **Closed** (fixed).
 | RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
 | RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
 | RP-093 | Hubble's request metrics carry source and destination pods, so their series grow with pod pairs; not counted at the bench | Footprint (Prometheus memory, disk) | Watch | Spec 025 plan; T015 |
+| RP-094 | OpenBao stays sealed after its pod restarts, until `serendipd` restarts: Secret values can't be read or written, so secret variables can't change | Availability (secrets, secret variables) | Open | Spec 026 T009 |
+| RP-095 | Deleting a Component leaves its Deployments behind, waiting for it | Behaviour (clean-up) | Open | Spec 026 T009 |
 
 ---
 
@@ -2430,3 +2432,47 @@ The text below is the T013 record.
   dozen talking pods: count `hubble_http_*` head series, and consider
   workload instead of pod labels (the reads would join by the Deployment
   name, as flows do) or fewer histogram buckets (RP-085).
+
+## RP-094 — OpenBao stays sealed after its pod restarts
+
+- **Kind:** availability (secrets, secret variables). **Status:** Open,
+  2026-11-24. **Found:** spec 026 T009 (criterion 5's capability-down
+  check); older than spec 026.
+- **What:** `serendipd` unseals OpenBao once, in the Secrets setup at
+  start (`providers/secrets/openbao/bootstrap.go`). If the OpenBao pod
+  restarts later (eviction, OOM, a node restart without `serendipd`'s,
+  an upgrade), it comes back sealed and stays that way until `serendipd`
+  restarts. Meanwhile value reads and writes fail. A value write answers
+  503 "capability not ready". A Deployment whose secret variables change
+  can't be given them, so it reports `ProviderNotReady`, and running pods
+  keep what they had. Secret variables that don't change aren't affected,
+  because values are read only when the version changes.
+- **What T009 fixed on the way:** an unreachable or sealed OpenBao used
+  to fail as an internal error (500, `SecretReadFailed`). It now counts
+  as the capability not being ready (`openbao.ErrUnavailable` maps to
+  `ErrProviderNotReady`). `GET /v1/secrets/status` reports `ready:
+  false` from OpenBao's health instead of from setup alone.
+- **Why open:** re-unsealing on demand would use the unseal key
+  `serendipd` already keeps (ADR 0009), but it's a change to how that key
+  is used, so it waits for a decision.
+- **Revisit:** before v1 GA, or sooner if a real node (the L470) sees an
+  OpenBao restart. The options are to re-run the unseal when the health
+  check says sealed, or auto-unseal (ADR 0009's later route).
+
+## RP-095 — Deleting a Component leaves its Deployments behind
+
+- **Kind:** behaviour (clean-up). **Status:** Open, 2026-11-24.
+  **Found:** spec 026 T009 (criterion 7); older than spec 026.
+- **What:** `DELETE /v1/components/{id}` succeeds while Deployments of
+  the Component exist, with no 409 and no `cascade`. The platform's own
+  clean-up removes the workloads, but the Deployment records stay,
+  `Ready=False` with `WaitingForComponent` ("Component … not found"),
+  until someone deletes them. An Application delete does ask for
+  `cascade=true`.
+- **What T009 fixed:** the one leak this caused. The cluster Secret of
+  secret variables isn't the platform's, so it was left in the
+  Environment's namespace. `DeleteComponent` now deletes it first, in
+  every Environment the Component is bound to.
+- **Revisit:** with the next spec that touches Deployments: either answer
+  409 naming the Deployments (as Secrets do), or delete them by cascade
+  as Applications do.

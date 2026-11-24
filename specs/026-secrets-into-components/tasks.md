@@ -426,7 +426,28 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `npm test` and `npm run build` in `ui/`; the console checked
   live in T009.
 
-## T009: Live verification
+## T009: Live verification ✅
+
+**Done as** (2026-11-24): `verification.md`. Criteria 1–11 PASS on
+`serendip-t018`, and criterion 8 also on a `rancher/k3s` container with
+the agent's flags (`encryptionAtRest: on`). The evidence is in
+`~/.serendip-t018/t026/evidence/`.
+- **Fixed:**
+  - **F1:** the no-value and not-found messages now name the variable and
+    key.
+  - **F2:** an unreachable or sealed OpenBao is `ErrProviderNotReady`
+    (`openbao.ErrUnavailable`), not a 500 or `SecretReadFailed`.
+  - **F3:** `/v1/secrets/status`'s `ready` follows OpenBao's health, and
+    the shared "not ready" message covers outages.
+  - **F4:** `DeleteComponent` deletes the Component's `<cmp>-secret-env`
+    in every Environment first.
+- **Recorded:** RP-094 (OpenBao stays sealed after its pod restarts,
+  until `serendipd` restarts) and RP-095 (a Component delete leaves its
+  Deployments behind). Both are older than spec 026. T011's RPs start at
+  RP-096.
+- **Decision 12 confirmed:** on the upgrade, the three Deployments that
+  follow the latest release rolled once. The one naming its release
+  didn't.
 
 - **Do:** criteria 1–11 on `t026` (kind) and, for criterion 8, an agent
   K3s install in a `rancher/k3s` container. Search for the value

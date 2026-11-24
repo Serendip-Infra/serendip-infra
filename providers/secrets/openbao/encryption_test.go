@@ -3,6 +3,7 @@ package openbao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -77,5 +78,32 @@ func TestEncryptionAtRest_NoCluster(t *testing.T) {
 	got, err := NewProvider(nil).EncryptionAtRest(context.Background())
 	if err != nil || got.State != reconcile.EncryptionAtRestUnknown || got.Reason != "NotReported" {
 		t.Errorf("EncryptionAtRest() = %+v, %v; want unknown/NotReported", got, err)
+	}
+}
+
+// GET /v1/secrets/status's ready follows OpenBao: sealed, uninitialized or
+// gone is not ready, before the cluster is asked (spec 026 T009 F3).
+func TestEncryptionAtRest_OpenBaoNotUp(t *testing.T) {
+	for name, h := range map[string]http.HandlerFunc{
+		"sealed": func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(HealthStatus{Initialized: true, Sealed: true})
+		},
+		"uninitialized": func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(HealthStatus{})
+		},
+		"no pod": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := newTestServerClient(t, h)
+			if _, err := NewProvider(client).EncryptionAtRest(context.Background()); !errors.Is(err, reconcile.ErrProviderNotReady) {
+				t.Fatalf("err = %v, want ErrProviderNotReady", err)
+			}
+		})
+	}
+	up, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(HealthStatus{Initialized: true})
+	})
+	if got, err := NewProvider(up).EncryptionAtRest(context.Background()); err != nil || got.State != reconcile.EncryptionAtRestUnknown {
+		t.Fatalf("unsealed, no cluster: %+v, %v", got, err)
 	}
 }

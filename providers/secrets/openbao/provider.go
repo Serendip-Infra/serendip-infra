@@ -3,6 +3,7 @@ package openbao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
@@ -58,19 +59,36 @@ func (p *Provider) Exists(ctx context.Context, sec resource.Secret) (bool, error
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, notReady(err)
 	}
 	return true, nil
 }
 
 func (p *Provider) WriteValue(ctx context.Context, sec resource.Secret, value map[string]any) error {
-	return p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value)
+	return notReady(p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value))
 }
 
 func (p *Provider) ReadValue(ctx context.Context, sec resource.Secret) (map[string]any, error) {
-	return p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+	v, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+	return v, notReady(err)
 }
 
 func (p *Provider) Delete(ctx context.Context, sec resource.Secret) error {
-	return p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec))
+	return notReady(p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec)))
 }
+
+// notReady reports OpenBao being unavailable as the capability not being
+// ready, so callers say so (a 503, a "not ready" condition) instead of
+// failing: it passes once OpenBao is back (spec 026 T009 F2). The cause
+// isn't kept: a 503's detail is the error's text, and OpenBao's or the
+// API server's answer names cluster internals.
+func notReady(err error) error {
+	if errors.Is(err, ErrUnavailable) {
+		return errSecretsStoreUnavailable
+	}
+	return err
+}
+
+// errSecretsStoreUnavailable is what callers see while OpenBao is
+// unreachable, sealed or uninitialized.
+var errSecretsStoreUnavailable = fmt.Errorf("%w: the secrets store isn't answering, or is sealed", reconcile.ErrProviderNotReady)

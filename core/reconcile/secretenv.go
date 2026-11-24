@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/graph"
@@ -143,13 +144,13 @@ func (r *DeploymentReconciler) resolveSecretEnv(ctx context.Context, comp resour
 	for _, id := range resource.SecretEnvSecretIDs(merged) {
 		sec, err := r.secrets.Get(ctx, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return keep(false, secretEnvCond(resource.ConditionFalse, ReasonSecretNotFound, fmt.Sprintf("Secret %s not found", id))), nil
+			return keep(false, secretEnvCond(resource.ConditionFalse, ReasonSecretNotFound, fmt.Sprintf("Secret %s not found (%s)", id, secretEnvUses(merged, id)))), nil
 		}
 		if err != nil {
 			return secretEnvResult{}, err
 		}
 		if sec.Status.LastSyncedAt == nil {
-			return keep(false, secretEnvCond(resource.ConditionFalse, ReasonSecretHasNoValue, fmt.Sprintf("Secret %s has no value yet", id))), nil
+			return keep(false, secretEnvCond(resource.ConditionFalse, ReasonSecretHasNoValue, fmt.Sprintf("Secret %s has no value yet (%s)", id, secretEnvUses(merged, id)))), nil
 		}
 		secs[id], written[id] = sec, *sec.Status.LastSyncedAt
 	}
@@ -283,4 +284,17 @@ func EnqueueSecretUsers(ctx context.Context, g DependentsLister, enqueue func(gr
 			}
 		}
 	}
+}
+
+// secretEnvUses names the variables and keys that use one Secret, for a
+// condition's message: names only, never a value. For example
+// `for DB_PASSWORD, key "password"`.
+func secretEnvUses(list []resource.ComponentSecretEnv, secret string) string {
+	var uses []string
+	for _, e := range list {
+		if e.Secret == secret {
+			uses = append(uses, fmt.Sprintf("%s, key %q", e.Env, e.Key))
+		}
+	}
+	return "for " + strings.Join(uses, "; ")
 }

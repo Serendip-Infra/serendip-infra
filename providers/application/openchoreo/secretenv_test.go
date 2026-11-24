@@ -219,6 +219,40 @@ func TestUndeploy_RemovesTheSecretEnv(t *testing.T) {
 	}
 }
 
+// Deleting a Component deletes its secret variables first: the platform's
+// own clean-up doesn't know them (T009 found them left behind).
+func TestDeleteComponent_RemovesTheSecretEnv(t *testing.T) {
+	api := newFakeAPI().withComponentType().withDataPlaneNamespace()
+	p := NewProvider(newTestKubeClient(t, api.handler(t)), testGateway)
+	ctx, comp, d := context.Background(), testComp(webSpec), testDeployment(resource.DeploymentSpec{})
+	if _, err := p.Deploy(ctx, testApp(), comp, testEnv(), d, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WriteSecretEnv(ctx, comp, testEnv(), d, map[string]string{"A": "x"}, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	compPath := namespacedPath("components") + "/" + componentName(testCompID)
+	api.put(compPath, kubernetes.Object{Metadata: kubernetes.ObjectMeta{Name: componentName(testCompID)}})
+	// A failing delete stops before the Component goes.
+	api.failPath = secretsPath(testDataPlaneNS)
+	if err := p.DeleteComponent(ctx, comp); err == nil {
+		t.Fatal("DeleteComponent succeeded with the Secret undeletable")
+	}
+	if _, ok := api.objects[compPath]; !ok {
+		t.Fatal("the Component went before its Secret")
+	}
+	api.failPath = ""
+	if err := p.DeleteComponent(ctx, comp); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := api.objects[secretEnvPath()]; ok {
+		t.Error("the Secret is still there")
+	}
+	if _, ok := api.objects[compPath]; ok {
+		t.Error("the Component is still there")
+	}
+}
+
 // The reserved property is in the installed type, and the template uses
 // it, but the schema reported (and so validated against) doesn't have it.
 func TestSecretEnv_ReservedInTheSchema(t *testing.T) {

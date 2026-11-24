@@ -42,7 +42,20 @@ var _ reconcile.EncryptionReporter = (*Provider)(nil)
 // start; it doesn't prove every existing Secret was re-encrypted, which
 // matters only for a cluster switched on after it held Secrets (spec 026
 // leaves existing clusters alone).
+//
+// It asks OpenBao's health first: sealed, uninitialized or unreachable is
+// the capability not being ready (spec 026 T009 F3), so GET
+// /v1/secrets/status's ready follows OpenBao, not only serendipd's start.
 func (p *Provider) EncryptionAtRest(ctx context.Context) (reconcile.EncryptionReport, error) {
+	if p.client != nil {
+		h, err := p.client.Health(ctx)
+		if err != nil {
+			return reconcile.EncryptionReport{}, notReady(err)
+		}
+		if h.Sealed || !h.Initialized {
+			return reconcile.EncryptionReport{}, errSecretsStoreUnavailable
+		}
+	}
 	if p.cluster == nil {
 		return reconcile.EncryptionNotReported(), nil
 	}

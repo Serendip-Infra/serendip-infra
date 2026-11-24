@@ -3,9 +3,12 @@ package openbao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
 )
 
@@ -133,5 +136,55 @@ func TestProvider_IDCantForgeAKey(t *testing.T) {
 	forged.Metadata.ID = "sec-1/db"
 	if storageKey(victim) == storageKey(forged) {
 		t.Fatalf("a slash in the ID forged the key %q", storageKey(victim))
+	}
+}
+
+// A sealed or missing OpenBao (503) and an unreachable one are the
+// capability not being ready, not a failure (spec 026 T009 F2).
+func TestProvider_Unavailable_IsProviderNotReady(t *testing.T) {
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"errors":["Vault is sealed"]}`))
+	})
+	p := NewProvider(client)
+	sec := newTestSecret("myapp/db-password")
+	_, readErr := p.ReadValue(context.Background(), sec)
+	_, existsErr := p.Exists(context.Background(), sec)
+	for name, err := range map[string]error{
+		"read":   readErr,
+		"write":  p.WriteValue(context.Background(), sec, map[string]any{"k": "v"}),
+		"exists": existsErr,
+		"delete": p.Delete(context.Background(), sec),
+	} {
+		if !errors.Is(err, reconcile.ErrProviderNotReady) {
+			t.Errorf("%s: %v, want ErrProviderNotReady", name, err)
+		}
+	}
+
+	down := NewClient("http://127.0.0.1:1", http.DefaultClient)
+	if _, err := NewProvider(down).ReadValue(context.Background(), sec); !errors.Is(err, reconcile.ErrProviderNotReady) {
+		t.Errorf("unreachable: %v, want ErrProviderNotReady", err)
+	}
+}
+
+func TestProvider_OtherStatus_IsNotProviderNotReady(t *testing.T) {
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+	if _, err := NewProvider(client).ReadValue(context.Background(), newTestSecret("p")); err == nil || errors.Is(err, reconcile.ErrProviderNotReady) {
+		t.Errorf("403: %v, want a plain error", err)
+	}
+}
+
+// A not-ready error carries no answer text: a 503's detail is the error's
+// text (T009 review).
+func TestProvider_Unavailable_HidesTheAnswer(t *testing.T) {
+	client, _ := newTestServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"message":"no endpoints available for service \"openbao\""}`))
+	})
+	_, err := NewProvider(client).ReadValue(context.Background(), newTestSecret("p"))
+	if !errors.Is(err, reconcile.ErrProviderNotReady) || strings.Contains(err.Error(), "endpoints") || strings.Contains(err.Error(), "openbao") {
+		t.Fatalf("err = %q", err)
 	}
 }

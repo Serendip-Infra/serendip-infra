@@ -231,6 +231,9 @@ Promotion copies no overrides, so it needs nothing new.
   deleted on the next pass, and the ReleaseBinding's property emptied.
 - Deleting the namespace also removes it, which covers a whole
   Application.
+- Deleting a Component deletes it in every Environment the Component is
+  bound to, before the Component goes (added in T009: the platform's own
+  clean-up of a Component doesn't know this Secret).
 - Each step is idempotent, because not-found counts as done.
 
 ### 9. Encryption at rest in the cluster

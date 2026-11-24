@@ -288,6 +288,11 @@ func TestSecretEnv_NotDelivered(t *testing.T) {
 			if strings.Contains(c.Message, "leak") || d.Status.SecretEnvVersion != "" {
 				t.Fatalf("message %q / version %q", c.Message, d.Status.SecretEnvVersion)
 			}
+			// The Secret's problems name what uses it (T009 F1).
+			if (tt.reason == reconcile.ReasonSecretHasNoValue || tt.reason == reconcile.ReasonSecretNotFound) &&
+				!strings.Contains(c.Message, `for A, key "k"`) {
+				t.Fatalf("message %q doesn't name the variable and key", c.Message)
+			}
 		})
 	}
 }

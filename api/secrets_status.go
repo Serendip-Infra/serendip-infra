@@ -51,7 +51,7 @@ func (h secretsStatusHandler) status(ctx context.Context) secretsStatus {
 	case errors.Is(err, reconcile.ErrProviderNotReady):
 		return secretsStatus{EncryptionReport: reconcile.EncryptionReport{
 			State: reconcile.EncryptionAtRestUnknown, Reason: "NotReady",
-			Message: "the Secrets capability isn't ready yet",
+			Message: "the Secrets capability isn't ready: still being set up, or unavailable",
 		}}
 	case err != nil:
 		// The capability is up and only the cluster question failed, so
