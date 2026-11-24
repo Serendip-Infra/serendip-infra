@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T004 done, T005 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T005 done, T006 next)
 
 ## Current phase
 
@@ -21,13 +21,22 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T004 done, T005 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#372 are
-  closed with their commits, and #67's checklist has T001–T004 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#373 are
+  closed with their commits, and #67's checklist has T001–T005 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T005, encryption at rest** (`tasks.md`), then T006 → T011.
+**Next: T006, the API** (`tasks.md`), then T007 → T011.
+
+- **T005, done (6417d36):**
+  - The agent sets `--secrets-encryption` on both CNIs.
+  - `reconcile.EncryptionReporter` is optional on the secrets provider.
+  - `openbao.Provider.WithCluster` reads it from the K3s server nodes'
+    annotation; kind is `unknown`.
+  - It's wired in `wiring.go`, and `lazySecrets` forwards it.
+  - T006 adds `GET /v1/secrets/status`: assert `EncryptionReporter` on
+    the `lazySecrets` handle; `ErrProviderNotReady` means not ready.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
@@ -76,6 +85,10 @@ the end.
   - wire `UseSecrets` and `OnValueWritten` (with `EnqueueSecretUsers`
     over the graph) in `cmd/serendipd`.
 - **For the risk register (T011):**
+  - encryption at rest: the annotation shows it was configured at
+    start, not that older Secrets were re-encrypted; `secrets-encrypt
+    disable` may leave it (not checked); the key is on the same disk;
+  - the operations.md enable steps haven't been run yet;
   - values rest in the cluster as plain Secrets;
   - references aren't release-bound;
   - delivery reads aren't audited;
