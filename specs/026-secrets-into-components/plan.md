@@ -326,6 +326,40 @@ practice a Component gets a new release on its next reconcile after the
 type changes, because the type snapshot is part of the release hash. So
 only Deployments pinned to an old release see this.
 
+### 13. Re-unseal after an OpenBao restart (added 2026-11-24, T012)
+
+T009 found that OpenBao comes back sealed after its pod restarts, and
+stays sealed until `serendipd` restarts (RP-094). The unseal ran only in
+the setup at start. Secret variables make that matter more: a rotation
+or a new variable can't be delivered while OpenBao is sealed.
+
+- **Where:** in the OpenBao provider. `NewProvider(...).WithUnseal(path)`
+  gets the credentials file Bootstrap already writes (ADR 0009's
+  custody). Nothing changes in `core/`, which keeps seeing
+  `ErrProviderNotReady` until the store answers again.
+- **When:** a call that finds OpenBao unavailable asks its health. That
+  covers value reads, writes, existence checks, deletes and the
+  encryption report behind `/v1/secrets/status`.
+  - **Initialized and sealed:** the provider reads the unseal key from
+    the file, unseals, and retries the call once.
+  - **Unsealed already** (another call got there first): it just
+    retries.
+  - **Unreachable** (no pod): it stays not ready.
+  - **Uninitialized:** never initialized again. That means the storage
+    was lost, and a silent `Init` would hide that every value is gone.
+    It stays not ready, and the log says so.
+- **How often:** at most one unseal attempt every 10 s, under one mutex,
+  so a sealed OpenBao isn't hammered by every Secret's resync. The
+  Secrets reconciler checks each Secret every resync, so with any Secret
+  present, recovery comes within one 30 s resync without waiting for a
+  user.
+- **The key:** read from the file only for the attempt, not kept in
+  memory. The provider logs the unseal ("OpenBao was sealed; unsealed it
+  with the stored key"), never the key.
+- **Rejected:** a separate watch goroutine, since the calls already
+  notice. OpenBao's auto-unseal needs a KMS or transit seal, which edge-1
+  doesn't have (ADR 0009's trigger, still open).
+
 ## What it costs
 
 - **`serendipd`:** a few small types, one extra cluster GET per

@@ -90,6 +90,11 @@ console in clear.
     `application-platform.md`, `secrets.md`, `authorization.md`,
     `operations.md`, `cli-and-mcp.md`, `docs/build-vs-adopt.md` and
     `docs/risk-register.md`.
+11. **Secrets keep working after OpenBao restarts** (added 2026-11-24,
+    from T009's RP-094). When `serendipd` finds OpenBao sealed, it
+    unseals it again with the key it already keeps. Before this, OpenBao
+    stayed sealed until `serendipd` itself restarted, so secret variables
+    couldn't change and values couldn't be written.
 
 ### Out
 
@@ -177,6 +182,12 @@ unit test is named.
 12. **Lightweight** (constitution 4): `serendipd` idle RSS stays within a
     few MiB of spec 025's (33.2 MiB on the simulated T470), and no new
     pods run in the cluster for this feature.
+13. **Re-unseal.** After the OpenBao pod restarts and comes back sealed,
+    the Secrets capability is ready again within one resync (30 s) with
+    no `serendipd` restart. A value written then is read back, and a
+    secret variable changed then reaches its pods. An uninitialized
+    OpenBao is never initialized again, because that would lose every
+    value. Unit-tested and checked live.
 
 ## Open questions (for the plan)
 

@@ -212,6 +212,22 @@ it reports `NeedsNewRelease` (T004).
     Serendip's store versions didn't change, and no audit rows were
     added for the Component or Deployment. (`c11.txt`)
 
+13. **Re-unseal (T012). PASS.**
+    - The Component `t026-reseal` had `PW` delivered from `t026-reseal`'s
+      value.
+    - OpenBao was scaled to 0: `/v1/secrets/status` said `ready: false`.
+    - It was scaled back to 1. By the time its pod was Ready and checked,
+      it was **already unsealed**. That was `serendipd`'s own resync:
+      the log says "openbao: was sealed (its pod restarted?); unsealed it
+      with the stored key", and no request was sent meanwhile.
+    - Status went back to `ready: true` with no `serendipd` restart.
+    - A value write was 200 and read back the same, and the new value was
+      in the pod 5.1 s later.
+
+    The unit tests cover the other cases: unreachable, uninitialized
+    (never `Init`), the 10 s limit, an unreadable credentials file, and
+    no unseal configured. (`c13.txt`)
+
 Criterion 12 is T010's.
 
 ## Findings
@@ -242,9 +258,9 @@ Criterion 12 is T010's.
   while the bindings still name the namespaces, and stops before the
   Component on a failure. Unit-tested and checked live.
 - **Older than spec 026, recorded:**
-  - **RP-094:** OpenBao comes back sealed after its pod restarts and
-    stays sealed until `serendipd` restarts. Re-unsealing on demand
-    waits for a decision.
+  - **RP-094:** OpenBao came back sealed after its pod restarts and
+    stayed sealed until `serendipd` restarted. Fixed by T012 (criterion
+    13), the user's choice.
   - **RP-095:** deleting a Component leaves its Deployments behind,
     waiting for it.
 - **Seen, not a defect:** a write sent right after a read can meet a

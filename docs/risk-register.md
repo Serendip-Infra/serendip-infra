@@ -114,7 +114,7 @@ purpose), **Closed** (fixed).
 | RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
 | RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
 | RP-093 | Hubble's request metrics carry source and destination pods, so their series grow with pod pairs; not counted at the bench | Footprint (Prometheus memory, disk) | Watch | Spec 025 plan; T015 |
-| RP-094 | OpenBao stays sealed after its pod restarts, until `serendipd` restarts: Secret values can't be read or written, so secret variables can't change | Availability (secrets, secret variables) | Open | Spec 026 T009 |
+| RP-094 | OpenBao stayed sealed after its pod restarts, until `serendipd` restarted; it's now unsealed again with the stored key | Availability (secrets, secret variables) | Closed | Spec 026 T009; fixed T012 |
 | RP-095 | Deleting a Component leaves its Deployments behind, waiting for it | Behaviour (clean-up) | Open | Spec 026 T009 |
 
 ---
@@ -2435,9 +2435,10 @@ The text below is the T013 record.
 
 ## RP-094 — OpenBao stays sealed after its pod restarts
 
-- **Kind:** availability (secrets, secret variables). **Status:** Open,
-  2026-11-24. **Found:** spec 026 T009 (criterion 5's capability-down
-  check); older than spec 026.
+- **Kind:** availability (secrets, secret variables). **Status:**
+  Closed, 2026-11-24, by spec 026 T012 (see "Fixed" below). **Found:**
+  spec 026 T009 (criterion 5's capability-down check); older than spec
+  026.
 - **What:** `serendipd` unseals OpenBao once, in the Secrets setup at
   start (`providers/secrets/openbao/bootstrap.go`). If the OpenBao pod
   restarts later (eviction, OOM, a node restart without `serendipd`'s,
@@ -2458,6 +2459,16 @@ The text below is the T013 record.
 - **Revisit:** before v1 GA, or sooner if a real node (the L470) sees an
   OpenBao restart. The options are to re-run the unseal when the health
   check says sealed, or auto-unseal (ADR 0009's later route).
+- **Fixed (T012, the user's choice):** the first option.
+  - When a Secrets call or the encryption report finds OpenBao sealed,
+    the provider reads the stored unseal key, unseals, and retries once
+    (`providers/secrets/openbao/unseal.go`).
+  - It tries at most once every 10 s, and never initializes an
+    uninitialized OpenBao.
+  - Live, the Secrets reconciler's own resync unsealed a restarted
+    OpenBao within seconds, with no `serendipd` restart.
+  - ADR 0009 is amended. What remains is the custody itself (a key file
+    on the same disk), ADR 0009's open trigger.
 
 ## RP-095 — Deleting a Component leaves its Deployments behind
 

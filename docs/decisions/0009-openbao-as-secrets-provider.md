@@ -158,3 +158,14 @@ urgency. It still sets fallback triggers:
 - `docs/architecture/secrets.md` should be written (or `storage.md`
   used as the template) once spec 008/009 are far enough along to
   describe the real shipped shape, not the aspirational one.
+
+**Amended 2026-11-24 (spec 026 T012):** the unseal key in the local
+credentials file is now also used after start. When a Secrets call or
+the encryption report finds OpenBao sealed (its pod restarted), the
+provider reads the key from the file and unseals it again, at most once
+every 10 s, then retries the call. It never initializes an uninitialized
+instance, because that means its storage was lost. Before this, OpenBao
+stayed sealed until `serendipd` restarted (RP-094). The custody itself
+is unchanged: the same root-only file, not held in memory between
+attempts. The trigger above for replacing it (auto-unseal, a TPM-backed
+key) still stands.

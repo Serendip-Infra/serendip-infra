@@ -46,13 +46,16 @@ var _ reconcile.EncryptionReporter = (*Provider)(nil)
 // It asks OpenBao's health first: sealed, uninitialized or unreachable is
 // the capability not being ready (spec 026 T009 F3), so GET
 // /v1/secrets/status's ready follows OpenBao, not only serendipd's start.
+// With WithUnseal, a sealed OpenBao is unsealed first.
 func (p *Provider) EncryptionAtRest(ctx context.Context) (reconcile.EncryptionReport, error) {
 	if p.client != nil {
 		h, err := p.client.Health(ctx)
 		if err != nil {
 			return reconcile.EncryptionReport{}, notReady(err)
 		}
-		if h.Sealed || !h.Initialized {
+		// Sealed is a chance to unseal (plan decision 13): a status read
+		// then recovers OpenBao, as a value read would.
+		if (h.Sealed || !h.Initialized) && !p.recovered(ctx) {
 			return reconcile.EncryptionReport{}, errSecretsStoreUnavailable
 		}
 	}

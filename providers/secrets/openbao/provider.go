@@ -22,6 +22,9 @@ type Provider struct {
 	client *Client
 	// cluster, when set (WithCluster), is read by EncryptionAtRest.
 	cluster *kubernetes.Client
+	// unseal, when set (WithUnseal), unseals OpenBao again after its pod
+	// restarts.
+	unseal *unsealer
 }
 
 // NewProvider builds a Provider around client. Every Secret this
@@ -54,27 +57,35 @@ func storageKey(sec resource.Secret) string {
 // expected, non-error outcome for a Secret that's never been written
 // to, not a failure.
 func (p *Provider) Exists(ctx context.Context, sec resource.Secret) (bool, error) {
-	_, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+	err := p.retried(ctx, func() error {
+		_, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+		return err
+	})
 	if errors.Is(err, ErrSecretNotFound) {
 		return false, nil
 	}
 	if err != nil {
-		return false, notReady(err)
+		return false, err
 	}
 	return true, nil
 }
 
 func (p *Provider) WriteValue(ctx context.Context, sec resource.Secret, value map[string]any) error {
-	return notReady(p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value))
+	return p.retried(ctx, func() error { return p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value) })
 }
 
 func (p *Provider) ReadValue(ctx context.Context, sec resource.Secret) (map[string]any, error) {
-	v, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
-	return v, notReady(err)
+	var v map[string]any
+	err := p.retried(ctx, func() error {
+		var err error
+		v, err = p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+		return err
+	})
+	return v, err
 }
 
 func (p *Provider) Delete(ctx context.Context, sec resource.Secret) error {
-	return notReady(p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec)))
+	return p.retried(ctx, func() error { return p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec)) })
 }
 
 // notReady reports OpenBao being unavailable as the capability not being

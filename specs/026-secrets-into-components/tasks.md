@@ -482,3 +482,40 @@ the agent's flags (`encryptionAtRest: on`). The evidence is in
 - **Files:** `docs/`.
 - **Verify:** docs-keeper finds no stale statement (or its findings are
   fixed); every RP named in `plan.md` exists.
+
+## T012: Re-unseal OpenBao after its pod restarts ✅
+
+**Done as** (2026-11-24):
+- **Code:** `providers/secrets/openbao/unseal.go`. `WithUnseal(path)`, and
+  the `recovered` and `retried` helpers.
+  - `Exists`, `ReadValue`, `WriteValue` and `Delete` retry once after an
+    unseal.
+  - `EncryptionAtRest` unseals before answering, so a status read also
+    recovers OpenBao.
+  - Wired in `cmd/serendipd/wiring.go`.
+- **Tests:** `unseal_test.go`, a stateful fake OpenBao, run with `-race`.
+- **Live:** criterion 13 in `verification.md`. The resync unsealed a
+  restarted OpenBao within seconds.
+- **Docs:** ADR 0009 amended, and RP-094 closed.
+
+Added 2026-11-24 at the user's request, from T009's RP-094. It runs
+before T010, so T010's measurement includes it; the number keeps
+#378 and #379 for T010 and T011.
+
+- **Do:** plan decision 13.
+  - `Provider.WithUnseal(credentialsPath)`.
+  - Retry once after an unseal, on `ErrUnavailable`, in `ReadValue`,
+    `WriteValue`, `Exists`, `Delete` and `EncryptionAtRest`.
+  - At most one attempt every 10 s, and never an `Init`.
+  - Wire it in `cmd/serendipd`.
+  - Amend ADR 0009, and close RP-094.
+- **Files:** `providers/secrets/openbao/`, `cmd/serendipd/wiring.go`,
+  `docs/decisions/0009-openbao-as-secrets-provider.md`,
+  `docs/risk-register.md`, `verification.md`.
+- **Verify:**
+  - `go test ./providers/secrets/...` covers: sealed, then unsealed and
+    retried; another caller unsealed first; unreachable; uninitialized
+    (no `Init`); the rate limit; and no file configured.
+  - Live (criterion 13): scale OpenBao to 0 and back. Within 30 s,
+    `/v1/secrets/status` says `ready: true` with no `serendipd` restart,
+    and a value write and a secret-variable change then work.
