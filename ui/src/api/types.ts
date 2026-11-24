@@ -80,7 +80,17 @@ export interface ComponentSpec {
   source?: ComponentSource;
   ports?: ComponentPort[];
   env?: Record<string, string>;
+  /** Variables set from Secrets' values (spec 026): names only, never a value. */
+  secretEnv?: ComponentSecretEnv[];
   dependencies?: ComponentDependency[];
+}
+
+/** One variable set from one key of a Secret's value (spec 026). */
+export interface ComponentSecretEnv {
+  env: string;
+  /** The Secret's ID. */
+  secret: string;
+  key: string;
 }
 
 export interface ComponentEndpoint {
@@ -295,6 +305,8 @@ export type Environment = Resource<{ capabilityOverrides?: Record<string, string
 /** What differs in one Environment for the same release. */
 export interface DeploymentOverrides {
   env?: Record<string, string>;
+  /** Sets or replaces the Component's secret variables in this Environment. */
+  secretEnv?: ComponentSecretEnv[];
   config?: Record<string, unknown>;
   traits?: Record<string, Record<string, unknown>>;
 }
@@ -311,6 +323,16 @@ export interface DeploymentStatus extends BaseStatus {
   endpoints?: ComponentEndpoint[];
   /** Releases it ran before, newest first: what it may roll back to. */
   history?: string[];
+  /** The version of the secret variables last delivered: metadata only. */
+  secretEnvVersion?: string;
+}
+
+/** GET /v1/secrets/status (spec 026): never names a value. */
+export interface SecretsStatus {
+  ready: boolean;
+  encryptionAtRest: "on" | "off" | "unknown";
+  reason: string;
+  message: string;
 }
 
 export type Deployment = Resource<DeploymentSpec, DeploymentStatus>;

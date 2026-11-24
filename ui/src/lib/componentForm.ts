@@ -4,6 +4,7 @@
 // form never sends something it knows will be refused, and never refuses
 // something the server would accept, apart from requiring a DNS-label name.
 import type { ComponentSource, ComponentSpec } from "../api/types";
+import { fromRows, listErrors, toRows, type SecretEnvRow } from "./secretEnv";
 import { dnsLabel, dnsLabelError } from "../screens/common";
 
 export interface PortRow {
@@ -40,6 +41,8 @@ export interface ComponentFormState {
   source: SourceFields;
   ports: PortRow[];
   env: EnvRow[];
+  /** Secret variables (spec 026): names only. */
+  secretEnv: SecretEnvRow[];
 }
 
 export type FormErrors = Partial<Record<string, string>>;
@@ -66,6 +69,7 @@ export function toSpec(s: ComponentFormState): ComponentSpec {
   }
   const env = s.env.filter((e) => e.name.trim() !== "");
   if (env.length > 0) spec.env = Object.fromEntries(env.map((e) => [e.name.trim(), e.value]));
+  if (s.secretEnv.length > 0) spec.secretEnv = fromRows(s.secretEnv);
   return spec;
 }
 
@@ -87,6 +91,7 @@ export function fromSpec(name: string, spec: ComponentSpec): ComponentFormState 
       : emptySource,
     ports: (spec.ports ?? []).map((p) => ({ key: key++, name: p.name, port: String(p.port), expose: Boolean(p.expose) })),
     env: Object.entries(spec.env ?? {}).map(([n, v]) => ({ key: key++, name: n, value: v })),
+    secretEnv: toRows(spec.secretEnv),
   };
 }
 
@@ -119,7 +124,19 @@ export function repoPathOK(p: string, dir: boolean): boolean {
   return q.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 }
 
-export function validate(s: ComponentFormState, { creating }: { creating: boolean }): FormErrors {
+/**
+ * The variables a Component's secret variable may not share a name with
+ * (core/resource ValidateComponentSecretEnv): its plain variables and its
+ * dependencies' address variables.
+ */
+export function takenBySpec(s: ComponentFormState, dependencyEnvs: string[]): Map<string, string> {
+  const taken = new Map<string, string>();
+  for (const e of s.env) if (e.name.trim() !== "") taken.set(e.name.trim(), "a plain environment variable");
+  for (const d of dependencyEnvs) taken.set(d, "a dependency's address variable");
+  return taken;
+}
+
+export function validate(s: ComponentFormState, { creating, dependencyEnvs = [] }: { creating: boolean; dependencyEnvs?: string[] }): FormErrors {
   const errors: FormErrors = {};
   if (creating) {
     const e = dnsLabelError(s.name.trim(), "name");
@@ -155,5 +172,6 @@ export function validate(s: ComponentFormState, { creating }: { creating: boolea
     else if (seenEnv.has(name)) errors[`env-${i}-name`] = "This variable is already set above.";
     seenEnv.add(name);
   });
+  for (const [env, msg] of Object.entries(listErrors(s.secretEnv, takenBySpec(s, dependencyEnvs)))) errors[`secretEnv-${env}`] = msg;
   return errors;
 }

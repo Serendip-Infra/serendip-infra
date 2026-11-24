@@ -46,7 +46,7 @@ describe("componentStages", () => {
 });
 
 describe("component form", () => {
-  const base: ComponentFormState = { name: "web", from: "image", image: "nginx:1.27", source: emptySource, ports: [{ key: 1, name: "http", port: "80", expose: true }], env: [] };
+  const base: ComponentFormState = { name: "web", from: "image", image: "nginx:1.27", source: emptySource, ports: [{ key: 1, name: "http", port: "80", expose: true }], env: [], secretEnv: [] };
 
   it("builds the spec the API expects", () => {
     expect(toSpec({ ...base, env: [{ key: 2, name: "LOG_LEVEL", value: "info" }, { key: 3, name: "", value: "" }] })).toEqual({

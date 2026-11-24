@@ -21,7 +21,9 @@ import { usePermissions } from "../hooks/usePermissions";
 import { usePoll, useNow } from "../hooks/usePoll";
 import { accessPath, action } from "../lib/permissions";
 import { availability } from "../lib/health";
-import { emptySource, fromSpec, isSSH, toSpec, validate, type ComponentFormState, type FormErrors, type SourceFields } from "../lib/componentForm";
+import { emptySource, fromSpec, isSSH, takenBySpec, toSpec, validate, type ComponentFormState, type FormErrors, type SourceFields } from "../lib/componentForm";
+import { ownerOf } from "../lib/pipeline";
+import { SecretEnvEditor, SecretEnvTable } from "./SecretEnv";
 import { Link, navigate } from "../lib/router";
 import { componentStages, exposedPorts } from "../lib/stages";
 import { FormFailure } from "../components/RequestError";
@@ -54,6 +56,7 @@ export function ComponentDetail({ appId, id, tab = "overview" }: { appId: string
   const endpoint = c.status.endpoints?.[0];
   const ports = c.spec.ports ?? [];
   const env = Object.entries(c.spec.env ?? {});
+  const secretEnv = c.spec.secretEnv ?? [];
 
   return (
     <>
@@ -130,6 +133,7 @@ export function ComponentDetail({ appId, id, tab = "overview" }: { appId: string
                   ...sourceItems(c),
                   ...ports.map((p): [string, React.ReactNode] => [`Port ${p.name}`, `${p.port}, ${p.expose ? "exposed" : "inside the cluster only"}`]),
                   ["Environment", env.length === 0 ? "None" : `${env.length} variable${env.length === 1 ? "" : "s"}`],
+                  ["Secret variables", secretEnv.length === 0 ? "None" : `${secretEnv.length}, listed below`],
                   ...(c.status.endpoints ?? []).map((e): [string, React.ReactNode] => [`Endpoint ${e.name}`, <SafeLink href={e.url} />]),
                 ]}
               />
@@ -143,6 +147,16 @@ export function ComponentDetail({ appId, id, tab = "overview" }: { appId: string
               <ConditionsTable conditions={c.status.conditions} now={now} />
             </section>
           </div>
+
+          {secretEnv.length > 0 && (
+            <section className="section" aria-labelledby="comp-secretenv">
+              <h2 id="comp-secretenv" className="section-title">
+                Secret variables
+              </h2>
+              <p className="field-hint">Set from Secrets' values in every Environment, unless an Environment overrides one. Values are never shown. Each Environment's delivery is on the Deploy tab.</p>
+              <SecretEnvTable list={secretEnv} caption="Secret variables" />
+            </section>
+          )}
 
           {(c.metadata.relationships?.length ?? 0) > 0 && (
             <section className="section" aria-labelledby="comp-rel">
@@ -232,13 +246,14 @@ const nextKey = () => rowKey++;
 
 export function ComponentForm({ appId, id }: { appId: string; id?: string }) {
   const creating = id === undefined;
-  const [state, setState] = useState<ComponentFormState>({ name: "", from: "image", image: "", source: emptySource, ports: [{ key: nextKey(), name: "http", port: "80", expose: true }], env: [] });
+  const [state, setState] = useState<ComponentFormState>({ name: "", from: "image", image: "", source: emptySource, ports: [{ key: nextKey(), name: "http", port: "80", expose: true }], env: [], secretEnv: [] });
   const [existing, setExisting] = useState<Component>();
   const [loadError, setLoadError] = useState<ApiError | NetworkError>();
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | NetworkError>();
   const errorSummary = useRef<HTMLDivElement>(null);
+  const app = usePoll((s) => apiFetch<Application>("GET", `/v1/applications/${encodeURIComponent(appId)}`, undefined, s), 60_000, `form-app-${appId}`);
 
   useEffect(() => {
     if (creating) return;
@@ -252,8 +267,11 @@ export function ComponentForm({ appId, id }: { appId: string; id?: string }) {
     return () => ctrl.abort();
   }, [creating, id]);
 
-  const errors: FormErrors = submitted ? validate(state, { creating }) : {};
-  const spec = toSpec(state);
+  // Dependencies have no field here (they're set through the API): kept as stored.
+  const dependencies = existing?.spec.dependencies;
+  const dependencyEnvs = (dependencies ?? []).map((d) => d.env);
+  const errors: FormErrors = submitted ? validate(state, { creating, dependencyEnvs }) : {};
+  const spec = { ...toSpec(state), ...(dependencies && dependencies.length > 0 ? { dependencies } : {}) };
   const request: ApiRequest = creating
     ? { method: "POST", path: "/v1/components", body: { metadata: { name: state.name.trim(), ownerRefs: [{ kind: "Application", id: appId }] }, spec } }
     : { method: "PUT", path: `/v1/components/${id}`, body: existing ? { ...existing, spec } : undefined };
@@ -268,7 +286,7 @@ export function ComponentForm({ appId, id }: { appId: string; id?: string }) {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSubmitted(true);
-    if (Object.keys(validate(state, { creating })).length > 0) {
+    if (Object.keys(validate(state, { creating, dependencyEnvs })).length > 0) {
       requestAnimationFrame(() => errorSummary.current?.focus());
       return;
     }
@@ -381,7 +399,7 @@ export function ComponentForm({ appId, id }: { appId: string; id?: string }) {
 
         <fieldset>
           <legend>Environment variables</legend>
-          <p className="field-hint">Values are stored and shown in plain text. Don't put secrets here: secret injection isn't available yet.</p>
+          <p className="field-hint">Values are stored and shown in plain text. Don't put secrets here: use secret variables, below.</p>
           <div className="rows">
             {state.env.map((v, i) => (
               <div className="row" key={v.key}>
@@ -406,6 +424,17 @@ export function ComponentForm({ appId, id }: { appId: string; id?: string }) {
             </div>
           </div>
         </fieldset>
+
+        <SecretEnvEditor
+          idPrefix="comp-senv"
+          legend="Secret variables"
+          hint="Each sets a variable from one key of a Secret's value, in every Environment. The value goes to the workload only; it isn't stored with the component or shown."
+          rows={state.secretEnv}
+          onChange={(secretEnv) => update({ secretEnv })}
+          taken={takenBySpec(state, dependencyEnvs)}
+          projectId={app.data ? ownerOf(app.data.metadata, "Project") : undefined}
+          listErrors={Object.fromEntries(Object.entries(errors).flatMap(([k, v]) => (k.startsWith("secretEnv-") && v ? [[k.slice(10), v]] : [])))}
+        />
 
         {failure && <FormFailure error={failure} />}
         <div className="form-actions">

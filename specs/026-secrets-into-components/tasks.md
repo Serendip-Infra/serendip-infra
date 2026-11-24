@@ -367,7 +367,53 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `go test ./cmd/... ./api/...` (the catalogue parity test
   passes).
 
-## T008: Console
+## T008: Console ✅
+
+**Done as** (2026-11-24):
+- **Shared parts:** `ui/src/lib/secretEnv.ts` holds the rules, mirroring
+  `core/resource/secretenv.go`: variable names, keys of 1 to 256 bytes
+  with no control characters, at most 64, no duplicates, and clashes
+  with plain and dependency variables. `ui/src/screens/SecretEnv.tsx`
+  has the editor (a table of variable, Secret link and key, with Remove,
+  and an add form: pick a Secret, type the key, name the variable), a
+  read-only table, and the delivery status. Changing an entry means
+  removing it and adding it again.
+- **Which Secrets are offered:** the ones `GET /v1/secrets` lists. The
+  console leaves out only those it knows are in another Project (owned
+  by another Project, or by an Application in one). The value-read
+  permission and the Project-or-above rule stay with the server (403 and
+  422), and the hint says so. Checking value-read for each Secret would
+  cost one permissions call per Secret.
+- **Component:**
+  - The edit form has a "Secret variables" fieldset.
+  - The overview has a "Secret variables" section and a count under
+    Configuration.
+  - The plain-variables hint no longer says secret injection isn't
+    available.
+  - **Fixed on the way:** the edit form dropped `spec.dependencies` (it
+    has no field for them), so saving wiped a Component's declared
+    calls. They're now sent back as stored.
+- **Deployment:**
+  - The Configure form has "Secret variables for <environment>", and
+    the hint names the Component's own secret variables. An override
+    may replace one of them. A plain override of a Component secret
+    variable is refused before sending, as are clashes with plain or
+    dependency variables in either layer.
+  - The Deploy tab counts secret overrides. It shows "N secret
+    variables, delivered / waiting / not delivered: <message>" from
+    `SecretEnvDelivered`, where N is the merged count.
+- **Secrets page:** `EncryptionBanner` reads `GET /v1/secrets/status`.
+  "on" is a plain line that also says the key is on the same disk. "off"
+  and "unknown" are notices, and unknown is never shown as on or off. A
+  caller who can't read the status (403) sees no banner.
+- **No value read:** the new tests check that no request touches
+  `/value`.
+- **Tests:** `ui/src/screens/secretenv.test.tsx` (9) and
+  `ui/src/lib/secretenv.test.ts` (5). One existing test now looks for
+  its option inside the Credential select, since the Secret appears in
+  two selects.
+- **Verified:** `corepack pnpm typecheck`; `corepack pnpm test` (205
+  pass); `corepack pnpm build` (127.6 KiB gz JS, budget 160).
 
 - **Do:**
   - The Component page's "Secret variables" table and add form;
