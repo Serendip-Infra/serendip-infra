@@ -21,16 +21,11 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T003 done, T004 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), opened by a paced background
-  batch, which ends by writing the epic's body. Its tooling and log are in
-  the session scratchpad's `gh026/` and don't survive a reboot.
-- **GitHub catch-up still owed** (paced, about one write a minute, only
-  once the batch's log ends in DONE):
-  - close #369, #370 and #371 by hand, each with a comment naming its
-    commit (71428dc, 265438a, a5beb1d);
-  - tick T001–T003 in #67's checklist.
-  If the batch stopped on a 403 or 429, re-run it: it's resumable from
-  its `state.txt`.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#371 are
+  closed with their commits, and #67's checklist has T001–T003 ticked.
+  GitHub is in step: per task, commit with `Closes #N`, push, close the
+  issue by hand with a comment naming the commit, tick #67. Do these as
+  paced writes, about one a minute.
 
 **Next: T004, the OpenChoreo provider** (`tasks.md`), then T005 →
 T011.
