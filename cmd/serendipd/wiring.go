@@ -41,6 +41,12 @@ const defaultReensureInterval = 5 * time.Minute
 // providers up.
 type kubeWiring struct {
 	secretReconciler *reconcile.SecretReconciler
+	// secrets is the Secrets capability's handle, for its encryption at
+	// rest report (spec 026).
+	secrets *lazySecrets
+	// secretEnvChanged reconciles a Component's Deployments when its
+	// secret variables change (spec 026).
+	secretEnvChanged func(ctx context.Context, componentID string)
 	// cleaners are the platform's clean-ups for removed Deployments,
 	// Environments and Projects (spec 020), run by the approval reconciler.
 	cleaners map[resource.Kind]reconcile.CleanupFunc
@@ -383,12 +389,13 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 	tracingPkg := &tracingPackage{TracingInstaller: tracingInstaller, setEndpoint: endpoint.set, obsRemoving: obsRemoving, ops: tracingOps}
 	packages := packageCatalogue(buildInstaller, obsPackage, tracingPkg)
 	obsProvider := obsplane.NewProvider(client).WithDiskUsage(obsInstaller, obsplane.Requirements.Disk.BudgetMiB).WithRequestMetrics(network.RequestMetrics)
+	workloads := graph.NewSQLiteGraph(db)
 	cleaners[resource.KindProviderInstance] = registerPackages(db, bus, engine, registry, packages, onReadiness{
 		capBuild:         buildHandle(registry, builds, buildProvider),
 		capObservability: observabilityHandle(registry, observability, obsProvider),
 		capTracing:       tracingHandle(registry, tracing, obsplane.NewTracing(client)),
 	})
-	return &kubeWiring{secretReconciler: secretReconciler, cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer,
+	return &kubeWiring{secretReconciler: secretReconciler, secrets: secrets, secretEnvChanged: enqueueComponentDeployments(workloads, engine.Enqueue), cleaners: cleaners, packages: packages, builds: builds, observability: observability, runtime: runtime, schemas: schemas, platformView: platformView, authn: authn, login: login, directory: directory, plan: plan, adminSubject: thunderid.AdminSubject, issuer: issuer,
 		clusterRanges: network.clusterRanges(client.ClusterRanges), network: network, tracing: tracing}, nil
 }
 
@@ -448,6 +455,13 @@ func registerKubernetesReconcilers(db *sql.DB, bus event.Bus, engine *reconcile.
 
 	secretStore := sqlite.NewStore[resource.SecretSpec, resource.SecretStatus](db, resource.KindSecret).SetBus(bus)
 	secretReconciler := reconcile.NewSecretReconciler(secretStore, secrets)
+	// A value written reaches the Deployments whose secret variables use
+	// it without waiting for resync (spec 026 plan decision 4).
+	users := graph.NewSQLiteGraph(db)
+	secretReconciler.OnValueWritten(func(ctx context.Context, id string) {
+		// The write is done: the wake-up mustn't end with the request.
+		reconcile.EnqueueSecretUsers(context.WithoutCancel(ctx), users, engine.Enqueue, id)
+	})
 	engine.Register(resource.KindSecret, secretReconciler, lister(secretStore, resource.KindSecret))
 
 	apps := sqlite.NewStore[resource.ApplicationSpec, resource.ApplicationStatus](db, resource.KindApplication).SetBus(bus)
@@ -463,10 +477,28 @@ func registerKubernetesReconcilers(db *sql.DB, bus event.Bus, engine *reconcile.
 	deploymentStore := sqlite.NewStore[resource.DeploymentSpec, resource.DeploymentStatus](db, resource.KindDeployment).SetBus(bus)
 	envs := sqlite.NewStore[resource.EnvironmentSpec, resource.EnvironmentStatus](db, resource.KindEnvironment).SetBus(bus)
 	projects := sqlite.NewStore[resource.ProjectSpec, resource.ProjectStatus](db, resource.KindProject).SetBus(bus)
-	engine.Register(resource.KindDeployment, reconcile.NewDeploymentReconciler(deploymentStore, envs, components, apps, deployments), lister(deploymentStore, resource.KindDeployment))
+	engine.Register(resource.KindDeployment, reconcile.NewDeploymentReconciler(deploymentStore, envs, components, apps, deployments).UseSecrets(secretStore, secrets), lister(deploymentStore, resource.KindDeployment))
 	engine.Register(resource.KindProject, reconcile.NewProjectReconciler(projects, deployments), lister(projects, resource.KindProject))
 
 	return secretReconciler
+}
+
+// enqueueComponentDeployments is the API's hook for a Component whose
+// secret variables changed: its Deployments (its depends-on dependents)
+// are reconciled now. Errors are dropped: resync reaches them anyway.
+func enqueueComponentDeployments(g reconcile.DependentsLister, enqueue func(graph.ResourceRef)) func(ctx context.Context, componentID string) {
+	return func(ctx context.Context, componentID string) {
+		users, err := g.Dependents(ctx, graph.ResourceRef{Kind: resource.KindComponent, ID: componentID})
+		if err != nil {
+			log.Printf("serendipd: Component %s's Deployments wait for resync: %v", componentID, err)
+			return
+		}
+		for _, u := range users {
+			if u.Kind == resource.KindDeployment {
+				enqueue(u)
+			}
+		}
+	}
 }
 
 // registerApprovals wires the approval reconciler (spec 019): it executes

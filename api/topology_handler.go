@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"sync"
 
 	"github.com/serendip-infra/serendip-infra/core/audit"
+	"github.com/serendip-infra/serendip-infra/core/graph"
 	"github.com/serendip-infra/serendip-infra/core/policy"
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
@@ -33,9 +35,21 @@ type ComponentHandler struct {
 	// source checks a source Component's build capability and credential
 	// (spec 022).
 	source sourceChecker
+	// secretEnv checks the Secrets its secret variables name, and
+	// deployments are checked for clashes with them (spec 026).
+	secretEnv   secretEnvChecker
+	deployments store.Store[resource.DeploymentSpec, resource.DeploymentStatus]
+	// dependents lists what depends on a resource (the graph): a
+	// Component's Deployments.
+	dependents func(ctx context.Context, ref graph.ResourceRef) ([]graph.ResourceRef, error)
+	// secretEnvChanged, when set, is told a Component's secret variables
+	// changed, so its Deployments deliver them without waiting for resync.
+	secretEnvChanged func(ctx context.Context, componentID string)
 	// mu serialises Component writes, so a port can't be removed while a
-	// dependency on it is being added.
-	mu sync.Mutex
+	// dependency on it is being added. It's shared with DeploymentHandler,
+	// so a Component's secret variables and its Deployments' overrides are
+	// checked against each other without a race (spec 026).
+	mu *sync.Mutex
 }
 
 func (h *ComponentHandler) Register(mux Mux) {
@@ -117,6 +131,74 @@ func (h *ComponentHandler) checkDependencies(ctx context.Context, c resource.Com
 	return ctx, nil
 }
 
+// checkSecretEnv checks c's secret variables (spec 026): the list and its
+// clashes within the Component (400), the Secrets newly named
+// (secretEnvChecker), and, on update, that no Deployment's overrides now
+// clash with the Component's variables (409 naming it).
+func (h *ComponentHandler) checkSecretEnv(ctx context.Context, c resource.Component, current *resource.Component) (context.Context, error) {
+	if err := resource.ValidateComponentSecretEnv(c.Spec); err != nil {
+		return ctx, err
+	}
+	var was []resource.ComponentSecretEnv
+	if current != nil {
+		was = current.Spec.SecretEnv
+	}
+	ctx, err := h.secretEnv.check(ctx, "secretEnv", c.Spec.SecretEnv, was, func(ctx context.Context) (string, error) { return h.projectOf(ctx, c) })
+	if err != nil || current == nil || h.deployments == nil || h.dependents == nil {
+		return ctx, err
+	}
+	same := maps.Equal(current.Spec.Env, c.Spec.Env) && slices.Equal(current.Spec.SecretEnv, c.Spec.SecretEnv) &&
+		slices.Equal(current.Spec.Dependencies, c.Spec.Dependencies)
+	if same {
+		return ctx, nil
+	}
+	users, err := h.dependents(ctx, graph.ResourceRef{Kind: resource.KindComponent, ID: c.Metadata.ID})
+	if err != nil {
+		return ctx, err
+	}
+	for _, u := range users {
+		if u.Kind != resource.KindDeployment {
+			continue
+		}
+		d, err := h.deployments.Get(ctx, u.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return ctx, err
+		}
+		if err := resource.ValidateDeploymentSecretEnv(d.Spec.Overrides, c.Spec); err != nil {
+			// Named only to a caller who may read it.
+			name := "of this Component"
+			if ok, aerr := allowedAt(ctx, action(resource.KindDeployment, "read"), resource.Scope{Kind: resource.KindDeployment, ID: d.Metadata.ID}); aerr == nil && ok {
+				name = d.Metadata.Name
+			}
+			return ctx, deployRefuse(http.StatusConflict, "conflict", "Deployment %s: %v; change its overrides first", name, err)
+		}
+	}
+	return ctx, nil
+}
+
+// projectOf is the Project c's Application belongs to.
+func (h *ComponentHandler) projectOf(ctx context.Context, c resource.Component) (string, error) {
+	appID, err := applicationOf(c)
+	if err != nil {
+		return "", err
+	}
+	app, err := h.apps.Get(ctx, appID)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", deployRefuse(http.StatusBadRequest, "validation failed", "Application %s not found", appID)
+	}
+	if err != nil {
+		return "", err
+	}
+	project := owner(app.Metadata, resource.KindProject)
+	if project == "" {
+		return "", deployRefuse(http.StatusBadRequest, "validation failed", "the Component's Application belongs to no Project")
+	}
+	return project, nil
+}
+
 // applicationOf is a Component's one Application; more than one, or
 // none, is refused.
 func applicationOf(c resource.Component) (string, error) {
@@ -190,6 +272,10 @@ func (h *ComponentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	if ctx, err = h.checkSecretEnv(ctx, c, nil); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	c.Metadata.Relationships = resource.ComponentRelationships(c.Metadata.Relationships, c.Spec)
 	created, err := h.comps.Create(ctx, c)
 	if err != nil {
@@ -221,11 +307,20 @@ func (h *ComponentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	if ctx, err = h.checkSecretEnv(ctx, c, &current); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	c.Metadata.Relationships = resource.ComponentRelationships(c.Metadata.Relationships, c.Spec)
 	updated, err := h.comps.Update(ctx, c)
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+	// A reorder counts as a change: harmless, one extra pass.
+	if h.secretEnvChanged != nil && !slices.Equal(current.Spec.SecretEnv, c.Spec.SecretEnv) {
+		// The write is done: the wake-up mustn't end with the request.
+		h.secretEnvChanged(context.WithoutCancel(ctx), c.Metadata.ID)
 	}
 	writeJSON(w, http.StatusOK, updated)
 }

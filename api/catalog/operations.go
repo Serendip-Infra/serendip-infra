@@ -385,6 +385,9 @@ var operations = func() []Operation {
 			Summary: "Write a Secret's value, replacing the old one. Needs the secrets value data permission", Method: "POST", Path: "/v1/secrets/{id}/value",
 			Params: []Param{id("Secret"), {Name: "data", In: InField, Type: Object, Required: true, Description: "Key/value pairs"}},
 			Hints:  Hints{Destructive: true, Idempotent: true}},
+		Operation{Name: "secrets_status", CLI: []string{"secrets", "status"}, MCP: true,
+			Summary: "Whether the Secrets capability is ready, and whether the cluster encrypts Secrets at rest (on, off or unknown), with the reason. Names no Secret or value",
+			Method:  "GET", Path: "/v1/secrets/status", Hints: Hints{ReadOnly: true}},
 	)
 	return append(ops, alertingOperations()...)
 }()

@@ -242,7 +242,65 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `go test ./agent/... ./providers/... ./core/...`; the agent's
   install-args test shows the flag; check-imports.
 
-## T006: API
+## T006: API ✅
+
+**Done as** (2026-11-24):
+- **`api/secretenv_check.go`, `secretEnvChecker`:**
+  - It acts only on newly named entries: a new `(env, secret, key)`, so a
+    changed key or variable counts.
+  - The value-read check comes first: 403, audited, with the allowed
+    checks in the policy evidence.
+  - Then the Secret must exist (422), and sit in the Project or above it
+    (422, `inProject` over the graph's ancestors).
+- **Components (`topology_handler.go`):**
+  - `ValidateComponentSecretEnv` (400), then the checker.
+  - On update, every Deployment of the Component (graph dependents) is
+    checked with `ValidateDeploymentSecretEnv`. A clash is 409, naming
+    the Deployment only to a caller who may read it.
+  - When `secretEnv` changes, the `WithSecretEnvChanged` hook runs with
+    a detached context.
+- **Deployments (`deployment_handler.go`):** `coherent` runs
+  `ValidateDeploymentSecretEnv` (400) and then the checker. It now
+  returns the context, so the evidence reaches the audit row. Promote
+  copies no overrides, so it checks nothing new.
+- **One lock for Component and Deployment writes**, shared between the
+  two handlers, so the cross-layer checks can't race. A concurrent test
+  didn't hit the window even without the lock, so it was dropped. The
+  lock stands on review.
+- **The reserved config key** is the provider's to know (api/ stays
+  neutral): its reported schema leaves the key out, so the ordinary
+  configuration check refuses it, and `Deploy` overwrites it (T004's
+  tests).
+- **The delete guard** is the store's existing `checkNotInUse` over the
+  new `depends-on` edges. It's tested here.
+- **`GET /v1/secrets/status`** (`secrets_status.go`) answers `{ready,
+  encryptionAtRest, reason, message}`:
+  - no reporter: `NotConfigured`;
+  - not ready: `NotReady`;
+  - a failed cluster read: ready, `unknown`, `CheckFailed`, with the
+    cause logged, not answered.
+  - The authz rule is `serendip/secrets/read` at `/`. The catalogue
+    entry is `secrets_status` (`serendip secrets status`), listed in
+    `docs/cli-and-mcp.md`.
+- **`serendipd`:**
+  - `UseSecrets` on the Deployment reconciler;
+  - `OnValueWritten` → `EnqueueSecretUsers`, detached context;
+  - `enqueueComponentDeployments` for the hook, which logs a failed read;
+  - `WithSecretsStatus(lazySecrets)`.
+- **Tests:** `api/spec026_acceptance_test.go` covers criterion 6
+  (authorization), 7 (the delete guard), 10 (validation, 13 cases) and
+  the status route. `cmd/serendipd/secretenv_wiring_test.go` covers the
+  hook. A mutation of the scope rule fails the tests.
+- **Reviews:** contract-guardian passed and go-reviewer found no
+  blockers. Fixed: the shared lock, detached hook contexts, the hook's
+  log line, graph dependents instead of listing every Deployment, the
+  ctx passed into the project lookup, slice aliasing (code and tests),
+  the 409's Deployment name, and table cases for the wiring test.
+- **Left as designed:**
+  - The status route is read at `/` (decision 9), so a Project-only
+    user's console shows no banner.
+  - `CheckFailed` keeps `ready: true`, because the capability is up.
+  - A reordered list counts as a change (one extra pass).
 
 - **Do:**
   - Validation on Component and Deployment create/update: the 400s, the

@@ -412,6 +412,7 @@ tools.
 | `serendip secrets delete <id>` | `secrets_delete` | `DELETE /v1/secrets/{id}` | Delete a Secret. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip secrets get <id>` | `secrets_get` | `GET /v1/secrets/{id}` | Get one Secret |
 | `serendip secrets list` | `secrets_list` | `GET /v1/secrets` | List secrets the caller may read |
+| `serendip secrets status` | `secrets_status` | `GET /v1/secrets/status` | Whether the Secrets capability is ready, and whether the cluster encrypts Secrets at rest (on, off or unknown), with the reason. Names no Secret or value |
 | `serendip secrets value get <id>` | `secrets_read_value` (value) | `GET /v1/secrets/{id}/value` | Read a Secret's value. Needs the secrets value data permission |
 | `serendip secrets update <id>` | `secrets_update` | `PUT /v1/secrets/{id}` | Replace a Secret's spec (send the version read, for a conflict check) |
 | `serendip secrets value set <id>` | `secrets_write_value` (value) | `POST /v1/secrets/{id}/value` | Write a Secret's value, replacing the old one. Needs the secrets value data permission |
