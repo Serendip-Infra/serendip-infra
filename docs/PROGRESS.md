@@ -24,7 +24,7 @@ now.
 - **Task issues:** #369–#379 (T001–T011) and #380 (T012, added), all
   closed with their commits. #67's checklist is fully ticked, and its
   body is rewritten as DONE.
-- **The PR:** `spec-026` → `main`, opened by Yasindu007, `Closes #67`.
+- **The PR:** #381, `spec-026` → `main`, opened by Yasindu007, `Closes #67`.
   `serendipinfra` merges it with a merge commit once the user has
   reviewed it.
 
