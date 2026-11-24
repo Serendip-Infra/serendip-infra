@@ -162,7 +162,8 @@ server node `k3s.io/encryption-config-hash`, which the secrets provider
 reads to report encryption at rest (`secrets.md`, "Encryption at rest
 in the cluster"). A running server keeps its flags until the installer
 is run again on it; `operations.md` gives the steps to turn encryption on
-for an existing one.
+for an existing one. Why it matters: secret variables (ADR 0024) rest
+in the cluster as plain Secrets (RP-096).
 
 **Known gap, not an oversight**: no `core/audit` record exists for a
 bootstrap/uninstall action — `core/audit` is wired into `api/`

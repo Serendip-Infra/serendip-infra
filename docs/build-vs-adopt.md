@@ -12,7 +12,7 @@ console, CLI and MCP) and integrates everything else.
 - **Accepted risks and costs** of these choices live in
   `docs/risk-register.md`.
 
-Last updated: 2026-11-23.
+Last updated: 2026-11-24.
 
 ## Built (Serendip's own code)
 
@@ -48,6 +48,8 @@ Last updated: 2026-11-23.
 | Trace reads, and the trace collector's config (spec 025 T007) | SQL on OpenObserve's traces stream, scoped by the identity columns the collector attests; a collector config of Serendip's own that keeps an allow-list of resource attributes, drops `service.*` span attributes and attributes the pod by its connection. The module's adapter can't scope by UIDs or names, and its shipped config trusts what a span says of itself | Spec 025 plan decisions 10 and 12, T001, T007 |
 | Request visibility and the node metrics guard (spec 025 T004, T014) | A `CiliumNetworkPolicy` per Component that copies OpenChoreo's NetworkPolicy peers and adds an HTTP rule, so Envoy sees requests without widening isolation; and one deny-only cluster-wide policy closing Cilium's node metrics ports to workloads. Cilium has no observe-only L7 mode since the visibility annotation went | Spec 025 plan decision 4, T004, T014, RP-082, RP-091 |
 | Networking facts (`cilium`, `external` providers) | Detection of the running CNI from `kube-system`, its policy enforcement, pod ranges and drift from Serendip's values; nothing upstream reports these in one place | Spec 025 plan decisions 1–3, ADR 0023 |
+| Secret variables' delivery (`<component>-secret-env`) | Serendip reads the value from the Secrets capability and server-side applies one plain Secret per Deployment; the component type adds it with `envFrom`, and a metadata-only version annotation rolls the pods. Only the name and version reach OpenChoreo. Nothing new runs in the cluster (spec 026 T010) | Spec 026 plan decision 1, ADR 0024, RP-096 |
+| Re-unsealing OpenBao after its pod restarts | The provider unseals with the stored key when a call finds it sealed, at most every 10 s; auto-unseal needs a KMS or transit seal edge-1 doesn't have | Spec 026 T012, ADR 0009 (amended) |
 
 ## Adopted (other projects, integrated)
 
@@ -77,6 +79,7 @@ Last updated: 2026-11-23.
 | Cilium 1.20.5 (chart `cilium/cilium`), kube-proxy kept | Networking (CNI), edge-1's default (`serendip-agent bootstrap --cni cilium`) | ADR 0023, spec 025 | Installed by the install path, never by `serendipd` (observed). Measured on the simulated T470: +443 MiB, +92 mcores at idle (RP-089). Envoy's retries and path normalization off (RP-081). `--cni default` keeps K3s's Flannel |
 | Hubble's metrics (`httpV2`, `drop`, `flow`) and its static flow exporter (a file on the node, tailed by the logs package's Fluent Bit) | Request metrics, traffic and connection records | Spec 025 plan decisions 7 and 9, T001, T006 | Exporter filtered to drops and new connections at Components, masked and aggregated per minute: about 7.5 MiB a day. Relay and UI off |
 | OpenChoreo's tracing module (`observability-tracing-openobserve` 0.3.2), its OTel Collector only | Trace collection (the `tracing` package) | Spec 025 plan decision 10, T007 | Writes to the logs package's OpenObserve; its bundled store, its adapter and its tail sampling are off; Serendip's collector config (above) |
+| K3s's own secrets encryption (`--secrets-encryption`, AES-CBC) | Encrypting cluster Secrets at rest on agent installs | Spec 026 plan decision 9, ADR 0024 | On by default for new installs, read back from the node annotation `k3s.io/encryption-config-hash`. The key is on the same disk (RP-096). Existing installs: `operations.md` |
 | healthchecks.io, Uptime Kuma (heartbeat monitors); n8n, Node-RED, Apprise API (webhook relays) | Suggested outside tools, **not dependencies** | `docs/guides/alert-integrations.md` | Nothing installed or bundled. Gatus needs a relay: its push wants a bearer header the heartbeat can't send |
 
 ## Rejected (considered and turned down)
@@ -122,6 +125,10 @@ Last updated: 2026-11-23.
 | Helm (the binary or its Go SDK) in `serendip-agent` to install Cilium at bootstrap | A K3s `HelmChart` manifest (`bootstrap: true`), installed by K3s's own Helm controller | Helm's SDK would be a heavy dependency (and ADR) in an agent meant to stay small (agent/CLAUDE.md); K3s already ships the controller, and its bootstrap Job runs before any CNI | Spec 025 plan decision 5, T005 |
 | The tracing module's adapter (`:9100`) for trace reads | SQL on OpenObserve (`tracing_read.go`) | Its scope by UIDs or names answers nothing (T001); no duration or error filter, no cursor. Off saves 128 MiB | Spec 025 plan decision 10, T001 |
 | The tracing module's tail sampling | No sampling; a memory limiter and the retention bound it | About 10 spans a second kept, nearly nothing on a real load, and it holds traces in memory | Spec 025 plan decision 10 |
+| External Secrets Operator and OpenChoreo's `SecretReference` for Component secrets | A Secret Serendip writes per Deployment | Its controller, webhook and cert controller are new pods, its `ClusterSecretStore` needs OpenBao's Kubernetes auth, and it ends in the same plain Secret (again, after ADR 0020) | Spec 026 plan decision 1, ADR 0024 |
+| Rendering the Secret from the component type | The provider applies it outside the release | The value would sit in plaintext in `RenderedRelease`, readable by anyone who reads releases | Spec 026 plan decision 1 |
+| OpenBao's agent injector or CSI provider | A cluster Secret with `envFrom` | New pods, and they need workload identity (not built yet). Revisit with workload identity | Spec 026 plan decision 1, ADR 0024 |
+| Reloader (restart pods when a Secret changes) | A version annotation on the pod template | Another controller for what one annotation does | Spec 026 plan ("Build vs adopt") |
 
 ## Open (decided later)
 

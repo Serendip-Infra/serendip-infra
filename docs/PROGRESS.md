@@ -12,39 +12,36 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T010 and T012 done, T011 next)
+Last updated: 2026-11-24 (spec 026: all 12 tasks done; PR open, waiting for the user's review and merge)
 
 ## Current phase
 
-**Spec 026 (Secrets into Components; epic #67): IN PROGRESS.** Branch
-`spec-026` (off `main` after PR #368 merged), pushed to the Yasindu007
-fork after each task. Spec, plan and tasks were approved under the user's
-"full auto" instruction (2026-11-24); the user reviews the whole spec at
-the end.
-- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added). #369–#378
-  and #380 are closed with their commits, and #67's checklist has
-  T001–T010 and T012 ticked.
-  GitHub is in step: per task, commit with `Closes #N`, push, close the
-  issue by hand with a comment naming the commit, tick #67. Do these as
-  paced writes, about one a minute.
+**Spec 026 (Secrets into Components; epic #67): ALL TASKS DONE, PR
+OPEN.** Branch `spec-026` (off `main` after PR #368 merged), pushed to
+the Yasindu007 fork. Spec, plan and tasks were approved under the user's
+"full auto" instruction (2026-11-24), and the user reviews the whole spec
+now.
+- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added), all
+  closed with their commits. #67's checklist is fully ticked, and its
+  body is rewritten as DONE.
+- **The PR:** `spec-026` → `main`, opened by Yasindu007, `Closes #67`.
+  `serendipinfra` merges it with a merge commit once the user has
+  reviewed it.
 
-**Next: T011, Docs and close-out** (tasks.md T011). Then the spec's
-PR: branch `spec-026` → `main`, `Closes #67`, after checking every task
-issue is closed. The user reviews the whole spec at the end.
-- **T011's operations notes should also say:** a downgrade to a pre-026
-  build drops secret variables from running pods (the type loses
-  `serendipSecretEnv`, so they roll) until the upgrade returns (T010).
+**Next:** the user's review of spec 026, then the merge. After that,
+the next spec on the roadmap (`docs/PRD.md`).
+
+- **T011, done:** ADR 0024; `application-platform.md` "Secret variables
+  (spec 026)"; `secrets.md` (re-unseal, values reaching workloads, the
+  status route); `authorization.md`, `operations.md` ("Running secret
+  variables", with the upgrade's roll and the downgrade), and
+  `bootstrap-agent.md`; build-vs-adopt; and RP-096 to RP-103.
+  docs-keeper's two findings are fixed.
 - **T010, done** (`c849380`; criterion 12 in `verification.md`). It was
   a same-host A/B on `serendip-t018`: `main`'s `serendipd` against
-  `spec-026`'s, run A, B, A, B on copies of the t026 store.
-  - B − A was −0.1 MiB and +1.0 MiB.
-  - The working set read 83 MiB in pair 1 and 35 MiB in pair 2, for both
-    binaries (the Windows effect).
-  - No new pods ran.
-  - The evidence is in
-    `profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`.
-  - It ran from Claude Code's shell (about 22 min), and wasn't reaped.
-- **T011's RPs start at RP-096.** T009 used RP-094 and RP-095.
+  `spec-026`'s, run A, B, A, B on copies of the t026 store. B − A was
+  −0.1 MiB and +1.0 MiB, and no new pods ran. The evidence is in
+  `profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`.
 
 - **T001–T008, done:** tasks.md's "Done as" entries have the detail
   (core, reconciler, provider, encryption at rest, API, CLI/MCP, console).

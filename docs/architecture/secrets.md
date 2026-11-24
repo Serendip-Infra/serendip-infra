@@ -120,6 +120,27 @@ end-to-end against a real `kind` cluster (kill-and-rerun `serendipd`
 against the same OpenBao instance: no re-init, credentials file
 unchanged, successful unseal).
 
+**Re-unseal while running (spec 026 T012, ADR 0009 amended).** OpenBao
+also comes back sealed when only its pod restarts (eviction, OOM, an
+upgrade). Before T012 it then stayed sealed until `serendipd` restarted
+(RP-094, now closed). `openbao.NewProvider(...).WithUnseal(path)`, wired
+in `cmd/serendipd/wiring.go`, handles that case:
+- `Exists`, `ReadValue`, `WriteValue`, `Delete` and `EncryptionAtRest`
+  ask OpenBao's health when a call finds it unavailable.
+- **Sealed:** the provider reads the unseal key from the credentials
+  file for that one attempt, unseals, and retries the call once.
+  **Already unsealed** by another call: it just retries.
+- **Unreachable** stays not ready (`ErrProviderNotReady`, 503).
+  **Uninitialized** is never initialized again, because it means the
+  storage was lost and a silent `Init` would hide that every value is
+  gone. It stays not ready, and the log says so.
+- **At most one attempt every 10 s,** under one mutex. The Secrets
+  reconciler checks every Secret on each 30 s resync, so with any Secret
+  present OpenBao recovers without waiting for a user. Live, it was
+  unsealed within seconds of a pod restart.
+- The log line says it unsealed with the stored key, and never carries
+  the key. `core/` sees only `ErrProviderNotReady` until OpenBao answers.
+
 ## Credential custody
 
 Root token + unseal key are written as JSON to a **root-only, mode
@@ -369,6 +390,16 @@ The agent turns it on for new installs (`bootstrap-agent.md`). In
 `serendipd`, `lazySecrets` forwards the report, and is `unknown` for a
 provider without one.
 
+**`GET /v1/secrets/status`** answers `{ready, encryptionAtRest, reason,
+message}` under `serendip/secrets/read` at `/` (so a Project-only user
+gets 403 and no console banner, RP-103). `ready` follows OpenBao's
+health. Without a reporter the reason is `NotConfigured`; while not
+ready, `NotReady`; a failed node read is `unknown` with `CheckFailed`
+(the cause is logged, not answered). The console's Secrets page shows it
+as a banner, the CLI as `serendip secrets status`, and MCP as
+`secrets_status`. Existing installs aren't changed: `operations.md`
+gives the steps to turn encryption on.
+
 ## `api.SecretHandler` and the value routes
 
 A value cannot live in `Spec`/`Status`, so the generic
@@ -412,6 +443,36 @@ follow. A future capability facing the same "no desired state" shape
 should make the same case explicitly in its own plan.md, not assume
 this precedent extends automatically.
 
+## Secret variables: values reaching workloads (spec 026)
+
+A Component or Deployment names a Secret and a key of its value for an
+environment variable (`application-platform.md`, "Secret variables";
+ADR 0024). On the Secrets side:
+
+- **Who reads the value:** `DeploymentReconciler`, through
+  `SecretsProvider.ReadValue`, only when a Deployment's version changes.
+  This is the first value read outside the value route. It's the
+  system's read, so the permission is checked when a person names the
+  Secret: `serendip/secrets/value/read` at it (`authorization.md`).
+- **Where it goes:** straight from `core/reconcile` to the application
+  provider, in memory, into one plain Kubernetes Secret per Deployment
+  (`<component>-secret-env`). It never enters Serendip's store, the audit
+  log, a condition, an event, a log line or an OpenChoreo object (T009
+  searched each). Errors are built to hold IDs and keys only, and the
+  provider drops Kubernetes' error bodies.
+- **`SecretReconciler.OnValueWritten`:** after a value write, the
+  Deployments that use the Secret are enqueued, so a rotation reaches
+  their pods within a pass (each rolls, RP-098).
+- **The delete guard** covers the new `depends-on` edges: deleting a
+  Secret a Component or Deployment names is 409, naming them.
+- **A sealed or unreachable OpenBao** blocks new deliveries only. The
+  Deployment reads `ProviderNotReady`, nothing in the cluster changes,
+  and running pods keep their values. The re-unseal above shortens it.
+- **Not audited:** the reconciler's reads (RP-100), as with every value
+  read (below).
+- **At rest:** the cluster Secret is plain (RP-096). See "Encryption at
+  rest in the cluster" above.
+
 ## Audit: writes piggyback, reads don't
 
 `WriteValue` sets `Status.LastSyncedAt` and the `"Reachable"`
@@ -448,9 +509,9 @@ spec 009's own Scope-OUT:
   relevant to a future Identity/Thunder story.
 - **PKI secrets engine, dynamic database credentials, or any OpenBao
   engine beyond KV v2.**
-- **`Application`/`Component` wiring that injects a Secret's value
-  into a running workload** — needs the Application Platform provider
-  (OpenChoreo), which doesn't exist yet.
+- ~~**`Application`/`Component` wiring that injects a Secret's value
+  into a running workload**~~ — done in spec 026 ("Secret variables",
+  above).
 - **AI-initiated secret access by an AI operations engine** — none
   exists yet. An assistant or agent can use the value tools through MCP
   with the data permission (`ai-operations.md`, spec 021).

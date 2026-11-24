@@ -289,7 +289,39 @@ outline:
 These steps haven't been run against a Serendip install yet. Check them
 against K3s's guide for the pinned version first. The key is in
 `/var/lib/rancher/k3s/server/cred/`, so back it up with the datastore.
-A kind dev cluster always reads `unknown`.
+A kind dev cluster always reads `unknown`. `on` means encryption was
+configured when K3s started, not that every older Secret was
+re-encrypted, which is why step 3 matters (RP-096).
+
+### Running secret variables
+
+Design: `application-platform.md`, "Secret variables".
+- **Check delivery** on the Deployment: `SecretEnvDelivered` and
+  `status.secretEnvVersion` (`serendip deployments get <id>`, or the
+  console's Deploy tab). Messages name the variable, Secret and key.
+- **Rotate** by writing the Secret's new value (`serendip secrets value
+  set <id> --data -`, or `POST /v1/secrets/{id}/value`). Every Deployment using it rolls, one
+  rolling restart each (RP-098). On a full node the surge pod can wait
+  Pending.
+- **If OpenBao's pod restarts,** it comes back sealed. `serendipd`
+  unseals it again with the stored key within a resync (spec 026 T012,
+  ADR 0009). Until then Deployments whose secret variables changed read
+  `ProviderNotReady`, and running pods keep their values. If it stays
+  sealed, look for "uninitialized" in `serendipd`'s log: that means
+  OpenBao's storage was lost, and Serendip won't initialize it again.
+- **Upgrading to spec 026** gives every Component a new release, because
+  the component type changed, so every Deployment that follows the
+  latest release rolls once. A Deployment pinned to an older release
+  doesn't roll, and reads `NeedsNewRelease` if it gains secret
+  variables: deploy a newer release to it (RP-099).
+- **Downgrading** to a build older than spec 026 drops secret variables
+  from running pods: the type loses the property, so the pods roll
+  without them until the upgrade comes back. The `<component>-secret-env`
+  Secrets stay in the namespaces (RP-099).
+- **Who can read the values in the cluster:** anyone with `get secrets`
+  in the Environment's namespace, or a cluster-admin kubeconfig
+  (RP-096). Keep the kubeconfig as guarded as OpenBao's credentials
+  file.
 
 ## SLOs and error budgets
 

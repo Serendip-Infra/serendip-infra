@@ -477,7 +477,33 @@ upgrade returns, so `operations.md` should say that.
 - **Verify:** RSS within 2 MiB of the same-host baseline; pod list
   unchanged apart from the workloads.
 
-## T011: Docs and close-out
+## T011: Docs and close-out ✅
+
+**Done as** (2026-11-24):
+- **ADR 0024** (secrets reach workloads through a Serendip-written
+  cluster Secret), indexed with `secrets.md` in
+  `docs/architecture/README.md`.
+- **`application-platform.md`:** a "Secret variables (spec 026)"
+  section (shape, refusals, delivery, rotation, the condition table,
+  clean-up, upgrade, cost). The two "not done" lines now point to it.
+- **`secrets.md`:** the re-unseal (T012), "Secret variables: values
+  reaching workloads", and `GET /v1/secrets/status`.
+- **Also updated:** `authorization.md` (naming a Secret for a secret
+  variable), `operations.md` ("Running secret variables": rotation,
+  OpenBao restarts, the upgrade's one roll, and a downgrade dropping the
+  variables), `bootstrap-agent.md`, and `build-vs-adopt.md` (two built,
+  one adopted, four rejected). `cli-and-mcp.md` was done in T007.
+- **Risk register:** RP-096 to RP-103 (values in the cluster and
+  encryption caveats, not release-bound, rotation rolls, upgrade and
+  downgrade, unaudited reads, delivery costs and edges, platform-injected
+  name clashes, the status read at `/`).
+- **docs-keeper:** two real findings, both fixed. `SecretEnvPending`
+  lets the deploy run, unlike the other Unknown reasons, and RP-094's
+  stale "Why open" is now past tense. Also from its nits: a pointer to
+  RP-095 in Clean-up. The 409 it queried is real
+  (`api/topology_handler.go`).
+- **Verified:** the only RP that `plan.md` names (RP-094) exists. Every
+  RP the docs cite (RP-094 to RP-103) has an index row and an entry.
 
 - **Do:**
   - ADR 0024 (secrets reach workloads through a Serendip-written cluster

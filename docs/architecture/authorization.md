@@ -162,6 +162,18 @@ unrestricted, as in Azure.
     (Secrets User or Officer) to name one. Other source fields stay
     editable without it, which holds only while the build step can't see
     the credential (RP-044).
+  - **Naming a Secret for a secret variable** (spec 026,
+    `application-platform.md` "Secret variables") on a Component's
+    `secretEnv` or a Deployment's `overrides.secretEnv` needs the same
+    data action, `serendip/secrets/value/read`, at that Secret (403,
+    audited, with the checks in the policy evidence). The workload gets
+    the value, and a Component that prints its environment hands it to
+    anyone who can read its logs. Only newly named entries are checked:
+    a new entry, or a changed Secret, key or variable (a key choice is a
+    value choice). Removing an entry or keeping one needs nothing more.
+    The Secret must also be in the Component's Project or above it (422).
+    Azure analogue: an App Service Key Vault reference, which resolves
+    only when the app's identity holds *Key Vault Secrets User*.
   - **Installing or removing the builds package** is a package write at
     `/`, like any package; an agent's removal waits for a person's
     Approval.
@@ -394,6 +406,13 @@ as the system, so the check is made when a person names it on a
 Component (above, "Builds"), not at build time. The reconciler copies the
 value into a plain Kubernetes Secret for that one run, deleted once the
 run ends (RP-050).
+
+**A secret variable's value** (spec 026) is read the same way, by the
+Deployment reconciler as the system, and written into a plain Secret in
+the Deployment's namespace for as long as the Deployment uses it
+(RP-096). The check is again made when a person names the Secret.
+`GET /v1/secrets/status`, the cluster's encryption at rest, is
+`serendip/secrets/read` at `/` (RP-103).
 
 ## Known limits
 
