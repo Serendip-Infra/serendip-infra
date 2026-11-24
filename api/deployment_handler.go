@@ -50,10 +50,14 @@ type DeploymentHandler struct {
 	schemas reconcile.ConfigSchemaProvider
 	// recordDenied audits the handler's own refusals (auditRefusal).
 	recordDenied dbForAudit
+	// secretEnv checks the Secrets the overrides' secret variables name
+	// (spec 026).
+	secretEnv secretEnvChecker
 	// mu serialises Deployment writes, so two requests can't both pass
 	// the one-per-Environment check and both create (requests run
-	// concurrently; one control plane, so a mutex is enough).
-	mu sync.Mutex
+	// concurrently; one control plane, so a mutex is enough). It's
+	// ComponentHandler's too (spec 026).
+	mu *sync.Mutex
 }
 
 func (h *DeploymentHandler) Register(mux Mux) {
@@ -174,11 +178,13 @@ func (h *DeploymentHandler) admit(ctx context.Context, d resource.Deployment, en
 	if !ok {
 		return ctx, deployRefuse(http.StatusForbidden, "forbidden", "missing %s at Component/%s: deploying a Component needs reading it", compRead.Name, d.Spec.Component)
 	}
-	return ctx, h.coherent(ctx, d, envID, current)
+	return h.coherent(ctx, d, envID, current)
 }
 
-// coherent checks d's Environment, Component, Project and pipeline.
-func (h *DeploymentHandler) coherent(ctx context.Context, d resource.Deployment, envID string, current *resource.Deployment) error {
+// coherent checks d's Environment, Component, Project, secret variables
+// and pipeline, and returns the context with the secret variables' checks
+// in its policy evidence.
+func (h *DeploymentHandler) coherent(ctx context.Context, d resource.Deployment, envID string, current *resource.Deployment) (context.Context, error) {
 	var selfID string
 	var history []string
 	if current != nil {
@@ -187,31 +193,42 @@ func (h *DeploymentHandler) coherent(ctx context.Context, d resource.Deployment,
 	}
 	env, err := h.envs.Get(ctx, envID)
 	if errors.Is(err, store.ErrNotFound) {
-		return deployRefuse(http.StatusBadRequest, "validation failed", "Environment %s not found", envID)
+		return ctx, deployRefuse(http.StatusBadRequest, "validation failed", "Environment %s not found", envID)
 	} else if err != nil {
-		return err
+		return ctx, err
 	}
 	comp, err := h.comps.Get(ctx, d.Spec.Component)
 	if errors.Is(err, store.ErrNotFound) {
-		return deployRefuse(http.StatusBadRequest, "validation failed", "Component %s not found", d.Spec.Component)
+		return ctx, deployRefuse(http.StatusBadRequest, "validation failed", "Component %s not found", d.Spec.Component)
 	} else if err != nil {
-		return err
+		return ctx, err
 	}
 	app, err := h.apps.Get(ctx, owner(comp.Metadata, resource.KindApplication))
 	if err != nil {
-		return deployRefuse(http.StatusBadRequest, "validation failed", "the Component's Application can't be read: %v", err)
+		return ctx, deployRefuse(http.StatusBadRequest, "validation failed", "the Component's Application can't be read: %v", err)
 	}
 	projectID := owner(env.Metadata, resource.KindProject)
 	if projectID == "" || owner(app.Metadata, resource.KindProject) != projectID {
-		return deployRefuse(http.StatusBadRequest, "validation failed", "the Component's Application and the Environment must belong to the same Project")
+		return ctx, deployRefuse(http.StatusBadRequest, "validation failed", "the Component's Application and the Environment must belong to the same Project")
 	}
 	project, err := h.projects.Get(ctx, projectID)
 	if err != nil {
-		return err
+		return ctx, err
+	}
+	if err := resource.ValidateDeploymentSecretEnv(d.Spec.Overrides, comp.Spec); err != nil {
+		return ctx, err
+	}
+	var was []resource.ComponentSecretEnv
+	if current != nil {
+		was = current.Spec.Overrides.SecretEnv
+	}
+	ctx, err = h.secretEnv.check(ctx, "overrides.secretEnv", d.Spec.Overrides.SecretEnv, was, func(context.Context) (string, error) { return projectID, nil })
+	if err != nil {
+		return ctx, err
 	}
 	all, err := h.deployments.List(ctx, store.ListOptions{})
 	if err != nil {
-		return err
+		return ctx, err
 	}
 	running := map[string]string{}
 	for _, other := range all {
@@ -220,14 +237,14 @@ func (h *DeploymentHandler) coherent(ctx context.Context, d resource.Deployment,
 		}
 		otherEnv := owner(other.Metadata, resource.KindEnvironment)
 		if otherEnv == envID {
-			return deployRefuse(http.StatusConflict, "conflict", "Component %s already runs in this Environment, as Deployment %s; change that one", d.Spec.Component, other.Metadata.ID)
+			return ctx, deployRefuse(http.StatusConflict, "conflict", "Component %s already runs in this Environment, as Deployment %s; change that one", d.Spec.Component, other.Metadata.ID)
 		}
 		running[otherEnv] = cmpOr(other.Status.Release, other.Spec.Release)
 	}
 	if current != nil && d.Spec.Release == current.Spec.Release {
-		return nil
+		return ctx, nil
 	}
-	return resource.AdmitRelease(project.Spec.Pipeline, envID, d.Spec.Release, running, history)
+	return ctx, resource.AdmitRelease(project.Spec.Pipeline, envID, d.Spec.Release, running, history)
 }
 
 // overridesEqual reports whether next configures what current (nil on

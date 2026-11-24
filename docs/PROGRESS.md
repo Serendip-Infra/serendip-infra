@@ -12,71 +12,183 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-23 (spec 025 done: T001–T015; spec PR open; spec 026 next)
+Last updated: 2026-11-24 (spec 026: all 12 tasks done; PR open, waiting for the user's review and merge)
 
 ## Current phase
 
-**Spec 025 (networking: Cilium, Hubble and traces; epic #66): DONE
-2026-11-23,** all 15 tasks (#353–#367 closed). Branch `spec-025` (off
-`spec-024`, which is merged) is pushed to the Yasindu007 fork; the spec
-PR (`Closes #66`) is opened by Yasindu007 and merged by
-`serendipinfra` with a merge commit. **If the PR isn't merged yet,
-that's the first thing to check.** Then the board: #66 in Done.
+**Spec 026 (Secrets into Components; epic #67): ALL TASKS DONE, PR
+OPEN.** Branch `spec-026` (off `main` after PR #368 merged), pushed to
+the Yasindu007 fork. Spec, plan and tasks were approved under the user's
+"full auto" instruction (2026-11-24), and the user reviews the whole spec
+now.
+- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added), all
+  closed with their commits. #67's checklist is fully ticked, and its
+  body is rewritten as DONE.
+- **The PR:** #381, `spec-026` → `main`, opened by Yasindu007, `Closes #67`.
+  `serendipinfra` merges it with a merge commit once the user has
+  reviewed it.
 
-**Next: spec 026, Secrets into Components (epic #67).** Start with
-`/new-spec` (spec → plan → tasks, approval on plan.md). Task issues get
-opened as one paced batch when tasks.md is approved, and GitHub stays in
-step per task (commit with `Closes #N`, push, close by hand with the
-commit, tick the epic, check the board).
+**Next:** the user's review of spec 026, then the merge. After that,
+the next spec on the roadmap (`docs/PRD.md`).
+- **Roadmap change (the user, 2026-11-24):** a new v1 GA epic, #382, **Spec
+  036: Workload identity**. It runs after spec 031 (small-3) and before
+  032 (Longhorn), but takes the next free number, so the planned epics
+  keep theirs (the user's choice). Each Component gets an identity (a
+  ServiceAccount with OpenBao Kubernetes auth, under the Secrets roles),
+  plus an opt-in CSI file mount and application fetches, mirroring
+  Azure. It's the answer to RP-096.
 
-### What spec 025 left behind
+- **T011, done:** ADR 0024; `application-platform.md` "Secret variables
+  (spec 026)"; `secrets.md` (re-unseal, values reaching workloads, the
+  status route); `authorization.md`, `operations.md` ("Running secret
+  variables", with the upgrade's roll and the downgrade), and
+  `bootstrap-agent.md`; build-vs-adopt; and RP-096 to RP-103.
+  docs-keeper's two findings are fixed.
+- **T010, done** (`c849380`; criterion 12 in `verification.md`). It was
+  a same-host A/B on `serendip-t018`: `main`'s `serendipd` against
+  `spec-026`'s, run A, B, A, B on copies of the t026 store. B − A was
+  −0.1 MiB and +1.0 MiB, and no new pods ran. The evidence is in
+  `profiles/edge-1/bench/results/2026-11-24-spec026-same-host/`.
 
-- **Docs:** ADR 0023 (networking observed; **Cilium stays edge-1's
-  default**, `--cni default` for tight machines),
-  `docs/architecture/networking.md`, `operations.md` "Networking",
-  `bootstrap-agent.md` (`--cni`), `authorization.md` (traces data
-  action), build-vs-adopt, RP-081–RP-093.
-- **T013's numbers** (simulated T470,
-  `profiles/edge-1/bench/results/2026-11-23-spec025-simulated-t470/`):
-  Cilium +443 MiB / +92 mcores idle, +461 MiB / +128 mcores at 10 req/s
-  (RP-089); tracing +145 to +180 MiB, ~730 MiB/day of disk (RP-088);
-  `serendipd` 33.2 MiB idle (criterion 12 PASS). The cilium run's
-  `harness.log` and `serendipd.1.log` (and kindnet's) are left
-  untracked, as earlier runs' logs were.
-- **Re-measure on the L470** (the user is buying a ThinkPad L470,
-  i5-7300U, 2c/4t, 8 GB to go to 16 GB, as the first real T470-class
-  node; label results "L470"; whether it counts for the reference gate
-  is the user's call, an ADR): Cilium's cost (if half a GiB is too much
-  at 8 GB, recommend `--cni default` there), `TracingRequirements`, and
-  what `k3s-uninstall.sh` leaves of Cilium (RP-083).
-- **Watch items:** RP-093 (Hubble series grow with pod pairs; count at
-  `small-3`), RP-092 (no per-pod OTLP rate limit), RP-091 (the node
-  guard keys on two namespace names).
+- **T001–T008, done:** tasks.md's "Done as" entries have the detail
+  (core, reconciler, provider, encryption at rest, API, CLI/MCP, console).
+- **T009, done** (`a0690b9`; `verification.md`). Criteria 1–11 PASS:
+  - on `serendip-t018`;
+  - criterion 8 also on a `rancher/k3s` container with the agent's
+    flags, where it reported `encryptionAtRest: on`;
+  - the evidence is in `~/.serendip-t018/t026/evidence/`.
+  - **Fixed:**
+    - F1: no-value and not-found messages name the variable and key;
+    - F2: an unreachable or sealed OpenBao is `ErrProviderNotReady`
+      (503, with a fixed text and no upstream answer);
+    - F3: `/v1/secrets/status`'s `ready` follows OpenBao's health;
+    - F4: `DeleteComponent` deletes `<cmp>-secret-env` first.
+  - **Recorded, both older than 026:**
+    - RP-094: OpenBao stayed sealed after its pod restarts. **Closed by
+      T012.**
+    - RP-095: a Component delete leaves its Deployments behind (still
+      open).
+- **T012, done** (`10273ec`; added at the user's request, plan decision
+  13, spec criterion 13 and scope item 11).
+  - The OpenBao provider unseals OpenBao again with the stored key when a
+    call or the status read finds it sealed, then retries once
+    (`providers/secrets/openbao/unseal.go`).
+  - It tries at most once every 10 s, and never initializes.
+  - Live: the resync unsealed a restarted OpenBao within seconds.
+  - ADR 0009 is amended. **T011's docs should mention this** in
+    `secrets.md` and `operations.md`.
+  - Decision 12 was confirmed: on the upgrade, Deployments following the
+    latest release rolled once, and a pinned one didn't.
 
-### Test beds (all stopped, for memory)
+**State left by T009:**
+- `serendipd` runs on `:8088`: the T009 build, on
+  `~/.serendip-t018/t026/t026.db`, started with `bash
+  ~/.serendip-t018/t026/start.sh`. The user's dev one (`dev-up.ps1`,
+  `t023.db`) is stopped. Restart it with `.\scripts\dev-up.ps1
+  -Restart`.
+- In the t026 store, `verifier` has Secrets Officer at Project
+  `t014-builds`. The CLI is signed in as `admin`
+  (`~/.serendip-t018/t026/cli-login.mjs` signs it in again).
+- Five ReleaseBindings from older test stores (`t020-web`, `t020-api`,
+  `rp018-check`, `t019-*`) are set to `state: Undeploy` to free CPU.
+  Revert with `Active`.
+- **Not allowed from this session (auto-mode classifier):**
+  - running `dev-up.ps1` with `-ExecutionPolicy Bypass` (T009 did its
+    steps by hand instead);
+  - starting Docker Desktop;
+  - editing `.claude/settings*.json`.
 
-- **`serendip-t025`** (Cilium dev cluster, state `~/.serendip-t025-dev`)
-  has the observability and tracing packages and T012's Components
-  (`otel-srv`, `otel-caller`, `spoofer` in `t012-a`). To use it: `docker
-  start serendip-t025-control-plane`, then `bash
-  ~/.serendip-t025-dev/t012/start.sh` as a background run. Tooling and
-  evidence in `~/.serendip-t025-dev/t012/`.
-- **`t025`** (scratch kind cluster, `~/.serendip-t025/`, kubeconfig
-  `t001/kubeconfig`, `serendipd` on `:8095` with `t025.db` and the API key
-  in `keys.env`): T001–T009 evidence. Can be deleted once nobody needs
-  it.
-- **`serendip-t018`** (kindnet, the `external` case): `docker start
-  serendip-t018-control-plane`, then `.\scripts\dev-up.ps1 -Restart
-  -NoBuild`.
-- `bench-t470` is deleted.
-- **After a laptop restart** Docker starts every kind node again
-  (restart policy `on-failure`) and no `serendipd`: stop what isn't
-  needed (`docker stop <cluster>-control-plane`).
-- **Gotchas kept:** `kind load` fails here (docker save + ctr import into
-  the node); in Git Bash pass `OBS_LIVE_KUBECONFIG` as a Windows path and
-  set `MSYS2_ENV_CONV_EXCL=OBS_LIVE_FLOW_SOURCE`; long runs go from the
-  user's own terminal or with the keep-awake, because the memory reaper
-  kills shells (and a killed parent makes `helm` fail `0xc0000142`).
+### Spec 026's design (plan.md; decisions are numbered there)
+
+- **Delivery (decision 1).**
+  - Serendip writes one plain Kubernetes Secret, `<cmp>-secret-env`,
+    per Deployment into its data-plane namespace. The component type
+    adds it with `envFrom`.
+  - Only its name and a metadata-only version reach OpenChoreo, in the
+    ReleaseBinding's
+    `componentTypeEnvironmentConfigs.serendipSecretEnv {name, version}`.
+  - The version is a pod annotation, so a new version rolls the pods.
+  - Rejected: ESO, a rendered Secret (it would sit in plaintext in
+    RenderedRelease), OpenBao's injector and CSI driver.
+- **Core, done.**
+  - `ComponentSpec.SecretEnv` and `DeploymentOverrides.SecretEnv` (`{env,
+    secret, key}`), with validation and clash rules
+    (`core/resource/secretenv.go`).
+  - `DeploymentStatus.SecretEnvVersion`.
+  - The resolver is `core/reconcile/secretenv.go`. Values are read only
+    on a version mismatch. A False result means no platform change.
+    `held` tracks what the platform holds.
+  - `Deploy(..., secretEnvVersion)`.
+  - The optional `SecretEnvProvider`, with `ErrSecretEnvPending` and
+    `ErrSecretEnvUnsupported`.
+  - `SecretReconciler.OnValueWritten` and `EnqueueSecretUsers`.
+- **Provider, done (T004, `providers/application/openchoreo/secretenv.go`;
+  tasks.md's "Done as").**
+  - `SecretEnvVersion` and `WriteSecretEnv` work on `<cmp>-secret-env`.
+    The namespace comes from `ProjectReleaseBinding.status.namespace`,
+    and pending covers both a missing namespace and an apply 404.
+  - `Deploy` sets `serendipSecretEnv` only when there's a version. It
+    returns `NeedsNewRelease` before the binding apply when the release's
+    type lacks the property.
+  - `Undeploy` deletes the Secret first.
+  - `ConfigSchemas` strips the property.
+  - **Not yet live:** the real template change, checked first in T009.
+    Every running Deployment rolls once on upgrade, because the type is
+    in the release hash (decision 12). Confirm that in T009 too.
+- **For the risk register (T011):**
+  - encryption at rest: the annotation shows it was configured at
+    start, not that older Secrets were re-encrypted; `secrets-encrypt
+    disable` may leave it (not checked); the key is on the same disk;
+  - the operations.md enable steps haven't been run yet;
+  - values rest in the cluster as plain Secrets;
+  - references aren't release-bound;
+  - delivery reads aren't audited;
+  - a rotation rolls every user;
+  - two platform GETs per Deployment with secret variables per pass
+    (the project binding and the Secret);
+  - an apply 404 reads as pending for good if the path were ever wrong;
+  - clearing value buffers is best effort;
+  - every Deployment rolls once on the upgrade (a new type, so a new
+    release);
+  - a clash with platform-injected variables (spec 025's tracing ones);
+  - `GET /v1/secrets/status` is read at `/`, so a Project-only user's
+    console shows no encryption banner (T006, by decision 9).
+
+### Test beds
+
+- **`serendip-t018`** (kindnet) is up, with the T009 `serendipd` on
+  `:8088` (see "State left by T009" above).
+  - The kubectl default context is `kind-serendip-t018`. The repo's
+    kube-context guard reads the default context, so mutations need it.
+  - CPU requests were at 96% before T009 undeployed the five older
+    Components. A rolling update's surge pod can stay Pending when the
+    node is that full.
+- `serendip-t025` and `t025` are stopped (`docker start
+  <name>-control-plane`).
+- **Not allowed from this session (auto-mode classifier):** starting
+  Docker Desktop, and editing `.claude/settings*.json`. The user does
+  those.
+
+### What spec 025 left behind (done 2026-11-23, PR #368 merged)
+
+- ADR 0023 (Cilium stays edge-1's default; `--cni default` for tight
+  machines), `docs/architecture/networking.md`, and RP-081–RP-093.
+- **Re-measure on the L470** (the user's first real T470-class node):
+  - Cilium's cost (+443 MiB idle on the simulated T470);
+  - `TracingRequirements`;
+  - what `k3s-uninstall.sh` leaves of Cilium (RP-083).
+- **Watch items:**
+  - RP-093: Hubble series grow with pod pairs;
+  - RP-092: no per-pod OTLP rate limit;
+  - RP-091: the node guard keys on two namespace names.
+- **The t025 test bed:** `docker start serendip-t025-control-plane`, then
+  `bash ~/.serendip-t025-dev/t012/start.sh` as a background run.
+- **Gotchas kept:**
+  - `kind load` fails here: use docker save, then ctr import into the
+    node.
+  - In Git Bash, set `MSYS_NO_PATHCONV=1` for `docker run --tmpfs /run`.
+  - Long runs go from the user's own terminal, because the memory reaper
+    kills background shells.
 
 **Spec 024 (alert rules and notification channels; epic #65): DONE
 2026-11-20.** PR #352 merged; T013 ticked (77f068b), #351 and #65 closed

@@ -36,6 +36,9 @@ const (
 	InField
 	// InBody is the whole JSON body.
 	InBody
+	// InEdit changes the InBody document before it's sent, through the
+	// operation's edit (spec 026's --secret-env).
+	InEdit
 )
 
 // Type is a parameter's JSON type.
@@ -70,6 +73,9 @@ type Param struct {
 	// CLIOnly leaves the parameter off MCP, saying why: an MCP tool
 	// answers once, so a streaming option has no place there.
 	CLIOnly string
+	// Repeat makes a string parameter a list: the CLI flag may be given
+	// more than once, and the argument is a list of strings.
+	Repeat bool
 	// dflt is sent when the parameter is absent: MCPMax, once ForMCP has
 	// made the operation a tool's.
 	dflt string
@@ -115,6 +121,9 @@ type Operation struct {
 	// body builds the JSON body when fields alone can't express it. Its
 	// args have been checked by Request already.
 	body func(args map[string]any) (any, error)
+	// edit applies the InEdit arguments to the InBody document, a copy
+	// of it, when any are given.
+	edit func(doc map[string]any, args map[string]any) (map[string]any, error)
 }
 
 // Request is the HTTP request an operation's arguments make.
@@ -180,6 +189,19 @@ func (o Operation) Request(args map[string]any) (Request, error) {
 			whole = v
 		}
 	}
+	if o.edit != nil && slices.ContainsFunc(o.Params, func(p Param) bool {
+		return p.In == InEdit && present[p.Name] != nil
+	}) {
+		doc, ok := whole.(map[string]any)
+		if !ok {
+			return Request{}, fmt.Errorf("%s: an edit needs the resource document", o.Name)
+		}
+		edited, err := o.edit(deepCopy(doc), present)
+		if err != nil {
+			return Request{}, fmt.Errorf("%s: %w", o.Name, err)
+		}
+		whole = edited
+	}
 	var body any
 	switch {
 	case o.body != nil:
@@ -213,6 +235,18 @@ func (o Operation) Request(args map[string]any) (Request, error) {
 // check reports whether v fits the parameter's type, enum and bound. The
 // error reads after the parameter's name.
 func (p Param) check(v any) error {
+	if p.Repeat {
+		list, ok := v.([]any)
+		if !ok {
+			return fmt.Errorf("must be a list of strings, not %T", v)
+		}
+		for _, e := range list {
+			if _, ok := e.(string); !ok {
+				return fmt.Errorf("must be a list of strings, not one holding %T", e)
+			}
+		}
+		return nil
+	}
 	switch p.typ() {
 	case String:
 		s, ok := v.(string)
@@ -297,6 +331,9 @@ func (o Operation) InputSchema() map[string]any {
 		}
 		if p.In == InLabels {
 			s["additionalProperties"] = map[string]any{"type": "string"}
+		}
+		if p.Repeat {
+			s = map[string]any{"type": "array", "items": s}
 		}
 		if p.Description != "" {
 			s["description"] = p.Description

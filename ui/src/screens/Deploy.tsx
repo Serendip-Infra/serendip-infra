@@ -20,6 +20,8 @@ import { action } from "../lib/permissions";
 import { acceptsNewRelease, orderEnvironments, ownerOf, promotionTargets } from "../lib/pipeline";
 import { Link, navigate } from "../lib/router";
 import { fromFormState, schemaFields, toFormState, type SchemaFormState } from "../lib/schemaForm";
+import { fromRows, listErrors, toRows, type SecretEnvRow } from "../lib/secretEnv";
+import { SecretEnvDelivery, SecretEnvEditor } from "./SecretEnv";
 
 const enc = encodeURIComponent;
 export const compPath = (appId: string, id: string) => `/applications/${enc(appId)}/components/${enc(id)}`;
@@ -190,10 +192,14 @@ function EnvironmentStage({
   const o = d.spec.overrides ?? {};
   const counts = [
     Object.keys(o.env ?? {}).length > 0 ? plural(Object.keys(o.env ?? {}).length, "variable") : "",
+    (o.secretEnv?.length ?? 0) > 0 ? plural(o.secretEnv?.length ?? 0, "secret variable") : "",
     Object.keys(o.config ?? {}).length > 0 ? plural(Object.keys(o.config ?? {}).length, "setting") : "",
     Object.keys(o.traits ?? {}).length > 0 ? plural(Object.keys(o.traits ?? {}).length, "trait") : "",
   ].filter(Boolean);
   const history = d.status.history ?? [];
+  // What the Deployment runs with: the Component's secret variables, each
+  // replaced by an override of the same name (core/resource MergeSecretEnv).
+  const secretVars = new Set([...(comp.spec.secretEnv ?? []), ...(o.secretEnv ?? [])].map((e) => e.env)).size;
 
   return (
     <>
@@ -220,6 +226,7 @@ function EnvironmentStage({
               ]
             : []),
           ["Overrides", counts.length > 0 ? counts.join(", ") : "None"],
+          ...(secretVars > 0 ? [["Secret variables", <SecretEnvDelivery conditions={d.status.conditions} count={secretVars} />] as [string, React.ReactNode]] : []),
           ...(d.status.endpoints ?? []).map((e): [string, React.ReactNode] => [`Endpoint ${e.name}`, <SafeLink href={e.url} />]),
         ]}
       />
@@ -353,6 +360,9 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
   const [schemaError, setSchemaError] = useState<ApiError | NetworkError>();
   const [loadError, setLoadError] = useState<ApiError | NetworkError>();
   const [env, setEnv] = useState<EnvRow[]>([]);
+  const [secretEnv, setSecretEnv] = useState<SecretEnvRow[]>([]);
+  const [compSpec, setCompSpec] = useState<Component["spec"]>();
+  const [projectId, setProjectId] = useState<string>();
   const [config, setConfig] = useState<SchemaFormState>({});
   const [traits, setTraits] = useState<Record<string, SchemaFormState>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -380,6 +390,9 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
       setEnvName(e?.metadata.name);
       setSchemas(s);
       setEnv(Object.entries(o.env ?? {}).map(([name, value]) => ({ key: nextKey(), name, value })));
+      setSecretEnv(toRows(o.secretEnv));
+      setCompSpec(comp?.spec);
+      setProjectId(app ? ownerOf(app.metadata, "Project") : undefined);
       setConfig(toFormState(s?.environment, o.config));
       setTraits(Object.fromEntries(Object.entries(s?.traits ?? {}).map(([t, schema]) => [t, toFormState(schema, o.traits?.[t])])));
     })().catch((err) => isShown(err) && setLoadError(err));
@@ -392,14 +405,29 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
   const o = d.spec.overrides ?? {};
   const cfg = fromFormState(schemas?.environment, config);
   const traitResults = Object.fromEntries(Object.entries(schemas?.traits ?? {}).map(([t, schema]) => [t, fromFormState(schema, traits[t] ?? {})]));
+  // core/resource ValidateDeploymentSecretEnv: an override's secret
+  // variable may replace the Component's secret variable, but no plain or
+  // dependency variable in either layer; a plain override may not shadow
+  // the Component's secret variable. Without the Component, the server
+  // checks alone.
+  const compSecret = new Set((compSpec?.secretEnv ?? []).map((e) => e.env));
+  const taken = new Map<string, string>();
+  for (const k of Object.keys(compSpec?.env ?? {})) taken.set(k, "a plain variable of the component");
+  for (const dep of compSpec?.dependencies ?? []) taken.set(dep.env, "a dependency's address variable");
+  for (const r of env) if (r.name !== "") taken.set(r.name, "a plain variable for this environment");
+  const envErrors: Record<string, string> = {};
+  const seen = new Set<string>();
+  env.forEach((r, i) => {
+    if (!envNameRE.test(r.name)) envErrors[`env-${i}`] = "Letters, digits and underscores, not starting with a digit.";
+    else if (seen.has(r.name)) envErrors[`env-${i}`] = "Already set above.";
+    else if (compSecret.has(r.name)) envErrors[`env-${i}`] = "This is a secret variable of the component: override it under secret variables instead.";
+    seen.add(r.name);
+  });
+  const secretErrors = listErrors(secretEnv, taken);
   const errors: Record<string, string> = {};
   if (submitted) {
-    const seen = new Set<string>();
-    env.forEach((r, i) => {
-      if (!envNameRE.test(r.name)) errors[`env-${i}`] = "Letters, digits and underscores, not starting with a digit.";
-      else if (seen.has(r.name)) errors[`env-${i}`] = "Already set above.";
-      seen.add(r.name);
-    });
+    Object.assign(errors, envErrors);
+    for (const [k, v] of Object.entries(secretErrors)) errors[`secretEnv-${k}`] = v;
     for (const [p, e] of Object.entries(cfg.errors)) errors[`config.${p}`] = e;
     for (const [t, r] of Object.entries(traitResults)) for (const [p, e] of Object.entries(r.errors)) errors[`trait.${t}.${p}`] = e;
   }
@@ -408,6 +436,7 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
   // re-checks only configuration that changed.
   const overrides: DeploymentOverrides = {};
   if (env.length > 0) overrides.env = Object.fromEntries(env.map((r) => [r.name, r.value]));
+  if (secretEnv.length > 0) overrides.secretEnv = fromRows(secretEnv);
   const config_ = schemas ? keepUndescribed(o.config, schemas.environment, cfg.values) : o.config;
   if (config_ && Object.keys(config_).length > 0) overrides.config = config_;
   const traits_ = schemas
@@ -422,7 +451,8 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
     e.preventDefault();
     setSubmitted(true);
     const invalid =
-      env.some((r, i) => !envNameRE.test(r.name) || env.findIndex((x) => x.name === r.name) !== i) ||
+      Object.keys(envErrors).length > 0 ||
+      Object.keys(secretErrors).length > 0 ||
       Object.keys(cfg.errors).length > 0 ||
       Object.values(traitResults).some((r) => Object.keys(r.errors).length > 0);
     if (invalid) {
@@ -490,6 +520,21 @@ export function DeploymentConfigure({ appId, compId, id }: { appId: string; comp
             </div>
           </div>
         </fieldset>
+
+        <SecretEnvEditor
+          idPrefix="ovr-senv"
+          legend={`Secret variables for ${where}`}
+          hint={
+            compSecret.size > 0
+              ? `The component sets ${[...compSecret].join(", ")} in every environment. Add one of those names to replace its Secret or key in ${where} only, or a new name to add one.`
+              : `Set variables from Secrets' values in ${where} only. Values are never shown.`
+          }
+          rows={secretEnv}
+          onChange={setSecretEnv}
+          taken={taken}
+          projectId={projectId}
+          listErrors={submitted ? secretErrors : {}}
+        />
 
         {schemaError ? (
           <Notice>

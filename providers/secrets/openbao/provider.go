@@ -3,10 +3,12 @@ package openbao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
+	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
 )
 
 // Provider implements core/reconcile.SecretsProvider by wrapping a
@@ -18,6 +20,11 @@ import (
 // placement exactly.
 type Provider struct {
 	client *Client
+	// cluster, when set (WithCluster), is read by EncryptionAtRest.
+	cluster *kubernetes.Client
+	// unseal, when set (WithUnseal), unseals OpenBao again after its pod
+	// restarts.
+	unseal *unsealer
 }
 
 // NewProvider builds a Provider around client. Every Secret this
@@ -50,7 +57,10 @@ func storageKey(sec resource.Secret) string {
 // expected, non-error outcome for a Secret that's never been written
 // to, not a failure.
 func (p *Provider) Exists(ctx context.Context, sec resource.Secret) (bool, error) {
-	_, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+	err := p.retried(ctx, func() error {
+		_, err := p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+		return err
+	})
 	if errors.Is(err, ErrSecretNotFound) {
 		return false, nil
 	}
@@ -61,13 +71,35 @@ func (p *Provider) Exists(ctx context.Context, sec resource.Secret) (bool, error
 }
 
 func (p *Provider) WriteValue(ctx context.Context, sec resource.Secret, value map[string]any) error {
-	return p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value)
+	return p.retried(ctx, func() error { return p.client.WriteSecret(ctx, DefaultKVMount, storageKey(sec), value) })
 }
 
 func (p *Provider) ReadValue(ctx context.Context, sec resource.Secret) (map[string]any, error) {
-	return p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+	var v map[string]any
+	err := p.retried(ctx, func() error {
+		var err error
+		v, err = p.client.ReadSecret(ctx, DefaultKVMount, storageKey(sec))
+		return err
+	})
+	return v, err
 }
 
 func (p *Provider) Delete(ctx context.Context, sec resource.Secret) error {
-	return p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec))
+	return p.retried(ctx, func() error { return p.client.DeleteSecret(ctx, DefaultKVMount, storageKey(sec)) })
 }
+
+// notReady reports OpenBao being unavailable as the capability not being
+// ready, so callers say so (a 503, a "not ready" condition) instead of
+// failing: it passes once OpenBao is back (spec 026 T009 F2). The cause
+// isn't kept: a 503's detail is the error's text, and OpenBao's or the
+// API server's answer names cluster internals.
+func notReady(err error) error {
+	if errors.Is(err, ErrUnavailable) {
+		return errSecretsStoreUnavailable
+	}
+	return err
+}
+
+// errSecretsStoreUnavailable is what callers see while OpenBao is
+// unreachable, sealed or uninitialized.
+var errSecretsStoreUnavailable = fmt.Errorf("%w: the secrets store isn't answering, or is sealed", reconcile.ErrProviderNotReady)

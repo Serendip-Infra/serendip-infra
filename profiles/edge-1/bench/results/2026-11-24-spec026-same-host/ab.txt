@@ -1,0 +1,37 @@
+== A1 (serendipd-main.exe) start 15:28:44
+healthz 200
+"serendipd-main.exe","18132","Console","1","85,164 K"
+"serendipd-main.exe","18132","Console","1","85,348 K"
+"serendipd-main.exe","18132","Console","1","85,348 K"
+"serendipd-main.exe","18132","Console","1","85,196 K"
+"serendipd-main.exe","18132","Console","1","85,196 K"
+"serendipd-main.exe","18132","Console","1","85,208 K"
+dp-openchoreo-co-app-b591c724c-env-a1fc739c-d2faa7f5   cmp-b5a4fea02d-secret-env                                Opaque               1     23m
+== B1 (serendipd-026.exe) start 15:34:21
+healthz 200
+"serendipd-026.exe","11468","Console","1","84,832 K"
+"serendipd-026.exe","11468","Console","1","85,096 K"
+"serendipd-026.exe","11468","Console","1","85,092 K"
+"serendipd-026.exe","11468","Console","1","85,072 K"
+"serendipd-026.exe","11468","Console","1","85,072 K"
+"serendipd-026.exe","11468","Console","1","85,116 K"
+dp-openchoreo-co-app-b591c724c-env-a1fc739c-d2faa7f5   cmp-b5a4fea02d-secret-env                                Opaque               1     28m
+== A2 (serendipd-main.exe) start 15:39:58
+healthz 200
+"serendipd-main.exe","28620","Console","1","36,168 K"
+"serendipd-main.exe","28620","Console","1","35,656 K"
+"serendipd-main.exe","28620","Console","1","35,656 K"
+"serendipd-main.exe","28620","Console","1","36,304 K"
+"serendipd-main.exe","28620","Console","1","36,304 K"
+"serendipd-main.exe","28620","Console","1","35,820 K"
+dp-openchoreo-co-app-b591c724c-env-a1fc739c-d2faa7f5   cmp-b5a4fea02d-secret-env                                Opaque               1     34m
+== B2 (serendipd-026.exe) start 15:45:35
+healthz 200
+"serendipd-026.exe","2836","Console","1","36,568 K"
+"serendipd-026.exe","2836","Console","1","37,308 K"
+"serendipd-026.exe","2836","Console","1","37,348 K"
+"serendipd-026.exe","2836","Console","1","36,860 K"
+"serendipd-026.exe","2836","Console","1","36,860 K"
+"serendipd-026.exe","2836","Console","1","36,892 K"
+dp-openchoreo-co-app-b591c724c-env-a1fc739c-d2faa7f5   cmp-b5a4fea02d-secret-env                                Opaque               1     40m
+== done 15:51:13

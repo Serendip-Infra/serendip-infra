@@ -56,14 +56,15 @@ func TestParseCNI(t *testing.T) {
 
 func TestInstallEnv_CNI(t *testing.T) {
 	cilium := InstallEnv(InstallOptions{CNI: CNICilium})
-	if !slices.Contains(cilium, "INSTALL_K3S_EXEC=server --flannel-backend=none --disable-network-policy") {
+	if !slices.Contains(cilium, "INSTALL_K3S_EXEC=server --secrets-encryption --flannel-backend=none --disable-network-policy") {
 		t.Errorf("InstallEnv(cilium) = %v", cilium)
 	}
+	// Flannel keeps K3s's network flags, but secrets encryption is on with
+	// either CNI (spec 026).
 	for _, cni := range []CNI{CNIDefault, ""} {
-		for _, e := range InstallEnv(InstallOptions{CNI: cni}) {
-			if strings.HasPrefix(e, "INSTALL_K3S_EXEC=") {
-				t.Errorf("InstallEnv(%q) sets %s", cni, e)
-			}
+		env := InstallEnv(InstallOptions{CNI: cni})
+		if !slices.Contains(env, "INSTALL_K3S_EXEC=server --secrets-encryption") {
+			t.Errorf("InstallEnv(%q) = %v", cni, env)
 		}
 	}
 }

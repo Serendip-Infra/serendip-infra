@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -108,7 +109,7 @@ func parseArgs(op catalog.Operation, rest []string, stdin io.Reader) (map[string
 		if !ok {
 			return nil, usageError{fmt.Sprintf("%s has no --%s", strings.Join(op.CLI, " "), name)}
 		}
-		if _, dup := args[name]; dup {
+		if _, dup := args[name]; dup && !p.Repeat {
 			return nil, usageError{fmt.Sprintf("--%s is given twice", name)}
 		}
 		if p.Type == catalog.Boolean && !hasValue {
@@ -124,6 +125,12 @@ func parseArgs(op catalog.Operation, rest []string, stdin io.Reader) (map[string
 		}
 		if file && value != "-" {
 			value = "@" + value
+		}
+		if p.Repeat {
+			// Taken literally: no @file or standard input.
+			list, _ := args[name].([]any)
+			args[name] = append(list, value)
+			continue
 		}
 		v, err := paramValue(op, p, value, stdin)
 		if err != nil {
@@ -204,6 +211,21 @@ func runOperation(ctx context.Context, c *apiClient, op catalog.Operation, args 
 	if following(op, args) {
 		return runFollow(ctx, c, op, args, g, stdout, stderr)
 	}
+	if editsWithoutDocument(op, args) {
+		// The edits' own mistakes first, before a round trip: the same
+		// edits on an empty document, without the removals it can't hold.
+		check := maps.Clone(args)
+		check["resource"], check["remove-secret-env"] = map[string]any{}, nil
+		if _, err := op.Request(check); err != nil {
+			fmt.Fprintln(stderr, "serendip:", err)
+			return exitUsage
+		}
+		doc, code := readForEdit(ctx, c, op, args, g, stdout, stderr)
+		if doc == nil {
+			return code
+		}
+		args["resource"] = doc
+	}
 	req, err := op.Request(args)
 	if err != nil {
 		fmt.Fprintln(stderr, "serendip:", err)
@@ -235,6 +257,58 @@ func runOperation(ctx context.Context, c *apiClient, op catalog.Operation, args 
 		return exitOK
 	}
 	return printFailure(ctx, c, op, args, resp, g, stdout, stderr)
+}
+
+// editsWithoutDocument reports an update given only edit flags (spec
+// 026's --secret-env and --remove-secret-env), with no --file: the CLI
+// then edits the resource as it is now.
+func editsWithoutDocument(op catalog.Operation, args map[string]any) bool {
+	if op.Method != "PUT" || args["resource"] != nil {
+		return false
+	}
+	for _, p := range op.Params {
+		if p.In == catalog.InEdit && args[p.Name] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// readForEdit reads the resource an update edits, through the kind's get
+// operation, and returns its document without status. The document keeps
+// metadata.resourceVersion, so a change made in between is refused as a
+// conflict, never overwritten. On failure it returns nil and the exit
+// code. A --dry-run still reads: the request it prints is built from the
+// resource as it is.
+func readForEdit(ctx context.Context, c *apiClient, op catalog.Operation, args map[string]any, g globals, stdout, stderr io.Writer) (map[string]any, int) {
+	get, ok := catalog.Lookup(strings.TrimSuffix(op.Name, "_update") + "_get")
+	if !ok {
+		fmt.Fprintf(stderr, "serendip: %s: no get operation to read the resource from; give --file\n", strings.Join(op.CLI, " "))
+		return nil, exitUsage
+	}
+	req, err := get.Request(map[string]any{"id": args["id"]})
+	if err != nil {
+		fmt.Fprintln(stderr, "serendip:", err)
+		return nil, exitUsage
+	}
+	resp, err := c.do(ctx, req)
+	if err != nil {
+		fmt.Fprintln(stderr, "serendip:", err)
+		if errors.Is(err, errSignedOut) {
+			return nil, exitUnauthorized
+		}
+		return nil, exitError
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return nil, printFailure(ctx, c, get, map[string]any{}, resp, g, stdout, stderr)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(resp.Body, &doc); err != nil || doc == nil {
+		fmt.Fprintln(stderr, "serendip: the resource read isn't a JSON object")
+		return nil, exitError
+	}
+	delete(doc, "status")
+	return doc, exitOK
 }
 
 func printSuccess(op catalog.Operation, resp response, g globals, stdout, stderr io.Writer) {
@@ -626,11 +700,13 @@ func commandHelp(op catalog.Operation, out io.Writer) {
 			continue
 		}
 		flag := "--" + p.Name
-		switch p.Type {
-		case catalog.Object:
+		switch {
+		case p.Repeat:
+			flag += " VALUE (repeatable)"
+		case p.Type == catalog.Object:
 			flag += " JSON|@file|-"
-		case catalog.Boolean:
-		case catalog.Integer:
+		case p.Type == catalog.Boolean:
+		case p.Type == catalog.Integer:
 			flag += " N"
 		default:
 			flag += " VALUE"

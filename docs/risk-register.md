@@ -114,6 +114,16 @@ purpose), **Closed** (fixed).
 | RP-091 | Cilium's node metrics ports are closed to pods by a Serendip policy keyed on two namespace names; anything else reaching the node's other ports isn't covered | Security (traffic visibility) | Mitigated | Spec 025 T014 |
 | RP-092 | The trace collector accepts spans from any pod, with only a memory limit: one Component can fill the shared logs store | Availability (logs, traces); footprint (disk) | Accepted | Spec 025 T014 |
 | RP-093 | Hubble's request metrics carry source and destination pods, so their series grow with pod pairs; not counted at the bench | Footprint (Prometheus memory, disk) | Watch | Spec 025 plan; T015 |
+| RP-094 | OpenBao stayed sealed after its pod restarts, until `serendipd` restarted; it's now unsealed again with the stored key | Availability (secrets, secret variables) | Closed | Spec 026 T009; fixed T012 |
+| RP-095 | Deleting a Component leaves its Deployments behind, waiting for it | Behaviour (clean-up) | Open | Spec 026 T009 |
+| RP-096 | Secret variables rest in the cluster as plain Secrets, encrypted at rest only on agent K3s installs, with the key on the same disk | Security | Accepted | Spec 026 plan; T005 |
+| RP-097 | Secret references aren't part of a release, so a rollback keeps today's references | Behaviour | Decided | Spec 026 plan decision 5 |
+| RP-098 | A rotation rolls every Deployment using the Secret, and rotating any one of a Deployment's Secrets rolls it | Availability (single replicas) | Accepted | Spec 026 plan |
+| RP-099 | Every Deployment rolls once on the upgrade to spec 026; a downgrade drops secret variables from running pods | Availability (upgrade, downgrade) | Accepted | Spec 026 T001, T009, T010 |
+| RP-100 | Values read to deliver secret variables aren't audited | Audit | Accepted | Spec 026 spec (out of scope) |
+| RP-101 | Delivering secret variables: two cluster GETs per Deployment per pass, an apply 404 read as pending, and best-effort clearing of value buffers | Performance; correctness; security (memory) | Accepted | Spec 026 T003, T004 |
+| RP-102 | A secret variable may share a name with a variable the platform injects (spec 025's trace variables); it isn't refused | Correctness | Accepted | Spec 026 T002 |
+| RP-103 | The encryption-at-rest status is read at `/`, so a Project-only user's console shows no banner | Usability | Decided | Spec 026 T006 (plan decision 9) |
 
 ---
 
@@ -2430,3 +2440,203 @@ The text below is the T013 record.
   dozen talking pods: count `hubble_http_*` head series, and consider
   workload instead of pod labels (the reads would join by the Deployment
   name, as flows do) or fewer histogram buckets (RP-085).
+
+## RP-094 — OpenBao stays sealed after its pod restarts
+
+- **Kind:** availability (secrets, secret variables). **Status:**
+  Closed, 2026-11-24, by spec 026 T012 (see "Fixed" below). **Found:**
+  spec 026 T009 (criterion 5's capability-down check); older than spec
+  026.
+- **What:** `serendipd` unseals OpenBao once, in the Secrets setup at
+  start (`providers/secrets/openbao/bootstrap.go`). If the OpenBao pod
+  restarts later (eviction, OOM, a node restart without `serendipd`'s,
+  an upgrade), it comes back sealed and stays that way until `serendipd`
+  restarts. Meanwhile value reads and writes fail. A value write answers
+  503 "capability not ready". A Deployment whose secret variables change
+  can't be given them, so it reports `ProviderNotReady`, and running pods
+  keep what they had. Secret variables that don't change aren't affected,
+  because values are read only when the version changes.
+- **What T009 fixed on the way:** an unreachable or sealed OpenBao used
+  to fail as an internal error (500, `SecretReadFailed`). It now counts
+  as the capability not being ready (`openbao.ErrUnavailable` maps to
+  `ErrProviderNotReady`). `GET /v1/secrets/status` reports `ready:
+  false` from OpenBao's health instead of from setup alone.
+- **Why it was left open at T009:** re-unsealing on demand uses the
+  unseal key `serendipd` already keeps (ADR 0009), but it changes how
+  that key is used, so it waited for a decision. The options were to
+  re-run the unseal when the health check says sealed, or auto-unseal
+  (ADR 0009's later route).
+- **Fixed (T012, the user's choice):** the first option.
+  - When a Secrets call or the encryption report finds OpenBao sealed,
+    the provider reads the stored unseal key, unseals, and retries once
+    (`providers/secrets/openbao/unseal.go`).
+  - It tries at most once every 10 s, and never initializes an
+    uninitialized OpenBao.
+  - Live, the Secrets reconciler's own resync unsealed a restarted
+    OpenBao within seconds, with no `serendipd` restart.
+  - ADR 0009 is amended. What remains is the custody itself (a key file
+    on the same disk), ADR 0009's open trigger.
+
+## RP-095 — Deleting a Component leaves its Deployments behind
+
+- **Kind:** behaviour (clean-up). **Status:** Open, 2026-11-24.
+  **Found:** spec 026 T009 (criterion 7); older than spec 026.
+- **What:** `DELETE /v1/components/{id}` succeeds while Deployments of
+  the Component exist, with no 409 and no `cascade`. The platform's own
+  clean-up removes the workloads, but the Deployment records stay,
+  `Ready=False` with `WaitingForComponent` ("Component … not found"),
+  until someone deletes them. An Application delete does ask for
+  `cascade=true`.
+- **What T009 fixed:** the one leak this caused. The cluster Secret of
+  secret variables isn't the platform's, so it was left in the
+  Environment's namespace. `DeleteComponent` now deletes it first, in
+  every Environment the Component is bound to.
+- **Revisit:** with the next spec that touches Deployments: either answer
+  409 naming the Deployments (as Secrets do), or delete them by cascade
+  as Applications do.
+
+## RP-096 — Secret variables rest in the cluster as plain Secrets
+
+- **Kind:** security. **Status:** Accepted, 2026-11-24. **Found:** spec
+  026 plan ("Risks"); the encryption caveats in T005. ADR 0024.
+- **What:** to start a container, a secret variable's value has to be in
+  the cluster. Serendip writes it into `<component>-secret-env`, a plain
+  Kubernetes Secret in the Deployment's data-plane namespace. Anyone
+  with `get secrets` there, a controller with Secret read, or a
+  cluster-admin kubeconfig can read it. A pod that prints its
+  environment puts it in the logs (RP-067). This is the same class as a
+  build's credential copy (RP-050), but it lasts as long as the
+  Deployment.
+- **Encryption at rest:** on new agent K3s installs (`--secrets-encryption`,
+  AES-CBC). Its limits:
+  - the key is in `/var/lib/rancher/k3s/server/cred/`, on the same disk,
+    so it protects a copied datastore, not a stolen disk;
+  - `on` means the node's `k3s.io/encryption-config-hash` annotation is
+    there: encryption was configured when K3s started. It doesn't prove
+    that Secrets written earlier were re-encrypted;
+  - whether `k3s secrets-encrypt disable` removes the annotation isn't
+    checked, so `on` might outlive a disable;
+  - the steps to turn it on for an existing install (`operations.md`)
+    haven't been run against a Serendip install yet;
+  - kind and external clusters read `unknown`.
+- **What holds:** the value is in no Serendip store, audit row, API
+  answer (other than the value route), condition, log line or OpenChoreo
+  object (T009 searched for it). Naming a Secret needs its value-read
+  permission (ADR 0024 decision 2).
+- **Revisit:** in spec 036 (workload identity, #382, a v1 GA epic run after
+  small-3). It adds an opt-in file mount through OpenBao's CSI provider
+  and fetches by the application itself, both of which keep values out
+  of the cluster store, as AKS's Key Vault CSI driver and workload
+  identity do. Environment variables stay as built, because they can't
+  avoid a cluster Secret (AKS's CSI `secretObjects` sync makes one too).
+  On the L470, run the enable steps and check the annotation after a
+  disable.
+
+## RP-097 — Secret references aren't part of a release
+
+- **Kind:** behaviour. **Status:** Decided, 2026-11-24. **Found:** spec
+  026 plan decision 5.
+- **What:** `spec.secretEnv` and `overrides.secretEnv` are read from the
+  current Component and Deployment at reconcile time, not from the
+  `ComponentRelease`. A rollback, or a promotion of an older release,
+  keeps today's references. A change to a Component's references
+  applies in every Environment it runs in at once (overrides aside).
+- **Why decided:** a reference names no value, and a rollback that
+  brought back an old password reference would surprise people more
+  than one that didn't. Per-Environment differences belong in overrides.
+- **Revisit:** if someone needs a reference change staged through the
+  pipeline like an image change.
+
+## RP-098 — A rotation rolls every Deployment that uses the Secret
+
+- **Kind:** availability. **Status:** Accepted, 2026-11-24. **Found:**
+  spec 026 plan ("Risks").
+- **What:** writing a new value changes the version of every Deployment
+  that names the Secret, and each one rolls its pods. A Deployment has
+  one version for all its Secrets, so rotating any one of them rolls it.
+  A single-replica Deployment is briefly down if its new pod isn't ready
+  before the old one stops, and on a full node the surge pod can stay
+  Pending.
+- **Why accepted:** environment variables are fixed at container start,
+  so a running pod can't be given a new value. A rolling restart is the
+  standard answer.
+- **Revisit:** if a value should reach pods without a restart (a
+  mounted file, which the application must re-read), or if rotations get
+  frequent enough to batch.
+
+## RP-099 — The upgrade to spec 026 rolls every Deployment once; a downgrade drops secret variables
+
+- **Kind:** availability. **Status:** Accepted, 2026-11-24. **Found:**
+  spec 026 T001 (a release pins its type), confirmed in T009; the
+  downgrade in T010.
+- **What:**
+  - **Upgrade:** the component type gains the `envFrom` entry and the
+    annotation, and the type is part of the release hash. So every
+    Component gets a new release, and every Deployment following the
+    latest rolls once. A Deployment pinned to an older release doesn't
+    roll, and reports `NeedsNewRelease` if it gains secret variables.
+  - **Downgrade** to a pre-026 `serendipd`: the type loses
+    `serendipSecretEnv`, so Components get new releases without the
+    `envFrom` entry. Their pods roll without the secret variables until
+    the upgrade comes back, and the cluster Secrets stay behind.
+- **Why accepted:** a rolling restart once per upgrade, as with any
+  change to the type (spec 012's route did the same). Downgrades aren't
+  supported before v1 GA.
+- **Revisit:** at v1 GA, with releases and upgrade notes.
+
+## RP-100 — Values read to deliver secret variables aren't audited
+
+- **Kind:** audit. **Status:** Accepted, 2026-11-24. **Found:** spec 026
+  spec (out of scope); `secrets.md`'s value-read deferral.
+- **What:** `DeploymentReconciler` reads a value whenever a version
+  changes, and no audit row records it, as with every value read.
+  Naming the Secret is audited: the Component or Deployment write, and a
+  denied value-read check.
+- **Revisit:** with the append-only read audit `secrets.md` defers.
+
+## RP-101 — The costs and edges of delivering secret variables
+
+- **Kind:** performance; correctness; security (memory). **Status:**
+  Accepted, 2026-11-24. **Found:** spec 026 T003, T004.
+- **What:**
+  - **Two cluster GETs per Deployment with secret variables, every
+    pass:** the ProjectReleaseBinding for the namespace, and the Secret
+    for its version. Deployments without secret variables cost nothing
+    new. T010 measured no change in `serendipd`'s idle memory.
+  - **An apply 404 reads as pending** (`SecretEnvPending`), because a
+    first deploy's namespace may not exist yet. If the path were ever
+    wrong, the Deployment would read pending for good rather than fail.
+    The resync bounds the retry cost.
+  - **Clearing value buffers is best effort.** Values are cleared after
+    use where Serendip holds the bytes, but Go strings, JSON encoding and
+    the HTTP client make copies it can't clear.
+- **Revisit:** if many Deployments use secret variables (cache the
+  namespace, or watch the Secrets), or if `SecretEnvPending` lasts long
+  on a real install.
+
+## RP-102 — A secret variable may share a name with a platform-injected variable
+
+- **Kind:** correctness. **Status:** Accepted, 2026-11-24. **Found:**
+  spec 026 T002.
+- **What:** secret variables are refused when they clash with plain or
+  dependency variables, but not with the ones the provider injects:
+  spec 025's `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME`. The
+  provider leaves those out only when the Component sets them in plain
+  `env`. With both present, the Secret's `envFrom` comes after the
+  variables' ConfigMap, so by Kubernetes' rule (the last source wins)
+  the secret variable should win. Not checked live.
+- **Why accepted:** naming a trace variable after a Secret is unlikely,
+  and the outcome is the user's own value.
+- **Revisit:** if the provider injects more variables. Then have
+  `withTraceEnv` skip names in `secretEnv` too, or refuse them.
+
+## RP-103 — The encryption status is read at `/`
+
+- **Kind:** usability. **Status:** Decided, 2026-11-24. **Found:** spec
+  026 T006 (plan decision 9).
+- **What:** `GET /v1/secrets/status` needs `serendip/secrets/read` at
+  `/`, because it describes the whole cluster. A user whose roles are
+  all at a Project gets 403, and their console's Secrets page shows no
+  encryption banner.
+- **Revisit:** if Project-only users need it. The answer holds no
+  Project data, so it could be open to any signed-in user.

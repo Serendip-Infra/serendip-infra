@@ -90,6 +90,42 @@ the process list shows it:
   serendip secrets value set <id> --data - < value.json
   ```
 
+## Secret variables (spec 026)
+
+- **A secret variable** sets one environment variable of a running
+  Component from one key of a Secret's value. The Component and its
+  Deployments name the Secret; the value never passes through the CLI,
+  the request or the answer.
+- **Naming a Secret** needs reading its value
+  (`serendip/secrets/value/read`), and the Secret must sit in the
+  Component's Project or above it.
+- **The flags** work on `components create|update` (the Component's
+  `spec.secretEnv`) and `deployments create|update` (the Deployment's
+  `spec.overrides.secretEnv`, for that Environment only). Both repeat:
+
+  ```
+  serendip components update <id> --secret-env DB_PASSWORD=<secret-id>:password
+  serendip components update <id> --secret-env API_TOKEN=<secret-id>:token --remove-secret-env OLD_TOKEN
+  serendip deployments create --file dep.json --secret-env DB_PASSWORD=<secret-id>:password
+  ```
+
+  - `--secret-env NAME=SECRET_ID:KEY` adds NAME, or replaces it if it's
+    set. The key is everything after the Secret ID's colon, so it may
+    hold colons.
+  - `--remove-secret-env NAME` removes NAME; a name that isn't set is a
+    usage error (exit 2), so a typo doesn't pass silently.
+  - **On update without `--file`,** the CLI reads the resource, edits the
+    list and sends it back with the `resourceVersion` it read: a change
+    made in between is refused as a conflict (exit 6), never
+    overwritten. With `--file`, the flags edit the file's document.
+    `--dry-run` still makes the read, then prints the write.
+- **On MCP** there are no flags: `components_update` and
+  `deployments_update` take the whole document, and the assistant writes
+  the list in it. Each tool's description gives the list's shape.
+- **Delivery status:** a Deployment's `status.secretEnvVersion` and its
+  `SecretEnvDelivered` condition. `serendip secrets status` (MCP
+  `secrets_status`) says whether the cluster encrypts Secrets at rest.
+
 ## Logs
 
 - **Reading logs** needs the logs permission
@@ -332,14 +368,14 @@ tools.
 | `serendip clusters get <id>` | — | `GET /v1/clusters/{id}` | Get one Cluster |
 | `serendip clusters list` | — | `GET /v1/clusters` | List clusters the caller may read |
 | `serendip clusters update <id>` | — | `PUT /v1/clusters/{id}` | Replace a Cluster's spec (send the version read, for a conflict check) |
-| `serendip components create` | `components_create` | `POST /v1/components` | Create a Component |
+| `serendip components create` | `components_create` | `POST /v1/components` | Create a Component. Secret variables are spec.secretEnv: [{"env": NAME, "secret": a Secret ID, "key": a key of its value}]; naming a Secret needs reading its value |
 | `serendip components delete <id>` | `components_delete` | `DELETE /v1/components/{id}` | Delete a Component. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip components dependencies <id>` | `components_dependencies` | `GET /v1/components/{id}/dependencies` | A Component's declared dependencies: the Components it calls, and those of its Application that call it |
 | `serendip components get <id>` | `components_get` | `GET /v1/components/{id}` | Get one Component |
 | `serendip components list` | `components_list` | `GET /v1/components` | List components the caller may read |
 | `serendip components schemas <id>` | `components_schemas` | `GET /v1/components/{id}/schemas` | What can be configured on a Component, as JSON Schemas: its per-environment configuration (a Deployment's overrides.config) and each trait's |
-| `serendip components update <id>` | `components_update` | `PUT /v1/components/{id}` | Replace a Component's spec (send the version read, for a conflict check) |
-| `serendip deployments create` | `deployments_create` | `POST /v1/deployments` | Create a Deployment |
+| `serendip components update <id>` | `components_update` | `PUT /v1/components/{id}` | Replace a Component's spec (send the version read, for a conflict check). Secret variables are spec.secretEnv: [{"env": NAME, "secret": a Secret ID, "key": a key of its value}]; naming a Secret needs reading its value |
+| `serendip deployments create` | `deployments_create` | `POST /v1/deployments` | Create a Deployment. Secret variables are spec.overrides.secretEnv: [{"env": NAME, "secret": a Secret ID, "key": a key of its value}]; naming a Secret needs reading its value |
 | `serendip deployments delete <id>` | `deployments_delete` | `DELETE /v1/deployments/{id}` | Delete a Deployment. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip deployments events <id>` | `deployments_events` | `GET /v1/deployments/{id}/events` | Recent platform events about what a Deployment runs as, newest first |
 | `serendip deployments get <id>` | `deployments_get` | `GET /v1/deployments/{id}` | Get one Deployment |
@@ -347,7 +383,7 @@ tools.
 | `serendip deployments logs <id>` | `deployments_logs` | `GET /v1/deployments/{id}/logs` | Recent log lines from a Deployment's running instances, oldest first. Logs can hold sensitive data, so they need their own permission |
 | `serendip deployments promote <id>` | `deployments_promote` | `POST /v1/deployments/{id}/promote` | Run the release a Deployment runs now in the next Environment of the Project's pipeline. The target keeps its own overrides |
 | `serendip deployments runtime <id>` | `deployments_runtime` | `GET /v1/deployments/{id}/runtime` | What a Deployment runs as on the platform: its objects with their health, then each running instance |
-| `serendip deployments update <id>` | `deployments_update` | `PUT /v1/deployments/{id}` | Replace a Deployment's spec (send the version read, for a conflict check) |
+| `serendip deployments update <id>` | `deployments_update` | `PUT /v1/deployments/{id}` | Replace a Deployment's spec (send the version read, for a conflict check). Secret variables are spec.overrides.secretEnv: [{"env": NAME, "secret": a Secret ID, "key": a key of its value}]; naming a Secret needs reading its value |
 | `serendip environments create` | — | `POST /v1/environments` | Create a Environment |
 | `serendip environments delete <id>` | — | `DELETE /v1/environments/{id}` | Delete a Environment. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip environments get <id>` | — | `GET /v1/environments/{id}` | Get one Environment |
@@ -412,6 +448,7 @@ tools.
 | `serendip secrets delete <id>` | `secrets_delete` | `DELETE /v1/secrets/{id}` | Delete a Secret. Recorded as an Approval; when it needs a person's decision, ask for one with approvals_request |
 | `serendip secrets get <id>` | `secrets_get` | `GET /v1/secrets/{id}` | Get one Secret |
 | `serendip secrets list` | `secrets_list` | `GET /v1/secrets` | List secrets the caller may read |
+| `serendip secrets status` | `secrets_status` | `GET /v1/secrets/status` | Whether the Secrets capability is ready, and whether the cluster encrypts Secrets at rest (on, off or unknown), with the reason. Names no Secret or value |
 | `serendip secrets value get <id>` | `secrets_read_value` (value) | `GET /v1/secrets/{id}/value` | Read a Secret's value. Needs the secrets value data permission |
 | `serendip secrets update <id>` | `secrets_update` | `PUT /v1/secrets/{id}` | Replace a Secret's spec (send the version read, for a conflict check) |
 | `serendip secrets value set <id>` | `secrets_write_value` (value) | `POST /v1/secrets/{id}/value` | Write a Secret's value, replacing the old one. Needs the secrets value data permission |

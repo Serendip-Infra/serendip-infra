@@ -262,7 +262,7 @@ func (p *Provider) EnsureComponent(ctx context.Context, app resource.Application
 		return reconcile.ComponentObservation{}, err
 	}
 	return reconcile.ComponentObservation{Ready: true, Reason: reasonReleased,
-		Message: "release " + rel.Name + " is ready to deploy"}, nil
+		Message: "release " + rel.Metadata.Name + " is ready to deploy"}, nil
 }
 
 func exposedPorts(spec resource.ComponentSpec) []string {
@@ -434,9 +434,42 @@ func findCondition(conds []condition, typ string) *condition {
 }
 
 func (p *Provider) DeleteComponent(ctx context.Context, comp resource.Component) error {
+	// The secret variables Serendip wrote aren't the platform's, so its
+	// clean-up leaves them: they go first, while the bindings still name
+	// their Environments (spec 026 decision 8; T009 found the gap). A
+	// failure stops before the Component goes, so a retry finds them.
+	if err := p.deleteComponentSecretEnv(ctx, componentName(comp.Metadata.ID)); err != nil {
+		return err
+	}
 	// The Component's own cleanup finalizer removes its Workload, releases,
 	// and live data-plane resources.
 	return p.deleteIgnoringNotFound(ctx, namespacedPath("components")+"/"+componentName(comp.Metadata.ID))
+}
+
+// deleteComponentSecretEnv deletes the component's cluster Secret of
+// secret variables in every Environment it's bound to.
+func (p *Provider) deleteComponentSecretEnv(ctx context.Context, name string) error {
+	all, err := p.client.List(ctx, namespacedPath("releasebindings"))
+	if err != nil {
+		return fmt.Errorf("list bindings: %w", err)
+	}
+	for _, b := range all {
+		var s bindingSpec
+		if json.Unmarshal(b.Spec, &s) != nil || s.Owner.ComponentName != name {
+			continue
+		}
+		ns, err := p.dataPlaneNamespace(ctx, s.Owner.ProjectName, s.Environment)
+		if err != nil {
+			return fmt.Errorf("find the namespace of component %s's secret variables: %w", name, err)
+		}
+		if ns == "" {
+			continue
+		}
+		if err := p.deleteSecretEnv(ctx, ns, secretEnvNameOf(name)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureWorkload server-side-applies the Workload. A no-drift apply stores

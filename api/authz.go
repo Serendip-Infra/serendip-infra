@@ -254,6 +254,9 @@ func routeTable() map[string]rule {
 
 		"POST /v1/secrets/{id}/value": {action: policy.Action{Name: "serendip/secrets/value/write", Data: true}, target: targetResource, kind: resource.KindSecret},
 		"GET /v1/secrets/{id}/value":  {action: policy.Action{Name: "serendip/secrets/value/read", Data: true}, target: targetResource, kind: resource.KindSecret},
+		// Platform-wide: whether the cluster encrypts Secrets at rest
+		// (spec 026). It names no Secret and no value.
+		"GET /v1/secrets/status": {action: action(resource.KindSecret, "read"), target: targetRoot},
 	}
 	maps.Copy(t, alertingRoutes())
 	for kind, path := range resourcePaths {

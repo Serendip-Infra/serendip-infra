@@ -154,7 +154,7 @@ func run() error {
 		serverOpts = append(serverOpts, api.WithNotifier(alerts.client, alerts.secrets), api.WithRuleEvaluated(alerts.evaluator.LastEvaluated))
 	}
 	if kube != nil {
-		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithRuntime(kube.runtime), api.WithConfigSchemas(kube.schemas), api.WithPlatformView(kube.platformView), api.WithPackages(kube.packages), api.WithBuilds(kube.builds), api.WithObservability(kube.observability), api.WithTracing(kube.tracing), api.WithNetworking(kube.network.Facts), api.WithResourceMetadata(api.ResourceMetadata{
+		serverOpts = append(serverOpts, api.WithDirectory(kube.directory), api.WithRuntime(kube.runtime), api.WithConfigSchemas(kube.schemas), api.WithPlatformView(kube.platformView), api.WithPackages(kube.packages), api.WithBuilds(kube.builds), api.WithObservability(kube.observability), api.WithTracing(kube.tracing), api.WithNetworking(kube.network.Facts), api.WithSecretsStatus(kube.secrets), api.WithSecretEnvChanged(kube.secretEnvChanged), api.WithResourceMetadata(api.ResourceMetadata{
 			Issuer: kube.issuer, CLIClient: thunderid.ClientID, AssistantClient: thunderid.DelegateClientID,
 		}), api.WithMCP())
 	}

@@ -34,6 +34,14 @@ type DeploymentObservation struct {
 	Reason    string
 	Message   string
 	Endpoints []resource.ComponentEndpointStatus
+
+	// Set by the reconciler, not the provider: whether secret variables
+	// were resolved on this pass at all (when not, status keeps what it
+	// had), the SecretEnvDelivered condition, and the version the platform
+	// holds after the pass.
+	secretEnvResolved bool
+	secretEnv         *resource.Condition
+	secretEnvVersion  string
 }
 
 // DeploymentProvider runs Components in Environments.
@@ -54,8 +62,10 @@ type DeploymentProvider interface {
 	CreateRelease(ctx context.Context, comp resource.Component) (Release, error)
 	// Deploy makes d run: comp, of app, in env, with d's release and
 	// overrides. It's the same call for a first deploy, a promotion and a
-	// rollback.
-	Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment) (DeploymentObservation, error)
+	// rollback. secretEnvVersion names the secret variables the workload
+	// is given (SecretEnvProvider), "" for none; a changed version makes
+	// the workload pick them up again (spec 026).
+	Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment, secretEnvVersion string) (DeploymentObservation, error)
 	// Undeploy stops d running. Only its ID and spec are needed, since the
 	// Serendip record, and its Environment's, may already be gone.
 	Undeploy(ctx context.Context, d resource.Deployment) error

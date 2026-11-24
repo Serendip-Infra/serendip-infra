@@ -1,0 +1,17 @@
+# t026-k3s-on (rancher/k3s:v1.36.4-k3s1), 2026-11-24
+## node annotations (k3s.io/*) and instance-type label
+{
+ "k3s.io/encryption-config-hash": "start-d097cf238b99829ffa21c4db504b3bb75bb9d66b34aabe035cd22acd788a0d47",
+ "k3s.io/node-args": "[\"server\",\"--secrets-encryption\",\"--disable\",\"traefik,metrics-server\"]",
+ "beta.kubernetes.io/instance-type": "k3s",
+ "node.kubernetes.io/instance-type": "k3s"
+}
+## k3s secrets-encrypt status
+Encryption Status: Enabled
+Current Rotation Stage: start
+Server Encryption Hashes: All hashes match
+
+Active  Key Type  Name
+------  --------  ----
+ *      AES-CBC   aescbckey
+

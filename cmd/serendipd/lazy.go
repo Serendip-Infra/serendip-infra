@@ -148,6 +148,21 @@ func (l *lazySecrets) Delete(ctx context.Context, sec resource.Secret) error {
 	return p.Delete(ctx, sec)
 }
 
+var _ reconcile.EncryptionReporter = (*lazySecrets)(nil)
+
+// EncryptionAtRest forwards to the provider's optional report (spec 026),
+// and is unknown for a provider that has none.
+func (l *lazySecrets) EncryptionAtRest(ctx context.Context) (reconcile.EncryptionReport, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.EncryptionReport{}, err
+	}
+	if r, ok := p.(reconcile.EncryptionReporter); ok {
+		return r.EncryptionAtRest(ctx)
+	}
+	return reconcile.EncryptionNotReported(), nil
+}
+
 type lazyPlatform struct {
 	lazy[reconcile.ApplicationPlatformProvider]
 }
@@ -257,12 +272,38 @@ func (l *lazyDeployments) CreateRelease(ctx context.Context, comp resource.Compo
 	return p.CreateRelease(ctx, comp)
 }
 
-func (l *lazyDeployments) Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+func (l *lazyDeployments) Deploy(ctx context.Context, app resource.Application, comp resource.Component, env resource.Environment, d resource.Deployment, secretEnvVersion string) (reconcile.DeploymentObservation, error) {
 	p, err := l.get()
 	if err != nil {
 		return reconcile.DeploymentObservation{}, err
 	}
-	return p.Deploy(ctx, app, comp, env, d)
+	return p.Deploy(ctx, app, comp, env, d, secretEnvVersion)
+}
+
+// SecretEnvVersion and WriteSecretEnv forward to the platform's secret
+// variables (spec 026), when it has them.
+func (l *lazyDeployments) SecretEnvVersion(ctx context.Context, comp resource.Component, env resource.Environment, d resource.Deployment) (string, error) {
+	p, err := l.get()
+	if err != nil {
+		return "", err
+	}
+	sp, ok := p.(reconcile.SecretEnvProvider)
+	if !ok {
+		return "", reconcile.ErrSecretEnvUnsupported
+	}
+	return sp.SecretEnvVersion(ctx, comp, env, d)
+}
+
+func (l *lazyDeployments) WriteSecretEnv(ctx context.Context, comp resource.Component, env resource.Environment, d resource.Deployment, vars map[string]string, version string) error {
+	p, err := l.get()
+	if err != nil {
+		return err
+	}
+	sp, ok := p.(reconcile.SecretEnvProvider)
+	if !ok {
+		return reconcile.ErrSecretEnvUnsupported
+	}
+	return sp.WriteSecretEnv(ctx, comp, env, d, vars, version)
 }
 
 func (l *lazyDeployments) Undeploy(ctx context.Context, d resource.Deployment) error {

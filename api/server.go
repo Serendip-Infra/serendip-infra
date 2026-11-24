@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/serendip-infra/serendip-infra/core/audit"
@@ -256,6 +257,25 @@ type serverOptions struct {
 	notifySecrets notify.SecretReader
 	// evaluated is a rule's live evaluation time (spec 024, RP-080).
 	evaluated func(id string) (time.Time, bool)
+	// secretsStatus and secretEnvChanged are spec 026's: encryption at
+	// rest, and the hook a Component's secret variables changing calls.
+	secretsStatus    reconcile.EncryptionReporter
+	secretEnvChanged func(ctx context.Context, componentID string)
+}
+
+// WithSecretsStatus lets GET /v1/secrets/status say whether the cluster
+// encrypts Secrets at rest (spec 026). Without it the route answers not
+// ready, unknown.
+func WithSecretsStatus(r reconcile.EncryptionReporter) ServerOption {
+	return func(o *serverOptions) { o.secretsStatus = r }
+}
+
+// WithSecretEnvChanged sets f to be told, after a Component update is
+// stored, that its secret variables changed, so its Deployments can be
+// reconciled without waiting for resync (spec 026 plan decision 4). f must
+// be quick.
+func WithSecretEnvChanged(f func(ctx context.Context, componentID string)) ServerOption {
+	return func(o *serverOptions) { o.secretEnvChanged = f }
 }
 
 // WithDirectory lets the authorization routes read the identity provider's
@@ -330,16 +350,28 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 	// Components (spec 020 T009): their own Create and Update keep declared
 	// dependencies coherent; plus dependencies and an Application's topology.
 	buildReady := buildReadiness(providers, opts.packages)
+	// Secret variables (spec 026) are checked on Components and
+	// Deployments alike.
+	workloadGraph := graph.NewSQLiteGraph(db)
+	secretEnv := secretEnvChecker{exists: resourceExistsIn(db), ancestors: workloadGraph.Ancestors}
+	// One lock for Component and Deployment writes: each checks the
+	// other's variables.
+	workloadWrites := &sync.Mutex{}
+	deployStore := sqlite.NewStore[resource.DeploymentSpec, resource.DeploymentStatus](db, resource.KindDeployment).SetBus(bus)
 	(&ComponentHandler{
-		ResourceHandler: NewResourceHandler[resource.ComponentSpec, resource.ComponentStatus](compStore, "components"),
-		comps:           compStore,
-		apps:            appStore,
-		recordDenied:    recordDeniedIn(db),
-		source:          sourceChecker{ready: buildReady, exists: resourceExistsIn(db)},
+		ResourceHandler:  NewResourceHandler[resource.ComponentSpec, resource.ComponentStatus](compStore, "components"),
+		comps:            compStore,
+		apps:             appStore,
+		recordDenied:     recordDeniedIn(db),
+		source:           sourceChecker{ready: buildReady, exists: resourceExistsIn(db)},
+		secretEnv:        secretEnv,
+		deployments:      deployStore,
+		dependents:       workloadGraph.Dependents,
+		secretEnvChanged: opts.secretEnvChanged,
+		mu:               workloadWrites,
 	}).Register(apiMux)
 	(&PlatformHandler{platform: opts.platform}).Register(apiMux)
 	// Deployments (spec 020): their own Create, Update and Promote.
-	deployStore := sqlite.NewStore[resource.DeploymentSpec, resource.DeploymentStatus](db, resource.KindDeployment).SetBus(bus)
 	(&DeploymentHandler{
 		ResourceHandler: NewResourceHandler[resource.DeploymentSpec, resource.DeploymentStatus](deployStore, "deployments"),
 		deployments:     deployStore, envs: envStore, comps: compStore,
@@ -347,6 +379,8 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		projects:     projectStore,
 		schemas:      opts.schemas,
 		recordDenied: recordDeniedIn(db),
+		secretEnv:    secretEnv,
+		mu:           workloadWrites,
 	}).Register(apiMux)
 	(&SchemaHandler{comps: compStore, schemas: opts.schemas}).Register(apiMux)
 	runtime := NewRuntimeHandler(deployStore, envStore, opts.runtime)
@@ -444,6 +478,8 @@ func registerAPI(apiMux Mux, db *sql.DB, bus event.Bus, engine *policy.Engine, a
 		secretStore := sqlite.NewStore[resource.SecretSpec, resource.SecretStatus](db, resource.KindSecret).SetBus(bus)
 		NewSecretHandler(secretStore, secretReconciler).Register(apiMux)
 	}
+	// Registered with or without a Secrets capability: it says which.
+	secretsStatusHandler{reporter: opts.secretsStatus}.Register(apiMux)
 
 	NewGraphHandler(graph.NewSQLiteGraph(db)).Register(apiMux)
 	(&ApprovalHandler{

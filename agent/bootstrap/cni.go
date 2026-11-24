@@ -55,11 +55,17 @@ const CiliumManifestPath = "/var/lib/rancher/k3s/server/manifests/serendip/ciliu
 
 // k3sServerArgs are the K3s server flags for a CNI, passed to the install
 // script as INSTALL_K3S_EXEC.
+//
+// --secrets-encryption is set with either CNI (specs/026 plan decision 9):
+// K3s then encrypts Secrets in its datastore with a key it manages under
+// /var/lib/rancher/k3s/server/cred/. The key sits on the same disk, so it
+// protects a copied datastore, not a stolen disk.
 func k3sServerArgs(cni CNI) []string {
+	args := []string{"--secrets-encryption"}
 	if cni == CNICilium {
-		return []string{"--flannel-backend=none", "--disable-network-policy"}
+		args = append(args, "--flannel-backend=none", "--disable-network-policy")
 	}
-	return nil
+	return args
 }
 
 // CiliumHelmChart renders the K3s HelmChart manifest that installs Cilium.

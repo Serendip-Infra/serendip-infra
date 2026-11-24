@@ -98,8 +98,8 @@ namespace label:
   an `httproute-external` for each endpoint that is `HTTP` with `external`
   visibility. The route is the sample's, minus its CORS filter (outside the
   standard-channel Gateway API). Dropped: the sample's visibility validations,
-  ExternalSecrets (external-secrets not installed; secret injection out of
-  scope), file-mount config, command/args, and the workflow/trait
+  ExternalSecrets (external-secrets isn't installed; spec 026 delivers
+  secrets through a Secret Serendip writes, below), file-mount config, command/args, and the workflow/trait
   allow-lists (nothing uses them). Kept: the "at least one endpoint"
   validation, which is why port-less Components are unsupported (below).
   **Update path:** the type is applied like every other default, so a
@@ -664,6 +664,95 @@ platform.
 - **Not done:** trace-based conditions (spec 025), composite conditions,
   person-written queries, and reading replies from Telegram.
 
+## Secret variables (spec 026)
+
+A Component or a Deployment sets environment variables from Secrets
+(ADR 0024). Code: `core/resource/secretenv.go`,
+`core/reconcile/secretenv.go`, `api/secretenv_check.go` and the
+provider's `secretenv.go`.
+
+- **The shape:** `spec.secretEnv` on a Component and
+  `spec.overrides.secretEnv` on a Deployment, each a list of `{env,
+  secret, key}`: the variable, a Secret's ID and a key of its value. An
+  override replaces a Component entry of the same `env`. At most 64 per
+  list. A string value is used as is; a number, bool, list or object is
+  JSON-encoded.
+- **Refused up front:** a duplicate variable, or one that's also a plain
+  or dependency variable in either layer (400 or, for a Component edit
+  that clashes with a Deployment, 409). So `envFrom` ordering never
+  decides a value. Platform-injected trace variables aren't checked
+  (RP-102).
+- **Naming a Secret** needs `serendip/secrets/value/read` at it (403,
+  audited), and the Secret must be in the Component's Project or above
+  it (422). See `authorization.md`. Each named Secret is a `depends-on`
+  edge, so deleting a Secret in use is 409 naming its users.
+- **Not part of a release:** references are read from the current
+  Component and Deployment, so a rollback keeps today's references
+  (RP-097). Promotion copies no overrides.
+- **Delivery** (`DeploymentReconciler`):
+  - It merges the two lists and computes a **version**: 16 hex
+    characters of sha256 over each entry's variable, Secret ID, key and
+    the Secret's `lastSyncedAt`. Metadata only.
+  - It reads values only when that version differs from the one the
+    platform holds (`status.secretEnvVersion`, and the Secret's
+    annotation).
+  - The provider applies `<component>-secret-env`, a plain Secret in the
+    Deployment's data-plane namespace (from
+    `ProjectReleaseBinding.status.namespace`), then sets
+    `serendipSecretEnv {name, version}` in the ReleaseBinding's
+    `componentTypeEnvironmentConfigs`, in the same binding apply as the
+    release. Secret first, so new pods never start against an older one.
+  - The type adds `envFrom: secretRef` when `name` isn't empty, and the
+    pod annotation `serendip.dev/secret-env-version`, so a new version
+    rolls the pods.
+  - **The property is reserved:** it's stripped from the schemas the
+    provider reports, so the configuration check refuses it in a user's
+    `config`, and `Deploy` overwrites it.
+- **Rotation:** a value write enqueues every Deployment that uses the
+  Secret (directly, or through its Component), and a Component's
+  `secretEnv` change enqueues its Deployments. The resync covers
+  anything missed. Each user rolls (RP-098).
+- **The `SecretEnvDelivered` condition,** present only while the merged
+  list isn't empty. A Deployment is Ready only when it's True or absent.
+
+  | Status | Reason | When |
+  |---|---|---|
+  | True | `Delivered` | the Secret and version are in place |
+  | False | `SecretHasNoValue` | a named Secret has never been written |
+  | False | `SecretKeyNotFound` | the key isn't in the value |
+  | False | `SecretNotFound` | the Secret is gone |
+  | False | `SecretEnvTooLarge` | names and values over 64 KiB |
+  | False | `NeedsNewRelease` | the running release's type predates secret variables |
+  | False | `Unsupported` | the application platform can't deliver secret variables |
+  | Unknown | `ProviderNotReady` | Secrets or the platform isn't ready (a sealed OpenBao too) |
+  | Unknown | `SecretReadFailed` | the Secrets capability answered a read with an error; retried |
+  | Unknown | `SecretEnvPending` | the data-plane namespace isn't there yet |
+
+  Messages name the variable, Secret and key, never a value. While it's
+  False, the release change that needs it isn't applied. With
+  `ProviderNotReady` or `SecretReadFailed`, nothing in the cluster
+  changes. In both cases running pods keep what they had.
+  `SecretEnvPending` is different: the deploy goes ahead, so the
+  namespace gets made and the version named, and the next pass writes
+  the Secret (the new pods wait for it).
+- **Clean-up:** `Undeploy`, an emptied list, and a Component delete
+  (in every Environment it's bound to) delete the Secret; not-found is
+  done. Deleting the namespace removes it too. A Component delete still
+  leaves its Deployment records behind (RP-095).
+- **Upgrade:** the type changed, and it's part of the release hash, so
+  every Deployment following the latest rolled once. A pinned one
+  reports `NeedsNewRelease` if it gains secret variables. A downgrade
+  drops the variables from running pods (RP-099).
+- **Cost:** two cluster GETs per Deployment with secret variables per
+  pass (RP-101). `serendipd`'s idle memory was unchanged on the same
+  host (T010: −0.1 and +1.0 MiB), and no pods were added.
+- **Where the value rests:** a plain cluster Secret (RP-096), encrypted
+  at rest on agent K3s installs (`secrets.md`, "Encryption at rest in
+  the cluster").
+- **Verification:** `specs/026-secrets-into-components/verification.md`
+  (live on `serendip-t018`; criterion 8 also on a `rancher/k3s`
+  container with the agent's flags).
+
 ## Deployment foundation (spec 010)
 
 ### Deployment model
@@ -757,7 +846,8 @@ interval.
   Verified on a real cluster with the node stopped during the delete.
 - **Mapping Serendip Organization/Project onto OpenChoreo namespaces**
   (multi-tenancy; one fixed org namespace today).
-- **Secret injection** into Components (spec 009 `Secret`s are not wired in).
+- ~~Secret injection into Components~~: spec 026, "Secret variables"
+  (above).
 - ~~Multi-environment promotion~~: spec 020 (below).
 - **A rollout restart** of a Deployment (deferred in spec 020 T006; the
   console shows it "not available yet").

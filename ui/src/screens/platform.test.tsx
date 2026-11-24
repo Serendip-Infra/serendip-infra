@@ -484,7 +484,7 @@ describe("component source form", () => {
     fireEvent.click(screen.getByLabelText("Built from source in Git"));
     expect(await screen.findByText(/Serendip refuses a new or changed source until it's ready/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "https://github.com/org/web.git" } });
-    await screen.findByRole("option", { name: "git-token" });
+    await waitFor(() => expect(within(screen.getByLabelText("Credential")).getByRole("option", { name: "git-token" })).toBeTruthy());
     fireEvent.change(screen.getByLabelText("Credential"), { target: { value: "s1" } });
     fireEvent.click(screen.getByLabelText(/Auto-build/));
     fireEvent.click(screen.getByRole("button", { name: "Create component" }));

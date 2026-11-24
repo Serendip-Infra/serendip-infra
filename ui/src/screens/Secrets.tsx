@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { apiFetch, apiList } from "../api/client";
-import type { Application, Condition, OwnerRef, Secret } from "../api/types";
+import type { Application, Condition, OwnerRef, Secret, SecretsStatus } from "../api/types";
 import { ApiEquivalent } from "../components/ApiEquivalent";
 import { ConditionsTable, KeyValueList } from "../components/Data";
 import { DeleteConfirm } from "../components/Delete";
 import { Guarded } from "../components/Guarded";
 import { RequestError } from "../components/RequestError";
 import { PageHeader } from "../components/Shell";
-import { EmptyState, LoadingState } from "../components/States";
+import { EmptyState, LoadingState, Notice } from "../components/States";
 import { conditionKind, findCondition, StatusText } from "../components/Status";
 import { usePermissions } from "../hooks/usePermissions";
 import { usePoll, useNow } from "../hooks/usePoll";
@@ -40,6 +40,31 @@ function Owner({ owner, apps }: { owner: OwnerRef | undefined; apps: Application
   return <span className="mono">{`${owner.kind} ${owner.id}`}</span>;
 }
 
+/**
+ * EncryptionBanner says whether the cluster encrypts at rest the copies of
+ * values delivered to workloads (spec 026 plan decision 9). Unknown is
+ * said as unknown, never as on or off (constitution 6). The status is read
+ * at the root, so a caller who can't read it there sees nothing here.
+ */
+export function EncryptionBanner() {
+  const status = usePoll((s) => apiFetch<SecretsStatus>("GET", "/v1/secrets/status", undefined, s), 60_000, "secrets-status");
+  const st = status.data;
+  if (!st) return null;
+  const why = st.message ? ` ${st.message.charAt(0).toUpperCase()}${st.message.slice(1)}.` : "";
+  if (st.encryptionAtRest === "on") {
+    return <p className="state-body">Values delivered to workloads rest in the cluster encrypted: its store encrypts Secrets at rest, with a key on the same disk.</p>;
+  }
+  if (st.encryptionAtRest === "off") {
+    return (
+      <Notice>
+        The cluster doesn't encrypt Secrets at rest, so values delivered to workloads sit unencrypted in its store.{why} The operations guide gives the steps to turn
+        it on.
+      </Notice>
+    );
+  }
+  return <Notice>It isn't known whether the cluster encrypts Secrets at rest, so treat values delivered to workloads as unencrypted there.{why}</Notice>;
+}
+
 export function SecretList({ ownerId }: { ownerId?: string | undefined }) {
   const now = useNow();
   const path = ownerId ? `/v1/secrets?ownerId=${encodeURIComponent(ownerId)}` : "/v1/secrets";
@@ -55,6 +80,7 @@ export function SecretList({ ownerId }: { ownerId?: string | undefined }) {
         meta={<UpdatedLine at={secrets.updatedAt} now={now} />}
       />
       <p className="state-body">Values aren't shown here. Reading or changing a value needs its own permission, through the API.</p>
+      <EncryptionBanner />
       {secrets.error ? (
         <RequestError error={secrets.error} what="secrets" />
       ) : !secrets.data ? (

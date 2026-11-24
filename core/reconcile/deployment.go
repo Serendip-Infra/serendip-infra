@@ -28,6 +28,9 @@ type DeploymentReconciler struct {
 	comps       store.Store[resource.ComponentSpec, resource.ComponentStatus]
 	apps        store.Store[resource.ApplicationSpec, resource.ApplicationStatus]
 	provider    DeploymentProvider
+	// secrets and values resolve secret variables (UseSecrets; spec 026).
+	secrets store.Store[resource.SecretSpec, resource.SecretStatus]
+	values  SecretsProvider
 }
 
 func NewDeploymentReconciler(
@@ -54,7 +57,8 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, ref graph.Resource
 	if err != nil {
 		return err
 	}
-	converging := !obs.Ready && (obs.Reason == ReasonProgressing || obs.Reason == ReasonProviderNotReady || obs.Reason == ReasonWaitingForComponent)
+	converging := !obs.Ready && (obs.Reason == ReasonProgressing || obs.Reason == ReasonProviderNotReady || obs.Reason == ReasonWaitingForComponent ||
+		obs.Reason == ReasonSecretEnvPending || obs.Reason == ReasonSecretReadFailed)
 	return requeueWhen(r.setState(ctx, d, obs), converging)
 }
 
@@ -111,12 +115,33 @@ func (r *DeploymentReconciler) observe(ctx context.Context, d resource.Deploymen
 		return DeploymentObservation{Reason: ReasonWaitingForComponent,
 			Message: fmt.Sprintf("waiting for Component %s: it has no built image yet", comp.Metadata.ID)}, nil
 	}
-	obs, err := r.provider.Deploy(ctx, app, run, env, d)
+	sec, err := r.resolveSecretEnv(ctx, run, env, d)
+	if err != nil {
+		return DeploymentObservation{}, err
+	}
+	settle := func(obs DeploymentObservation) DeploymentObservation {
+		obs.secretEnvResolved, obs.secretEnv, obs.secretEnvVersion = true, sec.cond, sec.held
+		return obs
+	}
+	if !sec.deploy {
+		// The secret variables can't be delivered: nothing changes on the
+		// platform, so the workload keeps what it last had.
+		return settle(DeploymentObservation{Reason: sec.cond.Reason, Message: sec.cond.Message}), nil
+	}
+	obs, err := r.provider.Deploy(ctx, app, run, env, d, sec.deployVersion)
 	if errors.Is(err, ErrProviderNotReady) {
-		return DeploymentObservation{Reason: ReasonProviderNotReady, Message: providerNotReadyMessage(applicationPlatformCapability)}, nil
+		return settle(DeploymentObservation{Reason: ReasonProviderNotReady, Message: providerNotReadyMessage(applicationPlatformCapability)}), nil
 	}
 	if err != nil {
-		return DeploymentObservation{Reason: ReasonEnsureFailed, Message: err.Error()}, nil
+		return settle(DeploymentObservation{Reason: ReasonEnsureFailed, Message: err.Error()}), nil
+	}
+	obs = settle(obs)
+	if obs.Reason == ReasonNeedsNewRelease {
+		obs.secretEnv = secretEnvCond(resource.ConditionFalse, ReasonNeedsNewRelease, obs.Message)
+	} else if sec.cond != nil && sec.cond.Status != resource.ConditionTrue && obs.Ready {
+		// Running, but its secret variables aren't in place yet (spec 026
+		// item 5: not Ready without them).
+		obs.Ready, obs.Reason, obs.Message = false, sec.cond.Reason, sec.cond.Message
 	}
 	return obs, nil
 }
@@ -135,11 +160,26 @@ func (r *DeploymentReconciler) setState(ctx context.Context, d resource.Deployme
 	if obs.Ready {
 		endpoints = obs.Endpoints
 	}
+	// A pass that never got as far as secret variables (waiting for the
+	// Component, an invalid spec) leaves their condition and version as
+	// they were: the version is what the platform holds, and removing the
+	// last variable relies on it.
+	secretCond, secretVersion := findCondition(d.Status.Conditions, conditionSecretEnvDelivered), d.Status.SecretEnvVersion
+	if obs.secretEnvResolved {
+		secretCond, secretVersion = obs.secretEnv, obs.secretEnvVersion
+	}
 	if conditionUnchanged(d.Status.Conditions, ready) && release == d.Status.Release &&
-		slices.Equal(history, d.Status.History) && endpointsEqual(endpoints, d.Status.Endpoints) {
+		slices.Equal(history, d.Status.History) && endpointsEqual(endpoints, d.Status.Endpoints) &&
+		secretEnvUnchanged(d.Status.Conditions, secretCond) && secretVersion == d.Status.SecretEnvVersion {
 		return nil
 	}
 	d.Status.Conditions = upsertCondition(d.Status.Conditions, keepTransitionTime(d.Status.Conditions, ready))
+	if secretCond == nil {
+		d.Status.Conditions = removeCondition(d.Status.Conditions, conditionSecretEnvDelivered)
+	} else {
+		d.Status.Conditions = upsertCondition(d.Status.Conditions, keepTransitionTime(d.Status.Conditions, *secretCond))
+	}
+	d.Status.SecretEnvVersion = secretVersion
 	d.Status.Release, d.Status.History, d.Status.Endpoints = release, history, endpoints
 	_, err := r.deployments.Update(ctx, d)
 	if errors.Is(err, store.ErrConflict) {

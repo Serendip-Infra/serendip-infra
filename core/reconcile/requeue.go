@@ -36,7 +36,7 @@ const ReasonProviderNotReady = "ProviderNotReady"
 // providerNotReadyMessage is the Condition message for
 // ReasonProviderNotReady, naming the capability, never a product.
 func providerNotReadyMessage(capability string) string {
-	return "the " + capability + " capability is still being set up"
+	return "the " + capability + " capability isn't ready: still being set up, or unavailable"
 }
 
 // requeueWhen turns a converging outcome into a RequeueAfter (letting the

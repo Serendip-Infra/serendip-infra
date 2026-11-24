@@ -87,3 +87,43 @@ Notes:
   Serendip writes the releases and every binding (`<component>-env-<hash>`,
   plus `<project>-env-<hash>` project bindings, and `pl-<hash>` pipelines
   per Project).
+
+## Spec 026: secret variables (checked 2026-11-24 on OpenChoreo 1.3.1)
+
+Answers: `specs/026-secrets-into-components/testdata/t001-openchoreo.md`.
+
+- **Workload `env[].valueFrom.secretKeyRef`** names a `SecretReference`,
+  whose only consumer is External Secrets Operator. Serendip doesn't use
+  it.
+- **Instead:** a Serendip-written `Secret` in the data-plane namespace,
+  loaded with `envFrom`. Only its name and a version travel in the
+  ReleaseBinding's `componentTypeEnvironmentConfigs.serendipSecretEnv`.
+  Searching every OpenChoreo object found no value.
+- **CEL:** concatenating with `configurations.toContainerEnvFrom()` needs
+  `dyn(...)`. Without it the type is refused at admission (no `_+_`
+  overload for `list(EnvFromEntry)`).
+- **A changed pod-template annotation rolls the Deployment.** Nothing
+  upstream reacts to a Secret's data changing.
+- **`ProjectReleaseBinding.status.namespace`** names the data-plane
+  namespace once `NamespaceReady`.
+- **A ComponentRelease snapshots its type**, so a release cut before the
+  type gained `serendipSecretEnv` accepts the property in its binding
+  and silently ignores it. The provider checks the snapshot instead.
+- **What the provider does (T004, `secretenv.go`):**
+  - `SecretEnvVersion` reads the `serendip.dev/secret-env-version`
+    annotation on `<cmp>-secret-env`; no project binding, or no
+    `status.namespace` yet, is `ErrSecretEnvPending`.
+  - `WriteSecretEnv` server-side applies that Secret (an apply 404, a
+    namespace not there yet, is pending too); empty variables delete it.
+    API error bodies are dropped from its errors, keeping the status only.
+  - `Deploy` sets `serendipSecretEnv {name, version}` only when there's
+    a version, so a Deployment without secret variables keeps its
+    pre-026 binding. It returns `NeedsNewRelease` before applying the
+    binding when the release's type snapshot lacks the property.
+  - `Undeploy` deletes the Secret first, while the project binding still
+    names the namespace.
+  - `ConfigSchemas` strips the property; the validator then refuses it in
+    a user's `config`. `Deploy` drops a user's value for it as well.
+  - **Re-check on an upgrade:** that `status.namespace` is still where the
+    project binding reports its namespace, and that the `dyn()` CEL form
+    is still accepted.

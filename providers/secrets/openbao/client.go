@@ -18,6 +18,11 @@ import (
 // ErrNotFound convention.
 var ErrSecretNotFound = errors.New("openbao: secret not found")
 
+// ErrUnavailable is OpenBao not answering: unreachable, or answering 503
+// (sealed, or no pod behind its Service). It passes once OpenBao is back
+// and unsealed (spec 026 T009 F2).
+var ErrUnavailable = errors.New("openbao: unavailable")
+
 // DefaultKVMount is OpenBao's default KV v2 secrets-engine mount path.
 const DefaultKVMount = "secret"
 
@@ -86,7 +91,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openbao: %s %s: %w", method, path, err)
+		return nil, fmt.Errorf("%w: %s %s: %w", ErrUnavailable, method, path, err)
 	}
 	return resp, nil
 }
@@ -308,6 +313,9 @@ func (c *Client) DeleteSecret(ctx context.Context, mount, path string) error {
 // awareness that it may embed OpenBao's own error text.
 func unexpectedStatus(resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return fmt.Errorf("%w: status 503: %s", ErrUnavailable, string(body))
+	}
 	return fmt.Errorf("openbao: unexpected status %d: %s", resp.StatusCode, string(body))
 }
 

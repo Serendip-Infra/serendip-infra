@@ -180,11 +180,11 @@ func (p *platform022) EnsureComponent(_ context.Context, _ resource.Application,
 }
 func (p *platform022) DeleteComponent(context.Context, resource.Component) error { return nil }
 
-func (p *platform022) Deploy(ctx context.Context, app resource.Application, c resource.Component, env resource.Environment, d resource.Deployment) (reconcile.DeploymentObservation, error) {
+func (p *platform022) Deploy(ctx context.Context, app resource.Application, c resource.Component, env resource.Environment, d resource.Deployment, secretEnv string) (reconcile.DeploymentObservation, error) {
 	p.mu.Lock()
 	p.envImage[env.Metadata.ID] = c.Spec.Image
 	p.mu.Unlock()
-	return p.fakePlatform020.Deploy(ctx, app, c, env, d)
+	return p.fakePlatform020.Deploy(ctx, app, c, env, d, secretEnv)
 }
 
 func (p *platform022) imageIn(env string) string {
