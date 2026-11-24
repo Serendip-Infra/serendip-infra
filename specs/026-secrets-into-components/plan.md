@@ -2,10 +2,37 @@
 
 Status: Approved, 2026-11-24 (under the user's standing "full auto"
 instruction for this spec; open to change at the user's review).
+Amended 2026-11-24 with T001's findings.
 
 Spec: `spec.md`. Epic #67.
 
-## Research (2026-11-24, oss-researcher; to be confirmed live in T001)
+## Checked live in T001 (2026-11-24)
+
+On `serendip-t018` (kind, OpenChoreo 1.3.1) with a hand-made probe, and in
+two `rancher/k3s:v1.36.4-k3s1` containers. Answers in `testdata/t001-*`
+and `providers/application/openchoreo/VERSIONS.md` (spec 026).
+
+- **Decision 1 and 3 hold:** `envFrom` with the Serendip-written Secret
+  delivers the value, and a changed version annotation rolls the pods.
+  Searching every RenderedRelease, ReleaseBinding, ComponentRelease,
+  Workload, Component and the data-plane ConfigMaps for the value found
+  nothing.
+- **The CEL needs `dyn()`** around `configurations.toContainerEnvFrom()`
+  before the list concatenation (decision 3), or the type is refused at
+  admission.
+- **The namespace is in `ProjectReleaseBinding.status.namespace`**
+  (decision 3), so the provider doesn't wait for a RenderedRelease.
+- **A pre-026 release silently ignores the new property** (decision 12):
+  the binding syncs, and no secret reaches the pods. So the provider
+  checks the running release's type snapshot and reports
+  `NeedsNewRelease`.
+- **K3s** (decision 9): with `--secrets-encryption` the node has
+  `k3s.io/encryption-config-hash` (`start-<sha>`), and `k3s
+  secrets-encrypt status` shows `Enabled` with an AES-CBC key. Without
+  it there's no annotation, and the status says `Disabled`. K3s nodes
+  are told apart by the label `node.kubernetes.io/instance-type=k3s`.
+
+## Research (2026-11-24, oss-researcher; confirmed live in T001, above)
 
 OpenChoreo v1.3.1, read from source at the tag (types and the sample),
 not run:
@@ -93,7 +120,8 @@ Deployment provider sets it in the ReleaseBinding's
 `componentTypeEnvironmentConfigs`, next to the user's own `config`. The
 template:
 
-- adds the `envFrom` entry only when `name` isn't empty;
+- adds the `envFrom` entry only when `name` isn't empty (the CEL wraps
+  `configurations.toContainerEnvFrom()` in `dyn()` to concatenate, T001);
 - adds the pod-template annotation `serendip.dev/secret-env-version:
   ${version}`, so a changed version rolls the pods (criterion 4).
 
@@ -108,11 +136,11 @@ Secret older than their annotation.
 
 - **On a first deploy** the data-plane namespace may not exist yet,
   because the ProjectReleaseBinding makes it. `Deploy` already applies
-  that binding first. T001 checks whether the namespace can be read from
-  the ProjectReleaseBinding's status, or only from the RenderedRelease.
-  If only the latter, the first pass reports `SecretEnvPending` and the
-  next early re-check writes the Secret. Kubernetes retries a container
-  whose `envFrom` Secret is missing, so this only delays the first start.
+  that binding first, and its `status.namespace` names the namespace
+  once `NamespaceReady` (T001). Before then, the pass reports
+  `SecretEnvPending` and the next early re-check writes the Secret.
+  Kubernetes retries a container whose `envFrom` Secret is missing, so
+  this only delays the first start.
 
 ### 4. Rotation is noticed by an event, with the resync as backstop
 
@@ -214,8 +242,9 @@ Promotion copies no overrides, so it needs nothing new.
   which `secrets.md` says plainly: it protects a copied datastore, not a
   stolen disk.
 - **Detection:** K3s marks server nodes with the annotation
-  `k3s.io/encryption-config-hash` when secrets encryption is on (T001
-  confirms the name and its value on a `rancher/k3s` node). The
+  `k3s.io/encryption-config-hash` when secrets encryption is on (checked
+  in T001). A node with the label `node.kubernetes.io/instance-type=k3s`
+  is a K3s node. The
   application provider has no part in this. It is a `SecretsProvider`
   side report built on the `providers/kubernetes` client and kept out of
   `core/` names: `core` sees `EncryptionAtRest` with values `on`, `off`
@@ -267,6 +296,7 @@ present only when the merged list isn't empty:
 | False | `SecretKeyNotFound` | the key isn't in the value |
 | False | `SecretNotFound` | the Secret is gone (shouldn't happen: delete guard) |
 | False | `SecretEnvTooLarge` | over 64 KiB |
+| False | `NeedsNewRelease` | the running release predates secret variables (decision 12) |
 | Unknown | `ProviderNotReady` | Secrets or the platform not ready; **nothing is changed in the cluster**, running pods keep their values |
 | Unknown | `SecretEnvPending` | waiting for the data-plane namespace |
 
@@ -284,11 +314,14 @@ pass (spec 012's update path). A running release snapshots the old type,
 which has no `envFrom` secret entry and no annotation. So the first
 Deployment change after upgrading picks up the new type, and adding a
 secret variable is such a change (it changes `componentTypeEnvironmentConfigs`).
-T001 confirms that a ReleaseBinding config change re-renders with the
-type the release was cut against, or with the current one. If a release
-pins the type, adding a secret variable to a pre-026 release needs a new
-release, and `EnsureSecretEnv` reports reason `NeedsNewRelease` with the
-message "deploy a new release to use secret variables".
+**T001 found that a release pins its type**, and a pre-026 release
+silently ignores the property. So the provider checks the running
+release's type snapshot for `serendipSecretEnv`. When it's missing,
+`EnsureSecretEnv` reports reason `NeedsNewRelease` with the message
+"this release predates secret variables: deploy a newer release". In
+practice a Component gets a new release on its next reconcile after the
+type changes, because the type snapshot is part of the release hash. So
+only Deployments pinned to an old release see this.
 
 ## What it costs
 

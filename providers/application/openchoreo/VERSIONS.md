@@ -87,3 +87,25 @@ Notes:
   Serendip writes the releases and every binding (`<component>-env-<hash>`,
   plus `<project>-env-<hash>` project bindings, and `pl-<hash>` pipelines
   per Project).
+
+## Spec 026: secret variables (checked 2026-11-24 on OpenChoreo 1.3.1)
+
+Answers: `specs/026-secrets-into-components/testdata/t001-openchoreo.md`.
+
+- **Workload `env[].valueFrom.secretKeyRef`** names a `SecretReference`,
+  whose only consumer is External Secrets Operator. Serendip doesn't use
+  it.
+- **Instead:** a Serendip-written `Secret` in the data-plane namespace,
+  loaded with `envFrom`. Only its name and a version travel in the
+  ReleaseBinding's `componentTypeEnvironmentConfigs.serendipSecretEnv`.
+  Searching every OpenChoreo object found no value.
+- **CEL:** concatenating with `configurations.toContainerEnvFrom()` needs
+  `dyn(...)`. Without it the type is refused at admission (no `_+_`
+  overload for `list(EnvFromEntry)`).
+- **A changed pod-template annotation rolls the Deployment.** Nothing
+  upstream reacts to a Secret's data changing.
+- **`ProjectReleaseBinding.status.namespace`** names the data-plane
+  namespace once `NamespaceReady`.
+- **A ComponentRelease snapshots its type**, so a release cut before the
+  type gained `serendipSecretEnv` accepts the property in its binding
+  and silently ignores it. The provider checks the snapshot instead.

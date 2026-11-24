@@ -1,0 +1,9 @@
+# t026-k3s-off (rancher/k3s:v1.36.4-k3s1), 2026-11-24
+## node annotations (k3s.io/*) and instance-type label
+{
+ "k3s.io/node-args": "[\"server\",\"--disable\",\"traefik,metrics-server\"]",
+ "beta.kubernetes.io/instance-type": "k3s",
+ "node.kubernetes.io/instance-type": "k3s"
+}
+## k3s secrets-encrypt status
+Encryption Status: Disabled, no configuration file found

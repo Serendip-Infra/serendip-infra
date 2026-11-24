@@ -4,7 +4,20 @@ Status: Approved, 2026-11-24 (the user's standing "full auto" instruction).
 
 [P] = can run in parallel with the task before it. [A] = subagent-eligible.
 
-## T001: Live checks of the research
+## T001: Live checks of the research ✅
+
+**Done as** (2026-11-24): every item checked on `serendip-t018` with a
+hand-made probe (a `t026-service` copy of the type, plus a probe
+Component, release and binding, all deleted afterwards), and in two
+`rancher/k3s:v1.36.4-k3s1` containers. Answers in `testdata/t001-*`,
+facts in `VERSIONS.md`, and `plan.md`'s "Checked live in T001".
+- **Changed:** the CEL needs `dyn()` (decision 3); a pre-026 release
+  silently ignores the property, so the provider reports
+  `NeedsNewRelease` from the release's type snapshot (decision 12, a new
+  condition row).
+- **Confirmed:** delivery, no value in any OpenChoreo object, rotation
+  by the annotation, the namespace from `ProjectReleaseBinding.status`,
+  and K3s's `k3s.io/encryption-config-hash`.
 
 - **Do:** on a scratch kind cluster `t026` with Serendip's platform
   installed (OpenChoreo 1.3.1), and in a `rancher/k3s` container, check
