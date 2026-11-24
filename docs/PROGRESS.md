@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T008 done, T009 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T009 done, T010 next)
 
 ## Current phase
 
@@ -21,34 +21,58 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T008 done, T009 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#376 are
-  closed with their commits, and #67's checklist has T001–T008 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#377 are
+  closed with their commits, and #67's checklist has T001–T009 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T009, Live verification** (`tasks.md`), then T010 → T011.
+**Next: T010, Lightweight check** (criterion 12: `serendipd` idle RSS
+with a Deployment using secret variables, A/B against spec 025's baseline
+on the same host, and no new pods), then T011.
+- T010 is a bench run. Long runs go from the user's own Git Bash,
+  because the memory reaper kills background shells. Start the
+  keep-awake beside it.
+- **T011's RPs start at RP-096.** T009 used RP-094 and RP-095.
 
-- **T001–T007, done:** core, the reconciler, the provider (T004, not yet
-  live), encryption at rest, the API (`api/secretenv_check.go`, `GET
-  /v1/secrets/status`), and the CLI and MCP (`--secret-env`,
-  `--remove-secret-env`, `secrets status`). tasks.md's "Done as" entries
-  have the detail.
-- **T008, done (tasks.md's "Done as" has the detail):**
-  - `ui/src/lib/secretEnv.ts` holds the rules. `ui/src/screens/SecretEnv.tsx`
-    has the editor, the read-only table and the delivery status.
-  - The Component edit form and overview show secret variables. The
-    Deployment Configure form has "Secret variables for <env>". The
-    Deploy tab shows delivery from `SecretEnvDelivered`. The Secrets
-    page has the encryption banner (none on a 403).
-  - The picker offers the Secrets the caller can list, minus those
-    known to be in another Project. The server decides value-read and
-    scope.
-  - **Fixed on the way:** the Component edit form used to drop
-    `spec.dependencies` on save. Check that live in T009 too.
-- **Before T009:** run `corepack pnpm build` in `ui/` (done once
-  already; `dist` isn't tracked), then rebuild `serendipd` so it embeds
-  the new console. T009 checks the console live.
+- **T001–T008, done:** tasks.md's "Done as" entries have the detail
+  (core, reconciler, provider, encryption at rest, API, CLI/MCP, console).
+- **T009, done** (`a0690b9`; `verification.md`). Criteria 1–11 PASS:
+  - on `serendip-t018`;
+  - criterion 8 also on a `rancher/k3s` container with the agent's
+    flags, where it reported `encryptionAtRest: on`;
+  - the evidence is in `~/.serendip-t018/t026/evidence/`.
+  - **Fixed:**
+    - F1: no-value and not-found messages name the variable and key;
+    - F2: an unreachable or sealed OpenBao is `ErrProviderNotReady`
+      (503, with a fixed text and no upstream answer);
+    - F3: `/v1/secrets/status`'s `ready` follows OpenBao's health;
+    - F4: `DeleteComponent` deletes `<cmp>-secret-env` first.
+  - **Recorded, both older than 026:**
+    - RP-094: OpenBao stays sealed after its pod restarts, until
+      `serendipd` restarts. Re-unseal on demand **waits for the user's
+      decision**.
+    - RP-095: a Component delete leaves its Deployments behind.
+  - Decision 12 was confirmed: on the upgrade, Deployments following the
+    latest release rolled once, and a pinned one didn't.
+
+**State left by T009:**
+- `serendipd` runs on `:8088`: the T009 build, on
+  `~/.serendip-t018/t026/t026.db`, started with `bash
+  ~/.serendip-t018/t026/start.sh`. The user's dev one (`dev-up.ps1`,
+  `t023.db`) is stopped. Restart it with `.\scripts\dev-up.ps1
+  -Restart`.
+- In the t026 store, `verifier` has Secrets Officer at Project
+  `t014-builds`. The CLI is signed in as `admin`
+  (`~/.serendip-t018/t026/cli-login.mjs` signs it in again).
+- Five ReleaseBindings from older test stores (`t020-web`, `t020-api`,
+  `rp018-check`, `t019-*`) are set to `state: Undeploy` to free CPU.
+  Revert with `Active`.
+- **Not allowed from this session (auto-mode classifier):**
+  - running `dev-up.ps1` with `-ExecutionPolicy Bypass` (T009 did its
+    steps by hand instead);
+  - starting Docker Desktop;
+  - editing `.claude/settings*.json`.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
@@ -108,14 +132,13 @@ the end.
 
 ### Test beds
 
-- **`serendip-t018`** (kindnet) is up, with `serendipd` on `:8088`
-  (started with `.\scripts\dev-up.ps1 -Restart -NoBuild`, the old build).
-  T001's probe objects were deleted.
-  - The kubectl default context is now `kind-serendip-t018`. The repo's
+- **`serendip-t018`** (kindnet) is up, with the T009 `serendipd` on
+  `:8088` (see "State left by T009" above).
+  - The kubectl default context is `kind-serendip-t018`. The repo's
     kube-context guard reads the default context, so mutations need it.
-  - The node's CPU requests are at 99%, so a rolling update's surge pod
-    stays Pending until an old pod goes. Stop or delete old test
-    workloads before T009.
+  - CPU requests were at 96% before T009 undeployed the five older
+    Components. A rolling update's surge pod can stay Pending when the
+    node is that full.
 - `serendip-t025` and `t025` are stopped (`docker start
   <name>-control-plane`).
 - **Not allowed from this session (auto-mode classifier):** starting
