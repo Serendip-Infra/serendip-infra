@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T006 done, T007 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T007 done, T008 next)
 
 ## Current phase
 
@@ -21,13 +21,13 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T006 done, T007 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#374 are
-  closed with their commits, and #67's checklist has T001–T006 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#375 are
+  closed with their commits (#375 too), and #67's checklist has T001–T007 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T007, CLI and MCP** (`tasks.md`), then T008 → T011.
+**Next: T008, Console** (`tasks.md`), then T009 → T011.
 
 - **T006, done (794966a; tasks.md's "Done as" has the detail):**
   - `api/secretenv_check.go` checks newly named entries: value read
@@ -41,16 +41,23 @@ the end.
   - serendipd wires `UseSecrets`, `OnValueWritten` →
     `EnqueueSecretUsers`, and `WithSecretEnvChanged` →
     `enqueueComponentDeployments`.
-- **T007 needs:**
-  - the CLI sugar `--secret-env NAME=SECRET_ID:KEY` and
-    `--remove-secret-env NAME`, on component update and deployment
-    create/update. The CLI is generated from `api/catalog`, so check how
-    flags are added there;
-  - the MCP tools: `secrets_status` already exists through the
-    catalogue. Component and Secret writes are excluded from MCP
-    (`infraWrites`), so check whether deployment writes carry
-    `overrides.secretEnv` already;
-  - `docs/cli-and-mcp.md`.
+- **T007, done (4cc5434; tasks.md's "Done as" has the detail):**
+  - The catalogue has a `Repeat` param flag and an `InEdit` placement
+    (params that edit the `InBody` document through an `edit` hook).
+  - `--secret-env NAME=SECRET_ID:KEY` and `--remove-secret-env NAME`
+    work on components and deployments create/update. They are CLI-only.
+    An update without `--file` reads, edits and writes back with the read
+    `resourceVersion`.
+  - MCP tools take the whole document; their summaries give the shape.
+  - `docs/cli-and-mcp.md` has a "Secret variables" section.
+- **T008 needs:**
+  - the Component page's "Secret variables" table and add form (pick a
+    readable Secret in scope, then type the key);
+  - the same on the Deployment overrides form ("for this environment");
+  - the `SecretEnvDelivered` condition shown;
+  - the encryption banner on the Secrets page (`GET /v1/secrets/status`);
+  - no value fetched anywhere;
+  - check: `npm test` and `npm run build` in `ui/`.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
