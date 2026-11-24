@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T009 done, T010 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T009 and T012 done, T010 next)
 
 ## Current phase
 
@@ -21,8 +21,9 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T009 done, T010 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#377 are
-  closed with their commits, and #67's checklist has T001–T009 ticked.
+- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added). #369–#377
+  and #380 are closed with their commits, and #67's checklist has
+  T001–T009 and T012 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
@@ -49,10 +50,19 @@ on the same host, and no new pods), then T011.
     - F3: `/v1/secrets/status`'s `ready` follows OpenBao's health;
     - F4: `DeleteComponent` deletes `<cmp>-secret-env` first.
   - **Recorded, both older than 026:**
-    - RP-094: OpenBao stays sealed after its pod restarts, until
-      `serendipd` restarts. Re-unseal on demand **waits for the user's
-      decision**.
-    - RP-095: a Component delete leaves its Deployments behind.
+    - RP-094: OpenBao stayed sealed after its pod restarts. **Closed by
+      T012.**
+    - RP-095: a Component delete leaves its Deployments behind (still
+      open).
+- **T012, done** (`10273ec`; added at the user's request, plan decision
+  13, spec criterion 13 and scope item 11).
+  - The OpenBao provider unseals OpenBao again with the stored key when a
+    call or the status read finds it sealed, then retries once
+    (`providers/secrets/openbao/unseal.go`).
+  - It tries at most once every 10 s, and never initializes.
+  - Live: the resync unsealed a restarted OpenBao within seconds.
+  - ADR 0009 is amended. **T011's docs should mention this** in
+    `secrets.md` and `operations.md`.
   - Decision 12 was confirmed: on the upgrade, Deployments following the
     latest release rolled once, and a pinned one didn't.
 
