@@ -12,7 +12,7 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026 in progress: T001–T005 done, T006 next)
+Last updated: 2026-11-24 (spec 026 in progress: T001–T006 done, T007 next)
 
 ## Current phase
 
@@ -21,22 +21,36 @@ Last updated: 2026-11-24 (spec 026 in progress: T001–T005 done, T006 next)
 fork after each task. Spec, plan and tasks were approved under the user's
 "full auto" instruction (2026-11-24); the user reviews the whole spec at
 the end.
-- **Task issues:** #369–#379 (T001–T011), all opened. #369–#373 are
-  closed with their commits, and #67's checklist has T001–T005 ticked.
+- **Task issues:** #369–#379 (T001–T011), all opened. #369–#374 are
+  closed with their commits, and #67's checklist has T001–T006 ticked.
   GitHub is in step: per task, commit with `Closes #N`, push, close the
   issue by hand with a comment naming the commit, tick #67. Do these as
   paced writes, about one a minute.
 
-**Next: T006, the API** (`tasks.md`), then T007 → T011.
+**Next: T007, CLI and MCP** (`tasks.md`), then T008 → T011.
 
-- **T005, done (6417d36):**
-  - The agent sets `--secrets-encryption` on both CNIs.
-  - `reconcile.EncryptionReporter` is optional on the secrets provider.
-  - `openbao.Provider.WithCluster` reads it from the K3s server nodes'
-    annotation; kind is `unknown`.
-  - It's wired in `wiring.go`, and `lazySecrets` forwards it.
-  - T006 adds `GET /v1/secrets/status`: assert `EncryptionReporter` on
-    the `lazySecrets` handle; `ErrProviderNotReady` means not ready.
+- **T006, done (794966a; tasks.md's "Done as" has the detail):**
+  - `api/secretenv_check.go` checks newly named entries: value read
+    (403, audited), then existence and Project-or-above (422).
+  - A Component update is checked against its Deployments' overrides
+    (409).
+  - One lock covers Component and Deployment writes.
+  - `GET /v1/secrets/status` exists, and so does the catalogue entry
+    `secrets_status` (`serendip secrets status`), already in
+    `docs/cli-and-mcp.md`.
+  - serendipd wires `UseSecrets`, `OnValueWritten` →
+    `EnqueueSecretUsers`, and `WithSecretEnvChanged` →
+    `enqueueComponentDeployments`.
+- **T007 needs:**
+  - the CLI sugar `--secret-env NAME=SECRET_ID:KEY` and
+    `--remove-secret-env NAME`, on component update and deployment
+    create/update. The CLI is generated from `api/catalog`, so check how
+    flags are added there;
+  - the MCP tools: `secrets_status` already exists through the
+    catalogue. Component and Secret writes are excluded from MCP
+    (`infraWrites`), so check whether deployment writes carry
+    `overrides.secretEnv` already;
+  - `docs/cli-and-mcp.md`.
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
@@ -75,15 +89,6 @@ the end.
   - **Not yet live:** the real template change, checked first in T009.
     Every running Deployment rolls once on upgrade, because the type is
     in the release hash (decision 12). Confirm that in T009 too.
-- **T006 must:**
-  - call `ValidateComponentSecretEnv` and `ValidateDeploymentSecretEnv`
-    in the handlers;
-  - enforce the "Project or above" rule (422) and the value-read check
-    on newly named Secrets (403);
-  - add the Secret delete guard for the new edges (409);
-  - add `GET /v1/secrets/status`;
-  - wire `UseSecrets` and `OnValueWritten` (with `EnqueueSecretUsers`
-    over the graph) in `cmd/serendipd`.
 - **For the risk register (T011):**
   - encryption at rest: the annotation shows it was configured at
     start, not that older Secrets were re-encrypted; `secrets-encrypt
@@ -99,7 +104,9 @@ the end.
   - clearing value buffers is best effort;
   - every Deployment rolls once on the upgrade (a new type, so a new
     release);
-  - a clash with platform-injected variables (spec 025's tracing ones).
+  - a clash with platform-injected variables (spec 025's tracing ones);
+  - `GET /v1/secrets/status` is read at `/`, so a Project-only user's
+    console shows no encryption banner (T006, by decision 9).
 
 ### Test beds
 
