@@ -142,6 +142,52 @@ handlers is T006's. A clash with a platform-injected variable (spec
 - **Verify:** `go test ./providers/...`; `go build ./core/... ./api/...`
   with the provider deleted (scratch copy); contract-guardian; go-reviewer.
 
+**Done as** (2026-11-24):
+- **`providers/application/openchoreo/secretenv.go`:**
+  - `SecretEnvVersion` reads the version annotation on
+    `<cmp>-secret-env`. It answers `ErrSecretEnvPending` while the
+    project binding has no `status.namespace`.
+  - `WriteSecretEnv` server-side applies the Secret. An apply 404 is
+    pending too. Empty variables delete the Secret, and not-found counts
+    as done.
+  - API error bodies are dropped (`valueFreeError` keeps only the status
+    code), so no error can echo a value.
+- **The type (`defaults.go`):**
+  - the reserved `serendipSecretEnv {name, version}` property;
+  - the pod annotation `serendip.dev/secret-env-version`;
+  - the `dyn()` `envFrom` form that T001 verified.
+- **`Deploy`:**
+  - sets the property in the same binding apply, only when there's a
+    version. Deployments without secret variables keep their binding
+    unchanged;
+  - drops a user's value for the property;
+  - returns `NeedsNewRelease` before the binding apply when the
+    release's type snapshot lacks the property. A pinned release gets
+    "deploy a newer release". The current release (a stale installed
+    type) gets "waiting for it to be updated".
+- **`Undeploy`** deletes the Secret first, while the project binding
+  still names the namespace.
+- **`ConfigSchemas`** strips the property, so the validator refuses it
+  in a user's `config`.
+- **Reviews:**
+  - contract-guardian passed, and check-imports is clean.
+  - go-reviewer found no blockers. Fixed from its findings:
+    - the status error stays in the error chain;
+    - a distinct message for a stale installed type;
+    - a wrapped Undeploy error;
+    - tests for a 404 on apply, an unannotated Secret, a bad status, no
+      namespace on Undeploy, `withoutReserved` and `bindingConfig`.
+- **For T011's risk register:**
+  - an apply 404 reads as pending for good if the path were ever wrong
+    (resync bounds it);
+  - a pass costs two GETs per Deployment with secret variables (the
+    project binding and the Secret);
+  - clearing value buffers is best effort.
+- **Verified:**
+  - `go test ./providers/...` passes;
+  - `go build ./core/... ./api/...` passes on a scratch copy without the
+    provider.
+
 ## T005: Encryption at rest [P]
 
 - **Do:**

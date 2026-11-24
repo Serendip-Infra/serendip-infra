@@ -262,7 +262,7 @@ func (p *Provider) EnsureComponent(ctx context.Context, app resource.Application
 		return reconcile.ComponentObservation{}, err
 	}
 	return reconcile.ComponentObservation{Ready: true, Reason: reasonReleased,
-		Message: "release " + rel.Name + " is ready to deploy"}, nil
+		Message: "release " + rel.Metadata.Name + " is ready to deploy"}, nil
 }
 
 func exposedPorts(spec resource.ComponentSpec) []string {

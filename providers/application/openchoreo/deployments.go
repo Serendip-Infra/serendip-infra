@@ -112,14 +112,19 @@ func (p *Provider) CreateRelease(ctx context.Context, comp resource.Component) (
 	if err != nil {
 		return reconcile.Release{}, err
 	}
-	return p.createRelease(ctx, project, comp)
+	obj, err := p.createRelease(ctx, project, comp)
+	if err != nil {
+		return reconcile.Release{}, err
+	}
+	return releaseOf(obj), nil
 }
 
-func (p *Provider) createRelease(ctx context.Context, project string, comp resource.Component) (reconcile.Release, error) {
+// createRelease returns the release object, existing or applied.
+func (p *Provider) createRelease(ctx context.Context, project string, comp resource.Component) (kubernetes.Object, error) {
 	typeName := componentTypeWorkload + "/" + componentTypeName
 	ct, err := p.client.Get(ctx, clusterPath("clustercomponenttypes")+"/"+componentTypeName)
 	if err != nil {
-		return reconcile.Release{}, fmt.Errorf("get the component type %s: %w", componentTypeName, err)
+		return kubernetes.Object{}, fmt.Errorf("get the component type %s: %w", componentTypeName, err)
 	}
 	name := componentName(comp.Metadata.ID)
 	w := desiredWorkload(project, name, comp.Spec)
@@ -130,7 +135,7 @@ func (p *Provider) createRelease(ctx context.Context, project string, comp resou
 	}
 	content, err := json.Marshal(spec)
 	if err != nil {
-		return reconcile.Release{}, fmt.Errorf("encode the release of %s: %w", name, err)
+		return kubernetes.Object{}, fmt.Errorf("encode the release of %s: %w", name, err)
 	}
 	if traced, ok := withTraceEnv(spec.Workload.Container, p.TraceEndpoint(), comp); ok {
 		// A release that already exists without the variables is kept:
@@ -139,14 +144,14 @@ func (p *Provider) createRelease(ctx context.Context, project string, comp resou
 		// decision 11).
 		existing, err := p.client.Get(ctx, namespacedPath("componentreleases")+"/"+releaseObjectName(comp.Metadata.ID, content))
 		if err == nil {
-			return releaseOf(existing), nil
+			return existing, nil
 		}
 		if !errors.Is(err, kubernetes.ErrNotFound) {
-			return reconcile.Release{}, fmt.Errorf("get the release of %s: %w", name, err)
+			return kubernetes.Object{}, fmt.Errorf("get the release of %s: %w", name, err)
 		}
 		spec.Workload.Container = traced
 		if content, err = json.Marshal(spec); err != nil {
-			return reconcile.Release{}, fmt.Errorf("encode the release of %s: %w", name, err)
+			return kubernetes.Object{}, fmt.Errorf("encode the release of %s: %w", name, err)
 		}
 	}
 	relName := releaseObjectName(comp.Metadata.ID, content)
@@ -157,9 +162,9 @@ func (p *Provider) createRelease(ctx context.Context, project string, comp resou
 		Spec: content,
 	})
 	if err != nil {
-		return reconcile.Release{}, err
+		return kubernetes.Object{}, err
 	}
-	return releaseOf(obj), nil
+	return obj, nil
 }
 
 func releaseOf(obj kubernetes.Object) reconcile.Release {
@@ -238,6 +243,7 @@ func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp re
 	// A pinned release must exist and be this Component's: checked before
 	// anything is written.
 	release := d.Spec.Release
+	var releaseObj kubernetes.Object
 	if release != "" {
 		obj, err := p.client.Get(ctx, namespacedPath("componentreleases")+"/"+release)
 		if errors.Is(err, kubernetes.ErrNotFound) {
@@ -254,6 +260,7 @@ func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp re
 			return reconcile.DeploymentObservation{Reason: reconcile.ReasonUnsupported,
 				Message: fmt.Sprintf("release %q isn't a release of this Component", release)}, nil
 		}
+		releaseObj = obj
 	}
 
 	if err := p.EnsureEnvironment(ctx, env); err != nil {
@@ -270,11 +277,20 @@ func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp re
 		return reconcile.DeploymentObservation{}, err
 	}
 	if release == "" {
-		r, err := p.createRelease(ctx, project, comp)
+		obj, err := p.createRelease(ctx, project, comp)
 		if err != nil {
 			return reconcile.DeploymentObservation{}, err
 		}
-		release = r.Name
+		release, releaseObj = obj.Metadata.Name, obj
+	}
+	// A release cut before secret variables would accept them and ignore
+	// them; the binding keeps what it runs instead (spec 026 decision 12).
+	if secretEnvVersion != "" && !releaseTakesSecretEnv(releaseObj) {
+		msg := releaseNeedsNewMessage
+		if d.Spec.Release == "" {
+			msg = typeNeedsUpdateMessage
+		}
+		return reconcile.DeploymentObservation{Reason: reconcile.ReasonNeedsNewRelease, Message: msg}, nil
 	}
 
 	spec := bindingSpec{
@@ -284,9 +300,7 @@ func (p *Provider) Deploy(ctx context.Context, app resource.Application, comp re
 		State:       "Active",
 	}
 	o := d.Spec.Overrides
-	if len(o.Config) > 0 {
-		spec.ComponentTypeEnvironmentConfigs = o.Config
-	}
+	spec.ComponentTypeEnvironmentConfigs = bindingConfig(o.Config, comp.Metadata.ID, secretEnvVersion)
 	if len(o.Traits) > 0 {
 		spec.TraitEnvironmentConfigs = o.Traits
 	}
@@ -409,6 +423,17 @@ func (p *Provider) Undeploy(ctx context.Context, d resource.Deployment) error {
 	}
 	if !found {
 		return nil // never deployed, or already undeployed
+	}
+	// The secret variables go first, while the project binding still names
+	// their namespace (spec 026 decision 8).
+	ns, err := p.dataPlaneNamespace(ctx, spec.Owner.ProjectName, spec.Environment)
+	if err != nil {
+		return fmt.Errorf("find the namespace of Deployment %s's secret variables: %w", d.Metadata.ID, err)
+	}
+	if ns != "" {
+		if err := p.deleteSecretEnv(ctx, ns, secretEnvNameOf(spec.Owner.ComponentName)); err != nil {
+			return err
+		}
 	}
 	last := true
 	for _, b := range all {

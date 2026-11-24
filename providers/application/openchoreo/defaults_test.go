@@ -26,6 +26,9 @@ type fakeAPI struct {
 	objects  map[string]kubernetes.Object
 	calls    []string // "METHOD path"
 	failPath string
+	// missingPath makes any request to a path with that prefix answer 404
+	// (a namespace that isn't there).
+	missingPath string
 	// lastPatch is the raw body of the most recent PATCH request.
 	lastPatch []byte
 	// lists serves GETs on collection paths as {"items": ...}; lastQuery
@@ -88,6 +91,12 @@ func (f *fakeAPI) apply(t *testing.T, w http.ResponseWriter, r *http.Request) {
 		obj.Metadata.Generation++
 	}
 	obj.Spec, obj.Data = in.Spec, in.Data
+	// Annotations are only ever set by this manager in these tests, so the
+	// applied ones replace them.
+	if !reflect.DeepEqual(obj.Metadata.Annotations, in.Metadata.Annotations) && (len(obj.Metadata.Annotations) > 0 || len(in.Metadata.Annotations) > 0) {
+		obj.Metadata.Annotations = in.Metadata.Annotations
+		changed = true
+	}
 	for k, v := range in.Metadata.Labels {
 		if obj.Metadata.Labels == nil {
 			obj.Metadata.Labels = map[string]string{}
@@ -166,6 +175,10 @@ func (f *fakeAPI) handler(t *testing.T) http.HandlerFunc {
 		if f.failPath != "" && strings.HasPrefix(r.URL.Path, f.failPath) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("simulated failure"))
+			return
+		}
+		if f.missingPath != "" && strings.HasPrefix(r.URL.Path, f.missingPath) {
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

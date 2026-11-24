@@ -165,11 +165,12 @@ func projectTypeSpec() map[string]any {
 // componentTypeSpec is a trimmed copy of OpenChoreo v1.3.1's
 // getting-started ClusterComponentType "service": the Deployment, the
 // ClusterIP Service, and the ConfigMap that carries the Workload's
-// plain env vars (consumed via envFrom). Dropped from the sample: the
-// HTTPRoute resources and their visibility validations (gateway ingress
-// is disabled), ExternalSecret resources (external-secrets isn't
-// installed; secret injection is out of scope), file-mount config,
-// command/args, and the workflow/trait allow-lists.
+// plain env vars (consumed via envFrom), plus the external HTTPRoute.
+// Dropped from the sample: the other HTTPRoutes and their visibility
+// validations, ExternalSecret resources (external-secrets isn't
+// installed: Serendip writes the Secret of secret variables itself and
+// adds it with envFrom, spec 026), file-mount config, command/args, and
+// the workflow/trait allow-lists.
 func componentTypeSpec() map[string]any {
 	quantity := map[string]any{
 		"type":    "object",
@@ -202,6 +203,17 @@ func componentTypeSpec() map[string]any {
 				"replicas":        map[string]any{"type": "integer", "default": 1, "minimum": 0},
 				"resources":       map[string]any{"$ref": "#/$defs/ResourceRequirements"},
 				"imagePullPolicy": map[string]any{"type": "string", "default": "IfNotPresent", "enum": []string{"Always", "IfNotPresent", "Never"}},
+				// Reserved for Serendip (secretenv.go): the provider sets it
+				// in each ReleaseBinding and strips it from the schema it
+				// reports, so a user's config can't.
+				secretEnvProperty: map[string]any{
+					"type":    "object",
+					"default": map[string]any{},
+					"properties": map[string]any{
+						"name":    map[string]any{"type": "string", "default": ""},
+						"version": map[string]any{"type": "string", "default": ""},
+					},
+				},
 			},
 		}},
 		"resources": []any{
@@ -303,7 +315,11 @@ func deploymentTemplate() map[string]any {
 			"replicas": "${environmentConfigs.replicas}",
 			"selector": map[string]any{"matchLabels": "${metadata.podSelectors}"},
 			"template": map[string]any{
-				"metadata": map[string]any{"labels": "${metadata.podSelectors}"},
+				"metadata": map[string]any{
+					"labels": "${metadata.podSelectors}",
+					// A new version of the secret variables rolls the pods.
+					"annotations": map[string]any{secretEnvVersionAnnotation: "${environmentConfigs.serendipSecretEnv.version}"},
+				},
 				"spec": map[string]any{
 					"containers": []any{map[string]any{
 						"name":            "main",
@@ -319,8 +335,10 @@ func deploymentTemplate() map[string]any {
 								"memory": "${environmentConfigs.resources.limits.memory}",
 							},
 						},
-						"env":     "${dependencies.toContainerEnvs()}",
-						"envFrom": "${configurations.toContainerEnvFrom()}",
+						"env": "${dependencies.toContainerEnvs()}",
+						// dyn() is needed to concatenate (T001: no '_+_'
+						// overload for list(EnvFromEntry) otherwise).
+						"envFrom": `${dyn(configurations.toContainerEnvFrom()) + (environmentConfigs.serendipSecretEnv.name != "" ? [{"secretRef": {"name": environmentConfigs.serendipSecretEnv.name}}] : [])}`,
 					}},
 				},
 			},
