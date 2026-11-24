@@ -234,7 +234,7 @@ func wireKubernetes(kubeconfigPath string, registry *provider.Registry, db *sql.
 			if err := openbao.Bootstrap(ctx, baoClient, credentialsPath); err != nil {
 				return fmt.Errorf("bootstrap: %w", err)
 			}
-			p := openbao.NewProvider(baoClient)
+			p := openbao.NewProvider(baoClient).WithCluster(client)
 			registry.Register(capSecrets, p)
 			secrets.set(p)
 			log.Print("serendipd: kubernetes: secrets provider (openbao) active")

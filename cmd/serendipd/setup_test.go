@@ -45,6 +45,7 @@ func TestLazy_AllWrappersReportNotReady(t *testing.T) {
 		"WriteValue":        s.WriteValue(ctx, resource.Secret{}, nil),
 		"ReadValue":         func() error { _, err := s.ReadValue(ctx, resource.Secret{}); return err }(),
 		"Secrets.Delete":    s.Delete(ctx, resource.Secret{}),
+		"EncryptionAtRest":  func() error { _, err := s.EncryptionAtRest(ctx); return err }(),
 		"EnsureApplication": func() error { _, _, _, err := p.EnsureApplication(ctx, resource.Application{}); return err }(),
 		"DeleteApplication": p.DeleteApplication(ctx, resource.Application{}),
 		"EnsureComponent": func() error {

@@ -339,6 +339,36 @@ change after creation (400); the server always chooses the Secret's ID.
 
 The adapter mirrors `providers/storage/localpath.Provider`'s naming/placement.
 
+### Encryption at rest in the cluster (spec 026)
+
+Values delivered to Components rest in the cluster as plain Kubernetes
+Secrets, so whether the cluster's own store encrypts them matters.
+`core/reconcile` names it without any vendor term: `EncryptionAtRest` is
+`on`, `off` or `unknown`, in an `EncryptionReport` with a reason and a
+message. `EncryptionReporter` is optional on a `SecretsProvider`, like
+`PackageUsage` on an installer.
+
+`openbao.Provider.WithCluster(client)` gives the provider the cluster,
+and `EncryptionAtRest` reads its nodes with one LIST:
+
+| Nodes | Answer | Reason |
+|---|---|---|
+| Every K3s server (`node.kubernetes.io/instance-type=k3s` plus the control-plane label) has `k3s.io/encryption-config-hash` | `on` | `EncryptionConfigured` |
+| No K3s server has it | `off` | `EncryptionNotConfigured` |
+| Some do, some don't | `unknown` | `ServersDisagree` |
+| No K3s server (kind, a managed cluster), or no cluster given | `unknown` | `NotReported` |
+
+K3s agents are skipped, because only servers carry the annotation. If
+the nodes can't be listed, the answer is an error, not a guess. The
+annotation shows that encryption was configured when K3s started. It
+doesn't prove that Secrets written earlier were re-encrypted, and the
+message for `on` says so. The key sits on the server's own disk, so
+encryption protects a copied datastore, not a stolen disk.
+
+The agent turns it on for new installs (`bootstrap-agent.md`). In
+`serendipd`, `lazySecrets` forwards the report, and is `unknown` for a
+provider without one.
+
 ## `api.SecretHandler` and the value routes
 
 A value cannot live in `Spec`/`Status`, so the generic

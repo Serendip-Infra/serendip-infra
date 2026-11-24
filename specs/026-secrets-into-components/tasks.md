@@ -188,7 +188,46 @@ handlers is T006's. A clash with a platform-injected variable (spec
   - `go build ./core/... ./api/...` passes on a scratch copy without the
     provider.
 
-## T005: Encryption at rest [P]
+## T005: Encryption at rest [P] ✅
+
+**Done as** (2026-11-24):
+- **Agent:** `k3sServerArgs` always starts with `--secrets-encryption`,
+  so Flannel installs now set `INSTALL_K3S_EXEC=server
+  --secrets-encryption` too. `TestInstallEnv_CNI` checks both CNIs.
+- **Core (`core/reconcile/secrets.go`):** `EncryptionAtRest`
+  (`on`/`off`/`unknown`), `EncryptionReport {encryptionAtRest, reason,
+  message}`, the optional `EncryptionReporter`, and
+  `EncryptionNotReported()`.
+- **Provider (`providers/secrets/openbao/encryption.go`):**
+  `WithCluster` and `EncryptionAtRest`, one node LIST. The outcomes are
+  in the table in `secrets.md`: `EncryptionConfigured`,
+  `EncryptionNotConfigured`, `ServersDisagree` (unknown) and
+  `NotReported`. A failed LIST is an error.
+- **`serendipd`:** `wiring.go` calls `WithCluster(client)`, and
+  `lazySecrets` forwards the report, pulled forward from T006 after a
+  review finding. Without a reporter it answers `NotReported`.
+  `GET /v1/secrets/status` stays in T006.
+- **Docs:** `secrets.md` "Encryption at rest in the cluster",
+  `operations.md` "Secrets encryption at rest" (K3s's enable steps,
+  marked as not yet run), and `bootstrap-agent.md`.
+- **Reviews:** contract-guardian and go-reviewer both passed. Fixed:
+  - the doc references that pointed nowhere;
+  - the `on` message, which now says it covers Secrets written since
+    encryption was turned on;
+  - the lazy handle, which didn't forward the report.
+- **Left as designed:**
+  - `WithCluster` sets the provider's field once at wiring time, like
+    `OnValueWritten`.
+  - The node LIST isn't cached, because it runs only when asked.
+- **For the risk register (T011):**
+  - The annotation shows encryption was configured at start, not that
+    older Secrets were re-encrypted.
+  - A later `k3s secrets-encrypt disable` may leave the annotation in
+    place (not checked).
+  - The key is on the same disk.
+- **Verified:** `go test ./agent/... ./providers/... ./core/...
+  ./cmd/serendipd/` passes, as do `go vet`, `gofmt` and check-imports.
+  The flag is shown by `TestInstallEnv_CNI`.
 
 - **Do:**
   - The agent adds `--secrets-encryption` to K3s's server args (both

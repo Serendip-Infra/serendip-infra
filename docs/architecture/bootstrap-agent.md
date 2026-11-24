@@ -153,6 +153,17 @@ Serendip-specific surprises in either direction.
   "Networking"); what `k3s-uninstall.sh` leaves of Cilium on a real host
   isn't checked yet.
 
+**Spec 026: secrets encryption is on.** With either CNI, K3s gets
+`--secrets-encryption` (first in `INSTALL_K3S_EXEC`), so Secrets rest
+AES-CBC-encrypted in its datastore under a key K3s keeps in
+`/var/lib/rancher/k3s/server/cred/`. The key is on the same disk: this
+protects a copied datastore, not a stolen disk. K3s then annotates the
+server node `k3s.io/encryption-config-hash`, which the secrets provider
+reads to report encryption at rest (`secrets.md`, "Encryption at rest
+in the cluster"). A running server keeps its flags until the installer
+is run again on it; `operations.md` gives the steps to turn encryption on
+for an existing one.
+
 **Known gap, not an oversight**: no `core/audit` record exists for a
 bootstrap/uninstall action — `core/audit` is wired into `api/`
 middleware and `core/reconcile`'s engine (request-scoped, DB-backed),

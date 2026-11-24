@@ -7,6 +7,7 @@ import (
 
 	"github.com/serendip-infra/serendip-infra/core/reconcile"
 	"github.com/serendip-infra/serendip-infra/core/resource"
+	"github.com/serendip-infra/serendip-infra/providers/kubernetes"
 )
 
 // Provider implements core/reconcile.SecretsProvider by wrapping a
@@ -18,6 +19,8 @@ import (
 // placement exactly.
 type Provider struct {
 	client *Client
+	// cluster, when set (WithCluster), is read by EncryptionAtRest.
+	cluster *kubernetes.Client
 }
 
 // NewProvider builds a Provider around client. Every Secret this

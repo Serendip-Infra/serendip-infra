@@ -271,6 +271,26 @@ Design: `networking.md`, ADR 0023. What an operator does with it:
   retention, and count towards the built-in `observability-disk` rule
   (RP-088, RP-092).
 
+## Secrets encryption at rest (spec 026)
+
+Design: `secrets.md`, "Encryption at rest in the cluster". New installs
+by `serendip-agent bootstrap` start K3s with `--secrets-encryption`.
+Clusters installed before then keep Secrets unencrypted in the
+datastore, and Serendip reports `off` for them. To turn encryption on
+for a single K3s server, follow K3s's own `secrets-encrypt` guide. In
+outline:
+
+1. `sudo k3s secrets-encrypt enable`
+2. `sudo systemctl restart k3s`
+3. `sudo k3s secrets-encrypt reencrypt`, so Secrets written earlier are
+   rewritten under the key.
+4. `sudo k3s secrets-encrypt status` should show `Enabled`.
+
+These steps haven't been run against a Serendip install yet. Check them
+against K3s's guide for the pinned version first. The key is in
+`/var/lib/rancher/k3s/server/cred/`, so back it up with the datastore.
+A kind dev cluster always reads `unknown`.
+
 ## SLOs and error budgets
 
 SLO/SLI/error-budget/burn-rate are first-class Serendip concepts, not just a

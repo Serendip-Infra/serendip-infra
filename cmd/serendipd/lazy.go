@@ -148,6 +148,21 @@ func (l *lazySecrets) Delete(ctx context.Context, sec resource.Secret) error {
 	return p.Delete(ctx, sec)
 }
 
+var _ reconcile.EncryptionReporter = (*lazySecrets)(nil)
+
+// EncryptionAtRest forwards to the provider's optional report (spec 026),
+// and is unknown for a provider that has none.
+func (l *lazySecrets) EncryptionAtRest(ctx context.Context) (reconcile.EncryptionReport, error) {
+	p, err := l.get()
+	if err != nil {
+		return reconcile.EncryptionReport{}, err
+	}
+	if r, ok := p.(reconcile.EncryptionReporter); ok {
+		return r.EncryptionAtRest(ctx)
+	}
+	return reconcile.EncryptionNotReported(), nil
+}
+
 type lazyPlatform struct {
 	lazy[reconcile.ApplicationPlatformProvider]
 }

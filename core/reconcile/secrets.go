@@ -225,3 +225,44 @@ func (r *SecretReconciler) EraseValue(ctx context.Context, ref resource.Approval
 		Spec:     spec,
 	})
 }
+
+// EncryptionAtRest is whether the cluster's own store encrypts the
+// Secrets Serendip writes into it (spec 026 item 8): the delivered copies
+// of values, which rest there as cluster Secrets.
+type EncryptionAtRest string
+
+const (
+	EncryptionAtRestOn  EncryptionAtRest = "on"
+	EncryptionAtRestOff EncryptionAtRest = "off"
+	// EncryptionAtRestUnknown is the honest answer for a cluster that
+	// doesn't say (constitution rule 6): never read as off or on.
+	EncryptionAtRestUnknown EncryptionAtRest = "unknown"
+)
+
+// EncryptionReport is one reading of EncryptionAtRest. Reason is a
+// CamelCase word, Message a sentence for people; neither names a
+// provider's own concept outside the message.
+type EncryptionReport struct {
+	State   EncryptionAtRest `json:"encryptionAtRest"`
+	Reason  string           `json:"reason"`
+	Message string           `json:"message"`
+}
+
+// EncryptionNotReported is the report for a cluster, or a provider, that
+// doesn't say whether Secrets are encrypted at rest.
+func EncryptionNotReported() EncryptionReport {
+	return EncryptionReport{
+		State:   EncryptionAtRestUnknown,
+		Reason:  "NotReported",
+		Message: "the cluster doesn't say whether it encrypts Secrets at rest",
+	}
+}
+
+// EncryptionReporter is optional on a SecretsProvider (like PackageUsage
+// on a PackageInstaller): it reads whether the cluster encrypts Secrets
+// at rest. An error means the cluster couldn't be asked; a cluster that
+// was asked and doesn't say answers EncryptionAtRestUnknown, not an
+// error.
+type EncryptionReporter interface {
+	EncryptionAtRest(ctx context.Context) (EncryptionReport, error)
+}
