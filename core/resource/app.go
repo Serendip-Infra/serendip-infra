@@ -35,6 +35,10 @@ type ComponentSpec struct {
 	// Each becomes a depends-on edge, and the platform puts the target's
 	// address in an environment variable.
 	Dependencies []ComponentDependency `json:"dependencies,omitempty"`
+	// SecretEnv sets variables from Secrets' values (spec 026). Each named
+	// Secret becomes a depends-on edge. Unlike Env, it isn't part of a
+	// release: every Deployment uses the current list.
+	SecretEnv []ComponentSecretEnv `json:"secretEnv,omitempty"`
 }
 
 // ComponentDependency is one call to another Component's port: Env names
@@ -84,8 +88,9 @@ func ValidateComponentDependencies(self string, s ComponentSpec) error {
 }
 
 // ComponentRelationships replaces rels' depends-on edges to Components
-// with the ones s's dependencies declare, keeping any others: the server
-// owns those edges.
+// with the ones s's dependencies declare, and its edges to Secrets with
+// the ones s's secret variables name, keeping any others: the server owns
+// those edges.
 func ComponentRelationships(rels []Relationship, s ComponentSpec) []Relationship {
 	var out []Relationship
 	for _, r := range rels {
@@ -100,7 +105,7 @@ func ComponentRelationships(rels []Relationship, s ComponentSpec) []Relationship
 			out = append(out, Relationship{Type: EdgeDependsOn, TargetKind: KindComponent, TargetID: d.Component})
 		}
 	}
-	return out
+	return secretEdges(out, s.SecretEnv)
 }
 
 // ComponentPort is one port the Component's container listens on. Name

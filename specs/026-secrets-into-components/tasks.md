@@ -44,7 +44,18 @@ facts in `VERSIONS.md`, and `plan.md`'s "Checked live in T001".
 - **Verify:** each item recorded as checked live with its answer file;
   `plan.md` updated where a decision changed.
 
-## T002: Core types and validation
+## T002: Core types and validation ✅
+
+**Done as** (2026-11-24): `core/resource/secretenv.go`, with
+`ComponentSecretEnv`, `ValidateSecretEnv`, the clash rules across both
+layers, `MergeSecretEnv`, `SecretEnvVersion` (length-prefixed metadata
+hash) and the server-owned Secret edges. The new fields are on
+`ComponentSpec`, `DeploymentOverrides` and `DeploymentStatus`, and
+`ValidateDeploymentSpec` checks the overrides' own list.
+contract-guardian passed. Its cheap notes are fixed (key length is in
+bytes, and this task's text). Wiring the cross-field checks into the
+handlers is T006's. A clash with a platform-injected variable (spec
+025's tracing variables) goes in the risk register in T011.
 
 - **Do:**
   - `ComponentSecretEnv`, `ComponentSpec.SecretEnv` and
@@ -52,11 +63,11 @@ facts in `VERSIONS.md`, and `plan.md`'s "Checked live in T001".
   - `ValidateSecretEnv` and the clash rules (decision 5);
   - the `depends-on` edges to Secrets in `ComponentRelationships`, and a
     Deployment equivalent;
-  - `DeploymentStatus.SecretEnvVersion` and the `SecretEnvDelivered`
-    reasons;
-  - the `SecretEnvVersion` hash helper;
-  - `EncryptionAtRest` and its values.
-- **Files:** `core/resource/{app,deployment,secrets}.go`, tests.
+  - `DeploymentStatus.SecretEnvVersion`;
+  - the `SecretEnvVersion` hash helper.
+  (The `SecretEnvDelivered` reasons live with the reconciler, in T003;
+  `EncryptionAtRest` with its report, in T005.)
+- **Files:** `core/resource/{app,deployment,secretenv}.go`, tests.
 - **Verify:** `go test ./core/...`; `bash .claude/scripts/check-imports.sh`;
   contract-guardian.
 

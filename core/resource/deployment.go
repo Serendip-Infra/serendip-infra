@@ -40,6 +40,9 @@ type DeploymentOverrides struct {
 	// Traits holds per-environment settings of the Component's traits, by
 	// trait instance name, each validated against its trait's schema.
 	Traits map[string]map[string]any `json:"traits,omitempty"`
+	// SecretEnv sets or replaces secret variables for this Environment
+	// (spec 026), by variable name.
+	SecretEnv []ComponentSecretEnv `json:"secretEnv,omitempty"`
 }
 
 // DeploymentStatus is what the platform reports for the Deployment.
@@ -51,6 +54,10 @@ type DeploymentStatus struct {
 	// History is the releases this Deployment ran before, newest first, at
 	// most MaxDeploymentHistory: what it may roll back to.
 	History []string `json:"history,omitempty"`
+	// SecretEnvVersion is the version of the secret variables the
+	// workload was last given (resource.SecretEnvVersion): metadata only,
+	// never a value. Empty without secret variables.
+	SecretEnvVersion string `json:"secretEnvVersion,omitempty"`
 }
 
 // MaxDeploymentHistory bounds DeploymentStatus.History.
@@ -114,11 +121,12 @@ func AdmitRelease(p Pipeline, env, release string, running map[string]string, hi
 
 type Deployment = Resource[DeploymentSpec, DeploymentStatus]
 
-// DeploymentRelationships is the depends-on edge a Deployment declares to
-// its Component, derived from its spec so the graph's dependents and blast
-// radius include it.
+// DeploymentRelationships lists the depends-on edges a Deployment declares:
+// to its Component, and to each Secret its overrides' secret variables
+// name (spec 026). They're derived from its spec so the graph's dependents
+// and blast radius include it.
 func DeploymentRelationships(spec DeploymentSpec) []Relationship {
-	return []Relationship{{Type: EdgeDependsOn, TargetKind: KindComponent, TargetID: spec.Component}}
+	return secretEdges([]Relationship{{Type: EdgeDependsOn, TargetKind: KindComponent, TargetID: spec.Component}}, spec.Overrides.SecretEnv)
 }
 
 // Limits on a Deployment's overrides.
@@ -159,6 +167,9 @@ func ValidateDeploymentSpec(s DeploymentSpec) error {
 		if len(v) > maxEnvValueLen {
 			return fmt.Errorf("%w: overrides.env.%s: at most %d bytes", ErrValidation, k, maxEnvValueLen)
 		}
+	}
+	if err := validateOverridesSecretEnv(o); err != nil {
+		return err
 	}
 	for name := range o.Traits {
 		if len(name) > maxTraitInstanceLn || !dnsLabelRE.MatchString(name) {
