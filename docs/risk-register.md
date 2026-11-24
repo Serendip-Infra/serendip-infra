@@ -2523,7 +2523,7 @@ The text below is the T013 record.
   answer (other than the value route), condition, log line or OpenChoreo
   object (T009 searched for it). Naming a Secret needs its value-read
   permission (ADR 0024 decision 2).
-- **Revisit:** in spec 032 (workload identity, a v1 GA epic after
+- **Revisit:** in spec 036 (workload identity, #382, a v1 GA epic run after
   small-3). It adds an opt-in file mount through OpenBao's CSI provider
   and fetches by the application itself, both of which keep values out
   of the cluster store, as AKS's Key Vault CSI driver and workload

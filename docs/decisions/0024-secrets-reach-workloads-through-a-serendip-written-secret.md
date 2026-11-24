@@ -114,7 +114,7 @@ datastore, not a stolen disk.
 
 ## Revisit
 
-- With workload identity, planned as spec 032 (2026-11-24): an opt-in
+- With workload identity, planned as spec 036 (#382) (2026-11-24): an opt-in
   file mount through OpenBao's CSI provider, and fetches by the
   application itself, beside this decision's environment variables. The
   Azure analogues are AKS's Key Vault CSI driver and workload identity
