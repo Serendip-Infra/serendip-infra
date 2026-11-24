@@ -134,6 +134,7 @@ Last updated: 2026-11-24.
 
 | Question | Options | Where |
 |---|---|---|
+| Keeping secret values out of the cluster store (RP-096) | OpenBao's CSI provider as an opt-in file mount (a package, cost measured), and the application fetching with its own workload identity; the agent injector is unlikely (a sidecar per pod) | Spec 032 (workload identity), ADR 0024 |
 | An external Ticketing provider | cs-tools' entity-service (WSO2's ServiceNow replacement, REST over PostgreSQL), Zammad, GLPI, Jira | Spec 028 (capability-model.md's Ticketing row) |
 | SMS, voice calls and WhatsApp as alert channels | Twilio (SMS ~$0.056, voice ~3¢/min in the UK), an Android phone as an SMS gateway, Sri Lankan gateways, WhatsApp Cloud API (paid templates); as opt-in paid channel types | Spec 024 plan (Channel research) |
 | OTP for sign-in and approvals | TOTP and passkeys (free, nothing delivered); ThunderID's email OTP over SMTP; ThunderID's Custom SMS sender pointed at `serendipd` (Telegram, Android gateway); Telegram Gateway ($0.01 a code) | A later identity spec |

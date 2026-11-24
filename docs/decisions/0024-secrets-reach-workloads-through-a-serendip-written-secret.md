@@ -114,8 +114,12 @@ datastore, not a stolen disk.
 
 ## Revisit
 
-- When workload identity exists: an injector or CSI driver would keep
-  values out of the cluster store.
+- With workload identity, planned as spec 032 (2026-11-24): an opt-in
+  file mount through OpenBao's CSI provider, and fetches by the
+  application itself, beside this decision's environment variables. The
+  Azure analogues are AKS's Key Vault CSI driver and workload identity
+  with the Key Vault SDK. The agent injector stays rejected: a sidecar
+  per pod, and AKS has no equivalent.
 - When OpenChoreo's secret path stops needing ESO.
 - When a cluster without secrets encryption becomes a common target
   (a managed cluster reports `unknown`).

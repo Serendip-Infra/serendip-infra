@@ -30,6 +30,14 @@ now.
 
 **Next:** the user's review of spec 026, then the merge. After that,
 the next spec on the roadmap (`docs/PRD.md`).
+- **Roadmap change (the user, 2026-11-24):** a new v1 GA epic, #382, **Spec
+  032: Workload identity**, goes after spec 031 (small-3). Each
+  Component gets an identity (a ServiceAccount with OpenBao Kubernetes
+  auth, under the Secrets roles), plus an opt-in CSI file mount and
+  application fetches, mirroring Azure. It's the answer to RP-096. The
+  planned epics after it moved up one: Longhorn 033, Setup wizard 034,
+  HTTPS 035, Hardening 036. Those were renamed by a paced background
+  script.
 
 - **T011, done:** ADR 0024; `application-platform.md` "Secret variables
   (spec 026)"; `secrets.md` (re-unseal, values reaching workloads, the

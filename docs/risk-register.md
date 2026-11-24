@@ -2523,9 +2523,14 @@ The text below is the T013 record.
   answer (other than the value route), condition, log line or OpenChoreo
   object (T009 searched for it). Naming a Secret needs its value-read
   permission (ADR 0024 decision 2).
-- **Revisit:** when workload identity exists (an injector or CSI driver
-  keeps values out of the cluster store). On the L470, run the enable
-  steps and check the annotation after a disable.
+- **Revisit:** in spec 032 (workload identity, a v1 GA epic after
+  small-3). It adds an opt-in file mount through OpenBao's CSI provider
+  and fetches by the application itself, both of which keep values out
+  of the cluster store, as AKS's Key Vault CSI driver and workload
+  identity do. Environment variables stay as built, because they can't
+  avoid a cluster Secret (AKS's CSI `secretObjects` sync makes one too).
+  On the L470, run the enable steps and check the annotation after a
+  disable.
 
 ## RP-097 — Secret references aren't part of a release
 
