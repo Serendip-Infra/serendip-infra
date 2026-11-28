@@ -6,3 +6,5 @@
 *.db-wal
 openbao-init.json
 serendipd.log
+serendipd.*.log
+harness.log
