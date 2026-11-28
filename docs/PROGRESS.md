@@ -12,32 +12,57 @@ Companion docs: `docs/PRD.md` (why/what/roadmap, changes rarely),
 with when to revisit each), `docs/build-vs-adopt.md` (what Serendip
 builds, adopts or rejected, and why).
 
-Last updated: 2026-11-24 (spec 026: all 12 tasks done; PR open, waiting for the user's review and merge)
+Last updated: 2026-11-28 (spec 026 merged; spec 027 next; the L480 node being set up)
 
 ## Current phase
 
-**Spec 026 (Secrets into Components; epic #67): ALL TASKS DONE, PR
-OPEN.** Branch `spec-026` (off `main` after PR #368 merged), pushed to
-the Yasindu007 fork. Spec, plan and tasks were approved under the user's
-"full auto" instruction (2026-11-24), and the user reviews the whole spec
-now.
-- **Task issues:** #369–#379 (T001–T011) and #380 (T012, added), all
-  closed with their commits. #67's checklist is fully ticked, and its
-  body is rewritten as DONE.
-- **The PR:** #381, `spec-026` → `main`, opened by Yasindu007, `Closes #67`.
-  `serendipinfra` merges it with a merge commit once the user has
-  reviewed it.
+**Spec 026 (Secrets into Components; epic #67): DONE 2026-11-24.** PR
+#381 merged (`c5d6888`, merge commit), and #67 closed with it. Every
+task issue (#369–#380) is closed. #381 was opened by `serendipinfra`
+(the active `gh` account then), not Yasindu007 as CLAUDE.md says. Switch
+with `gh auth switch -u Yasindu007` to open a PR, then switch back.
+- **After the merge:** PR #383 (`fix-bench-ignore-logs`) adds
+  `harness.log` and `serendipd.*.log` to the bench results'
+  `.gitignore` (only `result.json` and `summary.md` are results), plus
+  this file.
+- **Roadmap change (the user, 2026-11-24):** a new v1 GA epic, #382,
+  **Spec 036: Workload identity**. It runs after spec 031 (small-3) and
+  before 032 (Longhorn), but takes the next free number, so the planned
+  epics keep theirs (the user's choice). Each Component gets an identity
+  (a ServiceAccount with OpenBao Kubernetes auth, under the Secrets
+  roles), plus an opt-in CSI file mount and application fetches,
+  mirroring Azure. It's the answer to RP-096. A first renumbering script
+  had shifted #73–#76 to 033–036. They were put back to 032–035 on
+  2026-11-28 (checked in each issue's timeline). The milestone
+  description says 024–036.
 
-**Next:** the user's review of spec 026, then the merge. After that,
-the next spec on the roadmap (`docs/PRD.md`).
-- **Roadmap change (the user, 2026-11-24):** a new v1 GA epic, #382, **Spec
-  036: Workload identity**. It runs after spec 031 (small-3) and before
-  032 (Longhorn), but takes the next free number, so the planned epics
-  keep theirs (the user's choice). Each Component gets an identity (a
-  ServiceAccount with OpenBao Kubernetes auth, under the Secrets roles),
-  plus an opt-in CSI file mount and application fetches, mirroring
-  Azure. It's the answer to RP-096.
+**Next: spec 027, Templates and a scaffolder (#68).** Start it with
+spec → plan → tasks on a `spec-027` branch, the plan approved before code.
+The order after it: 028 Incidents, 029 AI diagnosis, 030 Cost and
+delivery insights, 031 small-3, 036 Workload identity, 032 Longhorn, 033
+Setup wizard, 034 HTTPS, 035 Hardening and console gaps.
 
+**The first real node: a ThinkPad L480** (arrived 2026-11-28, not the
+planned L470).
+- i5 8th gen (i5-8250U or 8350U, 4c/8t, so more CPU than a T470's 2c/4t),
+  8 GB DDR4 (two SO-DIMM slots, so 16 GB is one stick away), 128 GB disk,
+  and Ethernet.
+- Windows is being replaced by **Ubuntu Server 24.04.5 LTS**
+  (`ubuntu-24.04.5-live-server-amd64.iso`): the whole disk, OpenSSH on,
+  no snaps. 24.04 was chosen over 26.04 for maturity; upgrade in place
+  later. The user was writing the USB stick with Rufus on 2026-11-28.
+- **When the user sends its IP and `ssh` works:** run `serendip-agent
+  bootstrap --cni cilium`, then `bench-edge1` twice without `--sim-*`,
+  then the checks waiting for real hardware:
+  - Cilium's cost (RP-089) and the tracing package's requirements;
+  - what `k3s-uninstall.sh` leaves of Cilium (RP-083);
+  - the K3s secrets-encryption enable steps, and the annotation after a
+    disable (RP-096).
+- Label results **L480**, never T470. Counting it for the reference
+  gate needs the user's call (an ADR).
+
+**Spec 026, for reference** (tasks.md's "Done as" entries have the
+detail):
 - **T011, done:** ADR 0024; `application-platform.md` "Secret variables
   (spec 026)"; `secrets.md` (re-unseal, values reaching workloads, the
   status route); `authorization.md`, `operations.md` ("Running secret
@@ -80,23 +105,21 @@ the next spec on the roadmap (`docs/PRD.md`).
   - Decision 12 was confirmed: on the upgrade, Deployments following the
     latest release rolled once, and a pinned one didn't.
 
-**State left by T009:**
-- `serendipd` runs on `:8088`: the T009 build, on
-  `~/.serendip-t018/t026/t026.db`, started with `bash
-  ~/.serendip-t018/t026/start.sh`. The user's dev one (`dev-up.ps1`,
-  `t023.db`) is stopped. Restart it with `.\scripts\dev-up.ps1
-  -Restart`.
+**State left after spec 026 (2026-11-28):**
+- No `serendipd` is running. The T009 test one (`~/.serendip-t018/t026/`,
+  `t026.db`) and a stale T010 log watcher were stopped on 2026-11-24.
+  The user's dev one (`dev-up.ps1`, `t023.db`) is stopped too. Start it
+  with `.\scripts\dev-up.ps1 -Restart`.
 - In the t026 store, `verifier` has Secrets Officer at Project
-  `t014-builds`. The CLI is signed in as `admin`
-  (`~/.serendip-t018/t026/cli-login.mjs` signs it in again).
+  `t014-builds`.
 - Five ReleaseBindings from older test stores (`t020-web`, `t020-api`,
-  `rp018-check`, `t019-*`) are set to `state: Undeploy` to free CPU.
+  `rp018-check`, `t019-*`) are still `state: Undeploy` to free CPU.
   Revert with `Active`.
 - **Not allowed from this session (auto-mode classifier):**
-  - running `dev-up.ps1` with `-ExecutionPolicy Bypass` (T009 did its
-    steps by hand instead);
+  - running `dev-up.ps1` with `-ExecutionPolicy Bypass`;
   - starting Docker Desktop;
-  - editing `.claude/settings*.json`.
+  - editing `.claude/settings*.json`;
+  - listing every Windows process (use Git Bash's `ps -ef`).
 
 ### Spec 026's design (plan.md; decisions are numbered there)
 
@@ -156,8 +179,8 @@ the next spec on the roadmap (`docs/PRD.md`).
 
 ### Test beds
 
-- **`serendip-t018`** (kindnet) is up, with the T009 `serendipd` on
-  `:8088` (see "State left by T009" above).
+- **`serendip-t018`** (kindnet) is up, with no `serendipd` on it (see
+  "State left after spec 026" above).
   - The kubectl default context is `kind-serendip-t018`. The repo's
     kube-context guard reads the default context, so mutations need it.
   - CPU requests were at 96% before T009 undeployed the five older
